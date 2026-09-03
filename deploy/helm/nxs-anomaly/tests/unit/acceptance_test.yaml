@@ -1,0 +1,113 @@
+suite: post-install acceptance test hook
+release:
+  name: rel
+  namespace: nxs
+templates:
+  - templates/tests/acceptance.yaml
+  - templates/tests/test-connection.yaml
+tests:
+  - it: renders nothing by default — acceptance writes to the installation, so it is opt-in
+    template: templates/tests/acceptance.yaml
+    asserts:
+      - hasDocuments: {count: 0}
+
+  - it: the plain health test still renders on its own
+    template: templates/tests/test-connection.yaml
+    asserts:
+      - hasDocuments: {count: 1}
+      - isKind: {of: Pod}
+
+  - it: renders the script ConfigMap and the Pod as test hooks
+    template: templates/tests/acceptance.yaml
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      tests.acceptance.enabled: true
+    asserts:
+      - hasDocuments: {count: 2}
+      - equal:
+          path: 'metadata.annotations["helm.sh/hook"]'
+          value: test
+
+  # The ConfigMap has to exist before the Pod mounts it, hence the lower weight.
+  - it: orders the script ConfigMap ahead of the Pod
+    template: templates/tests/acceptance.yaml
+    documentIndex: 0
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      tests.acceptance.enabled: true
+    asserts:
+      - isKind: {of: ConfigMap}
+      - equal:
+          path: 'metadata.annotations["helm.sh/hook-weight"]'
+          value: "-5"
+
+  - it: runs the Pod after it
+    template: templates/tests/acceptance.yaml
+    documentIndex: 1
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      tests.acceptance.enabled: true
+    asserts:
+      - isKind: {of: Pod}
+      - equal:
+          path: 'metadata.annotations["helm.sh/hook-weight"]'
+          value: "0"
+
+  - it: takes the API key from the application Secret, never from values
+    template: templates/tests/acceptance.yaml
+    documentIndex: 1
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      tests.acceptance.enabled: true
+    asserts:
+      - equal:
+          path: spec.containers[0].env[0].valueFrom.secretKeyRef.name
+          value: app-secret
+      - equal:
+          path: spec.containers[0].env[0].valueFrom.secretKeyRef.key
+          value: NXS_ANOMALY_ACCEPTANCE_API_KEY
+
+  - it: drives the full path and cleans up after itself
+    template: templates/tests/acceptance.yaml
+    documentIndex: 0
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      tests.acceptance.enabled: true
+    asserts:
+      # The canary objects.
+      - matchRegex: {path: 'data["acceptance.sh"]', pattern: "POST /api/v1/users"}
+      - matchRegex: {path: 'data["acceptance.sh"]', pattern: "POST /api/v1/escalation-chains"}
+      - matchRegex: {path: 'data["acceptance.sh"]', pattern: "POST /api/v1/integrations"}
+      # A real alert, a real delivery attempt, then acting on it.
+      - matchRegex: {path: 'data["acceptance.sh"]', pattern: "/integrations/v1/webhook/"}
+      - matchRegex: {path: 'data["acceptance.sh"]', pattern: "/api/v1/delivery-attempts"}
+      - matchRegex: {path: 'data["acceptance.sh"]', pattern: "/acknowledge"}
+      - matchRegex: {path: 'data["acceptance.sh"]', pattern: "/resolve"}
+      - matchRegex: {path: 'data["acceptance.sh"]', pattern: "/api/v1/audit\\?entity_type=alert_group"}
+      # Cleanup on a trap, not at the end of the happy path: a failed assertion
+      # must not leave a live ingest endpoint on a production installation.
+      - matchRegex: {path: 'data["acceptance.sh"]', pattern: "trap cleanup EXIT"}
+      - matchRegex: {path: 'data["acceptance.sh"]', pattern: "DELETE \"/api/v1/integrations/"}
+      - matchRegex: {path: 'data["acceptance.sh"]', pattern: "DELETE \"/api/v1/escalation-chains/"}
+      - matchRegex: {path: 'data["acceptance.sh"]', pattern: "DELETE \"/api/v1/users/"}
+      # The canary is paged on the log channel, which needs no egress at all.
+      - matchRegex: {path: 'data["acceptance.sh"]', pattern: "\\\\\"type\\\\\":\\\\\"log\\\\\""}
+      - notMatchRegex: {path: 'data["acceptance.sh"]', pattern: "telegram|slack|mattermost"}
+
+  - it: points at this release's API service and port
+    template: templates/tests/acceptance.yaml
+    documentIndex: 0
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      tests.acceptance.enabled: true
+      api.service.port: 9090
+    asserts:
+      - matchRegex:
+          path: 'data["acceptance.sh"]'
+          pattern: 'API="http://rel-nxs-anomaly-api:9090"'

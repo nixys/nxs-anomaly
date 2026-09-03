@@ -1,0 +1,407 @@
+groups:
+  - name: nxs-anomaly.availability
+    interval: 60s
+    rules:
+      # Database unreachable from a process (worker or API). Root cause, not a
+      # symptom — fires before the stuck-cycle and backlog alerts do.
+      - alert: DatabaseUnavailable
+        expr: nxs_anomaly_db_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database unreachable from {{ $labels.instance }}"
+          description: >
+            The last DB ping from this process failed. Ingest, escalation and
+            delivery all stop until the database is reachable again.
+
+      # Worker cycle not completing. Compared against the last-cycle TIMESTAMP,
+      # not its duration — the duration gauge is a duration and would make this
+      # fire always.
+      - alert: WorkerCycleStuck
+        expr: time() - nxs_anomaly_worker_last_cycle_timestamp_seconds > 120
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Worker cycle not completing on {{ $labels.instance }}"
+          description: >
+            Last worker cycle completed {{ $value | humanizeDuration }} ago.
+            Escalations and notifications may be delayed. Check the worker's
+            /ready endpoint and logs.
+
+      # Worker cannot keep up: cycles start while the previous one still runs.
+      - alert: WorkerCyclesSkipped
+        expr: rate(nxs_anomaly_worker_cycles_skipped_total[5m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Worker cycles being skipped on {{ $labels.instance }}"
+          description: >
+            A cycle started before the previous finished. Raise concurrency /
+            poll interval or move the worker to dedicated replicas.
+
+  - name: nxs-anomaly.backlog
+    interval: 60s
+    rules:
+      - alert: EscalationBacklogAge
+        expr: nxs_anomaly_oldest_due_escalation_age_seconds > 120
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Escalation backlog aging on {{ $labels.instance }}"
+          description: >
+            Oldest due alert group is {{ $value | humanizeDuration }} past its
+            next_run_at. Worker is behind: check it is running and DB is healthy.
+
+      - alert: DeliveryBacklogAge
+        expr: nxs_anomaly_oldest_pending_delivery_age_seconds > 120
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Delivery backlog aging on {{ $labels.instance }}"
+          description: >
+            Oldest delivery_scheduled notification is {{ $value | humanizeDuration }}
+            old. Delivery is falling behind ingest.
+
+      - alert: NotificationRetryQueueDeep
+        expr: nxs_anomaly_notifications_retry_queue_depth > 200
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Notification retry queue backlog on {{ $labels.instance }}"
+          description: >
+            {{ $value }} notifications in retry queue. Delivery adapters may be
+            slow or unreachable.
+
+      - alert: AlertGroupsBurst
+        expr: nxs_anomaly_alert_groups_open > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High number of open alert groups on {{ $labels.instance }}"
+          description: "{{ $value }} open groups. This may indicate an alert storm."
+
+
+  - name: nxs-anomaly.delivery
+    interval: 60s
+    rules:
+      - alert: NotificationFailuresHigh
+        expr: rate(nxs_anomaly_notifications_failed_total[10m]) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High notification failure rate on {{ $labels.instance }}"
+          description: >
+            {{ printf "%.2f" $value }} permanent failures/s. Check delivery
+            adapter credentials (Telegram, SMTP, Asterisk).
+
+      - alert: DeliveryProviderErrors
+        expr: sum by (provider) (rate(nxs_anomaly_delivery_errors_by_provider_total[10m])) > 0.02
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Delivery errors on {{ $labels.provider }}"
+          description: "{{ printf \"%.3f\" $value }} errors/s on provider {{ $labels.provider }}."
+
+      # Per-provider success ratio below the SLO, with enough traffic to matter.
+      - alert: DeliverySuccessRatioLow
+        expr: >
+          (
+            sum by (provider) (rate(nxs_anomaly_notifications_delivered_by_provider_total[30m]))
+            /
+            (
+              sum by (provider) (rate(nxs_anomaly_notifications_delivered_by_provider_total[30m]))
+              + sum by (provider) (rate(nxs_anomaly_delivery_errors_by_provider_total[30m]))
+            )
+          ) < 0.99
+          and
+          sum by (provider) (rate(nxs_anomaly_notifications_delivered_by_provider_total[30m])
+            + rate(nxs_anomaly_delivery_errors_by_provider_total[30m])) > 0.01
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Delivery success ratio below SLO on {{ $labels.provider }}"
+          description: "{{ printf \"%.3f\" $value }} success ratio on provider {{ $labels.provider }} (<99% SLO)."
+
+      - alert: DeliveryLatencyHigh
+        expr: >
+          histogram_quantile(0.95,
+            sum by (channel, le) (rate(nxs_anomaly_notification_delivery_duration_seconds_bucket[10m]))
+          ) > 3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow delivery on channel {{ $labels.channel }}"
+          description: "p95 delivery latency on channel {{ $labels.channel }} = {{ printf \"%.1f\" $value }}s."
+
+      - alert: DeadLetterEvents
+        expr: sum by (channel) (rate(nxs_anomaly_dead_letter_events_total[15m])) > 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Dead-letter notifications on channel {{ $labels.channel }}"
+          description: >
+            Notifications on channel {{ $labels.channel }} exhausted retries and
+            became permanently failed. Check the provider and dead-letter webhook.
+
+      - alert: StaleClaimsReclaimed
+        expr: increase(nxs_anomaly_stale_claims_reclaimed_total[15m]) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Stale delivery claims being reclaimed on {{ $labels.instance }}"
+          description: >
+            {{ $value }} notifications were reclaimed from a stale claim. Workers
+            may be crashing mid-delivery, or the claim timeout is too short.
+
+      - alert: NotificationsSkippedNoTransport
+        expr: increase(nxs_anomaly_notifications_skipped_total[1h]) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Notifications with no transport on {{ $labels.instance }}"
+          description: >
+            Channel {{ $labels.channel }} skipped notifications ({{ $labels.reason }}).
+            Nobody was told through it. Configure the provider or remove the channel.
+
+  - name: nxs-anomaly.ingest
+    interval: 60s
+    rules:
+      - alert: IngestErrorsHigh
+        expr: sum by (source) (rate(nxs_anomaly_ingest_errors_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High ingest error rate from {{ $labels.source }}"
+          description: >
+            {{ printf "%.2f" $value }} errors/s from source {{ $labels.source }}.
+            Check integration key validity and payload format.
+
+      - alert: ScheduleCoverageDegraded
+        expr: nxs_anomaly_schedules_degraded > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "On-call schedule without coverage on {{ $labels.instance }}"
+          description: >
+            {{ $value }} schedule(s) an escalation chain pages through have gaps,
+            are disabled, or name deleted users. See GET /api/v1/schedules/coverage.
+
+      # Coverage says somebody is assigned; this says nobody answered. A rota
+      # can be green while the person it names is asleep with the phone off,
+      # and that gap is invisible until an alert fires into it.
+      #
+      # 30m rather than the 15m above: a shift boundary legitimately leaves a
+      # few minutes where the incoming person has not typed "duty on" yet, and
+      # paging on that would train everyone to ignore this alert.
+      # The dead-man switch for the monitoring itself. Every other rule here
+      # reacts to something arriving; this one reacts to nothing arriving,
+      # which is the failure mode that looks like health from the outside.
+      #
+      # No `for:` — the engine already waited out the integration's own
+      # interval plus its grace before setting this, and adding a second delay
+      # on top would only make the answer later without making it surer.
+      - alert: SourceSilent
+        expr: nxs_anomaly_sources_silent > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Monitoring source has gone quiet on {{ $labels.instance }}"
+          description: >
+            {{ $value }} integration(s) with a declared heartbeat have not reported
+            within it. The alerts they would have sent are not arriving, and the
+            silence is not evidence that nothing is wrong. nxs-anomaly also raises
+            an ordinary alert group per source, so the on-call rota is paged through
+            the usual chain; this rule is the backstop for the case where
+            nxs-anomaly's own delivery is the thing that broke.
+
+      - alert: DutyShiftWithoutCheckin
+        expr: nxs_anomaly_duty_without_checkin > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "On-call shift nobody confirmed on {{ $labels.instance }}"
+          description: >
+            {{ $value }} of {{ with query "nxs_anomaly_duty_on_call" }}{{ . | first | value }}{{ end }}
+            people the schedules put on call have not confirmed the shift.
+            They may not know they are on duty. Ask them to send "duty on",
+            or hand the shift over with "duty take".
+
+  # ── Error-budget burn rate ────────────────────────────────────────────────
+  #
+  # Every rule above compares an instantaneous rate to a fixed threshold, which
+  # cannot tell a two-minute spike apart from a week of slow bleeding: the spike
+  # pages and recovers, the bleed never crosses the line and silently eats the
+  # SLO. These rules alert on how fast the error budget is being consumed
+  # instead, following the multi-window multi-burn-rate method (Google SRE
+  # Workbook, ch. 5).
+  #
+  # Burn rate = (observed error ratio) / (1 - SLO). Burn rate 1 spends the whole
+  # budget exactly over the 30-day window; 14.4 spends 2% of it in an hour.
+  #
+  #   fast  burn 14.4, windows 5m AND 1h   → page: budget gone in ~2 days
+  #   slow  burn 6,    windows 30m AND 6h  → ticket: budget gone in ~5 days
+  #
+  # The short window makes the alert fire quickly and reset quickly; the long
+  # window is what keeps a brief blip from paging. BOTH must be burning.
+  #
+  # With no traffic the ratio is 0/0 = NaN and every comparison is false, so a
+  # quiet instance stays silent instead of paging on a division by zero. That is
+  # also the limitation: these rules say nothing about an ingest endpoint that
+  # stopped receiving alerts entirely — WorkerCycleStuck and DatabaseUnavailable
+  # cover that side.
+  #
+  # Label note: the ingest SLI is handler="webhook", the category classifyHandler
+  # assigns to /integrations/v1/ and /v2/alert/. There is no handler="ingest".
+  - name: nxs-anomaly.slo
+    interval: 60s
+    rules:
+      # ── SLI: ingest availability, SLO 99.9% (budget 0.1%) ─────────────────
+      - record: nxs_anomaly:ingest_5xx:ratio_rate5m
+        expr: >
+          sum(rate(nxs_anomaly_http_requests_total{handler="webhook",code=~"5.."}[5m]))
+          /
+          sum(rate(nxs_anomaly_http_requests_total{handler="webhook"}[5m]))
+
+      - record: nxs_anomaly:ingest_5xx:ratio_rate30m
+        expr: >
+          sum(rate(nxs_anomaly_http_requests_total{handler="webhook",code=~"5.."}[30m]))
+          /
+          sum(rate(nxs_anomaly_http_requests_total{handler="webhook"}[30m]))
+
+      - record: nxs_anomaly:ingest_5xx:ratio_rate1h
+        expr: >
+          sum(rate(nxs_anomaly_http_requests_total{handler="webhook",code=~"5.."}[1h]))
+          /
+          sum(rate(nxs_anomaly_http_requests_total{handler="webhook"}[1h]))
+
+      - record: nxs_anomaly:ingest_5xx:ratio_rate6h
+        expr: >
+          sum(rate(nxs_anomaly_http_requests_total{handler="webhook",code=~"5.."}[6h]))
+          /
+          sum(rate(nxs_anomaly_http_requests_total{handler="webhook"}[6h]))
+
+      # ── SLI: delivery success ratio per provider, SLO 99% (budget 1%) ─────
+      - record: nxs_anomaly:delivery_errors:ratio_rate5m
+        expr: >
+          sum by (provider) (rate(nxs_anomaly_delivery_errors_by_provider_total[5m]))
+          /
+          (
+            sum by (provider) (rate(nxs_anomaly_delivery_errors_by_provider_total[5m]))
+            + sum by (provider) (rate(nxs_anomaly_notifications_delivered_by_provider_total[5m]))
+          )
+
+      - record: nxs_anomaly:delivery_errors:ratio_rate30m
+        expr: >
+          sum by (provider) (rate(nxs_anomaly_delivery_errors_by_provider_total[30m]))
+          /
+          (
+            sum by (provider) (rate(nxs_anomaly_delivery_errors_by_provider_total[30m]))
+            + sum by (provider) (rate(nxs_anomaly_notifications_delivered_by_provider_total[30m]))
+          )
+
+      - record: nxs_anomaly:delivery_errors:ratio_rate1h
+        expr: >
+          sum by (provider) (rate(nxs_anomaly_delivery_errors_by_provider_total[1h]))
+          /
+          (
+            sum by (provider) (rate(nxs_anomaly_delivery_errors_by_provider_total[1h]))
+            + sum by (provider) (rate(nxs_anomaly_notifications_delivered_by_provider_total[1h]))
+          )
+
+      - record: nxs_anomaly:delivery_errors:ratio_rate6h
+        expr: >
+          sum by (provider) (rate(nxs_anomaly_delivery_errors_by_provider_total[6h]))
+          /
+          (
+            sum by (provider) (rate(nxs_anomaly_delivery_errors_by_provider_total[6h]))
+            + sum by (provider) (rate(nxs_anomaly_notifications_delivered_by_provider_total[6h]))
+          )
+
+      # ── Alerts ───────────────────────────────────────────────────────────
+      # 14.4 * 0.001 = 0.0144 — 1.44% of ingest requests failing.
+      - alert: IngestErrorBudgetBurnFast
+        expr: >
+          nxs_anomaly:ingest_5xx:ratio_rate5m > 0.0144
+          and
+          nxs_anomaly:ingest_5xx:ratio_rate1h > 0.0144
+        for: 2m
+        labels:
+          severity: critical
+          slo: ingest_availability
+        annotations:
+          summary: "Ingest error budget burning fast (14.4x)"
+          description: >
+            {{ printf "%.2f" $value }} of ingest requests are failing over both 5m
+            and 1h — at this rate the 99.9% monthly budget is gone in about two
+            days. Alerts are being dropped at the door: check the database, the
+            integration keys and the ingest handler logs.
+
+      # 6 * 0.001 = 0.006 — 0.6% of ingest requests failing.
+      - alert: IngestErrorBudgetBurnSlow
+        expr: >
+          nxs_anomaly:ingest_5xx:ratio_rate30m > 0.006
+          and
+          nxs_anomaly:ingest_5xx:ratio_rate6h > 0.006
+        for: 15m
+        labels:
+          severity: warning
+          slo: ingest_availability
+        annotations:
+          summary: "Ingest error budget burning steadily (6x)"
+          description: >
+            {{ printf "%.3f" $value }} of ingest requests are failing over both 30m
+            and 6h. Nothing is on fire, but the 99.9% budget is spent in about five
+            days at this rate. Worth a ticket, not a page.
+
+      # 14.4 * 0.01 = 0.144 — 14.4% of deliveries on this provider failing.
+      - alert: DeliveryErrorBudgetBurnFast
+        expr: >
+          nxs_anomaly:delivery_errors:ratio_rate5m > 0.144
+          and
+          nxs_anomaly:delivery_errors:ratio_rate1h > 0.144
+        for: 2m
+        labels:
+          severity: critical
+          slo: delivery_success
+        annotations:
+          summary: "Delivery error budget burning fast on {{ $labels.provider }} (14.4x)"
+          description: >
+            {{ printf "%.2f" $value }} of deliveries through {{ $labels.provider }}
+            are failing over both 5m and 1h. The 99% budget for this provider is
+            gone in about two days. Check the provider's credentials and status,
+            and whether the circuit breaker has opened.
+
+      # 6 * 0.01 = 0.06 — 6% of deliveries on this provider failing.
+      - alert: DeliveryErrorBudgetBurnSlow
+        expr: >
+          nxs_anomaly:delivery_errors:ratio_rate30m > 0.06
+          and
+          nxs_anomaly:delivery_errors:ratio_rate6h > 0.06
+        for: 15m
+        labels:
+          severity: warning
+          slo: delivery_success
+        annotations:
+          summary: "Delivery error budget burning steadily on {{ $labels.provider }} (6x)"
+          description: >
+            {{ printf "%.3f" $value }} of deliveries through {{ $labels.provider }}
+            are failing over both 30m and 6h. DeliverySuccessRatioLow may stay quiet
+            at this level; the budget still runs out in about five days.
+

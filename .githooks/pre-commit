@@ -1,0 +1,23 @@
+#!/usr/bin/env sh
+# Local pre-commit hook. Enable once per clone:  git config core.hooksPath .githooks
+#
+#  1. Release version metadata must agree with ./VERSION (see CONTRIBUTING.md).
+#  2. Documentation must still name things the code actually has — migrations,
+#     metrics, tables, links, ingest URLs (scripts/check-docs.sh).
+#  3. The frontend must still type check (scripts/check-types.sh); a no-op when
+#     the commit touches no frontend TypeScript.
+#  4. src/api/schema.d.ts must still match docs/openapi.json
+#     (scripts/check-openapi-types.sh); a no-op when the commit touches neither.
+#
+# All four run here rather than only in CI because all four catch mistakes that
+# take a second to fix while writing and are awkward to fix after review.
+set -eu
+
+dir="$(dirname "$0")"
+
+# Executed directly, not via `sh`: check-docs.sh needs bash (pipefail), and
+# `sh script` ignores the shebang.
+"${dir}/../scripts/check-version.sh" --staged
+"${dir}/../scripts/check-docs.sh"
+"${dir}/../scripts/check-types.sh"
+"${dir}/../scripts/check-openapi-types.sh"

@@ -1,0 +1,34 @@
+nxs-anomaly {{ .Chart.AppVersion }} installed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Components:
+  - API      : {{ include "nxs-anomaly.componentName" (dict "ctx" . "component" "api") }} ({{ .Values.api.replicaCount }} replica(s), :{{ .Values.api.service.port }})
+  - Worker   : {{ include "nxs-anomaly.componentName" (dict "ctx" . "component" "worker") }} (telemetry :{{ .Values.worker.telemetryPort }})
+{{- if .Values.frontend.enabled }}
+  - Frontend : {{ include "nxs-anomaly.componentName" (dict "ctx" . "component" "frontend") }} (:{{ .Values.frontend.service.port }})
+{{- end }}
+
+Data services:
+  - PostgreSQL : {{ if .Values.postgresql.enabled }}bundled ({{ include "nxs-anomaly.postgresqlService" . }}){{ else }}external{{ end }}
+
+Secrets come from:
+{{- if .Values.existingSecret.enabled }}
+  existingSecret "{{ .Values.existingSecret.name }}" (operator-managed).
+{{- else if .Values.externalSecrets.enabled }}
+  external-secrets.io ExternalSecret (store {{ .Values.externalSecrets.secretStoreRef.name }}).
+{{- else if .Values.vaultSecretOperator.enabled }}
+  Vault Secrets Operator VaultStaticSecret ({{ .Values.vaultSecretOperator.mount }}/{{ .Values.vaultSecretOperator.path }}).
+{{- else if .Values.inlineSecret.enabled }}
+  an INLINE Secret rendered from values — dev/CI only, do not use in production.
+{{- end }}
+
+{{- if not .Values.ingress.enabled }}
+
+The frontend is not exposed (ingress.enabled=false). Reach it with:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "nxs-anomaly.componentName" (dict "ctx" . "component" (ternary "frontend" "api" .Values.frontend.enabled)) }} 8080:{{ ternary .Values.frontend.service.port .Values.api.service.port .Values.frontend.enabled }}
+{{- else }}
+
+The frontend is served at: http{{ if .Values.ingress.tls }}s{{ end }}://{{ .Values.ingress.host }}/
+{{- end }}
+
+Verify the release:
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}

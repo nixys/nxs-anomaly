@@ -1,0 +1,60 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: nxs_anomaly
+      POSTGRES_USER: nxs_anomaly
+      POSTGRES_PASSWORD: nxs_anomaly
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nxs_anomaly"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+
+  app:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NXS_ANOMALY_DB_DSN: postgres://nxs_anomaly:nxs_anomaly@postgres:5432/nxs_anomaly?sslmode=disable
+      NXS_ANOMALY_START_SCHEDULER: "false"
+      # Local dev stack only. The Grafana plugin performs its install handshake
+      # on its own schedule and with the Grafana service-account token, which
+      # this compose file generates at runtime and cannot pre-share. In a real
+      # deployment set NXS_ANOMALY_GRAFANA_INSTALL_TOKEN instead and leave this
+      # unset — see docs/API.md.
+      NXS_ANOMALY_GRAFANA_COMPAT_ALLOW_ANONYMOUS: "true"
+      # The management API refuses every request without a credential, so the
+      # dev stack needs a way in. Bootstrap admin rather than
+      # NXS_ANOMALY_ALLOW_ANONYMOUS on purpose: it exercises the same sign-in
+      # path a real deployment uses.
+      NXS_ANOMALY_BOOTSTRAP_ADMIN_USERNAME: admin
+      NXS_ANOMALY_BOOTSTRAP_ADMIN_PASSWORD: nxs-anomaly-dev-admin
+      # This stack serves plain HTTP, and a Secure cookie would be accepted by
+      # the browser and then never sent back — sign-in would look like it
+      # worked and nothing would stay signed in.
+      NXS_ANOMALY_SESSION_COOKIE_SECURE: "false"
+    ports:
+      - "8080:8080"
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - app
+    environment:
+      NXS_ANOMALY_API_UPSTREAM: app:8080
+    ports:
+      - "3100:8080"
+
+  worker:
+    build: .
+    command: ["/usr/local/bin/nxs-anomaly", "run-worker", "--poll-interval", "5"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NXS_ANOMALY_DB_DSN: postgres://nxs_anomaly:nxs_anomaly@postgres:5432/nxs_anomaly?sslmode=disable

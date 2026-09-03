@@ -1,0 +1,88 @@
+suite: production profile preflight
+release:
+  name: rel
+  namespace: nxs
+tests:
+  - it: production profile with a proper external setup renders the config
+    templates:
+      - templates/configmap.yaml
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      config.NXS_ANOMALY_PROFILE: production
+      # Stating the boundary decision: the preflight refuses to render without it.
+      config.NXS_ANOMALY_TEAM_SCOPING: "true"
+    asserts:
+      - equal: {path: data.NXS_ANOMALY_PROFILE, value: production}
+
+  # The preflight lives in a shared define invoked from configmap.yaml, which the
+  # workloads embed for their config checksum. Rendering the whole chart (no
+  # `templates:` filter) mirrors a real `helm install`, so the fail fires.
+  - it: production profile rejects inline secrets
+    set:
+      config.NXS_ANOMALY_PROFILE: production
+      # Stating the boundary decision: the preflight refuses to render without it.
+      config.NXS_ANOMALY_TEAM_SCOPING: "true"
+      inlineSecret.enabled: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "production profile: inlineSecret.enabled must be false — use existingSecret, externalSecrets or vaultSecretOperator"
+
+  - it: production profile rejects the bundled databases
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      config.NXS_ANOMALY_PROFILE: production
+      # Stating the boundary decision: the preflight refuses to render without it.
+      config.NXS_ANOMALY_TEAM_SCOPING: "true"
+      postgresql.enabled: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "production profile: bundled datastores are dev-only — set them .enabled=false and point external* at managed services"
+
+  - it: production profile refuses a disabled SSRF guard
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      config.NXS_ANOMALY_PROFILE: production
+      # Stating the boundary decision: the preflight refuses to render without it.
+      config.NXS_ANOMALY_TEAM_SCOPING: "true"
+      config.NXS_ANOMALY_BLOCK_PRIVATE_WEBHOOKS: "false"
+    asserts:
+      - failedTemplate:
+          errorMessage: "production profile: NXS_ANOMALY_BLOCK_PRIVATE_WEBHOOKS must not be disabled (SSRF guard)"
+
+  - it: the permissive default profile allows inline secrets and bundled databases
+    templates:
+      - templates/configmap.yaml
+    set:
+      inlineSecret.enabled: true
+      postgresql.enabled: true
+    asserts:
+      - equal: {path: data.NXS_ANOMALY_PROFILE, value: ""}
+
+  # Unset is not a middle position: the application reads anything but "true" as
+  # off, so an operator who never thought about teams gets an installation where
+  # every user can see and page every service — and nothing anywhere said so.
+  - it: production profile refuses an unstated team boundary
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      config.NXS_ANOMALY_PROFILE: production
+    asserts:
+      - failedTemplate:
+          errorMessage: 'production profile: NXS_ANOMALY_TEAM_SCOPING must be set explicitly to "true" or "false" — "true" confines each user to their team''s objects, "false" declares one trust domain where every operator may see and page everything. Leaving it unset silently means the second.'
+
+  # A single trust domain is a legitimate answer. What the gate asks for is the
+  # answer, not a particular one.
+  - it: production profile accepts a deliberate single trust domain
+    templates:
+      - templates/configmap.yaml
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      config.NXS_ANOMALY_PROFILE: production
+      config.NXS_ANOMALY_TEAM_SCOPING: "false"
+    asserts:
+      - equal: {path: data.NXS_ANOMALY_TEAM_SCOPING, value: "false"}
+

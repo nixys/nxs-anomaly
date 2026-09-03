@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+# Local commit-msg hook enforcing Conventional Commits (see CONTRIBUTING.md).
+# Enable once per clone:  git config core.hooksPath .githooks
+exec "$(dirname "$0")/../scripts/check-commit-msg.sh" "$1"

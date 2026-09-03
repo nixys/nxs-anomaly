@@ -1,0 +1,5531 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "nxs-anomaly native API",
+    "version": "0.1.74",
+    "description": "The native /api/v1 contract for nxs-anomaly (API, worker, frontend). This is the authoritative contract; the Grafana-compatibility surface under /api/internal/v1 is a compatibility shim and is NOT part of this contract. The core payloads — user, team, schedule, escalation chain, integration, alert group, alert, notification, delivery attempt — are modelled field by field, with `required` reflecting exactly the keys the engine writes unconditionally; every one still allows additional properties because the underlying storage is JSONB. Remaining resources use the open `Entity` schema. Drift between this document and the router is gated by internal/server/openapi_contract_test.go, and the frontend compiles against types generated from this file (frontend/src/api/schema.d.ts).",
+    "license": {
+      "name": "Apache-2.0"
+    }
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Same-origin (frontend nginx proxies /api to the API service)"
+    }
+  ],
+  "security": [
+    {
+      "cookieAuth": []
+    },
+    {
+      "apiKeyHeader": []
+    },
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "auth"
+    },
+    {
+      "name": "users"
+    },
+    {
+      "name": "teams"
+    },
+    {
+      "name": "schedules"
+    },
+    {
+      "name": "escalation-chains"
+    },
+    {
+      "name": "integrations"
+    },
+    {
+      "name": "maintenance-windows"
+    },
+    {
+      "name": "chatops"
+    },
+    {
+      "name": "mobile"
+    },
+    {
+      "name": "alert-groups"
+    },
+    {
+      "name": "observability"
+    },
+    {
+      "name": "readiness"
+    },
+    {
+      "name": "debug"
+    }
+  ],
+  "paths": {
+    "/api/v1/auth/methods": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Available sign-in methods",
+        "security": [],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AuthMethods"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Sign in with login + password (sets the session cookie)",
+        "security": [],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Login"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Sign out (clears the session cookie)",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/oidc/login": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Begin the OIDC authorization-code flow",
+        "x-edition": "enterprise",
+        "security": [],
+        "responses": {
+          "302": {
+            "description": "Redirect to the identity provider"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "501": {
+            "description": "This edition does not implement single sign-on. Distinct from 404, which means the deployment has not configured it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/oidc/callback": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "OIDC redirect callback (sets the session cookie)",
+        "x-edition": "enterprise",
+        "security": [],
+        "responses": {
+          "302": {
+            "description": "Redirect to the app"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "501": {
+            "description": "This edition does not implement single sign-on. Distinct from 404, which means the deployment has not configured it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "The current principal",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Identity"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/preferences": {
+      "put": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Save your own UI language and timezone",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/UserPreferences"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/password": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Change your own password",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/sessions": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "List your active sessions",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ObjectList"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/sessions/{id}": {
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Revoke one of your sessions",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/users": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "List users",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/UserList"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Create a user",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/User"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/users/migrate-notification-policies": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Backfill default notification policies from legacy targets (idempotent)",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/users/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Get a user",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/User"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Replace a user",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/User"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Update a user",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/User"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Delete a user",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/users/{id}/duty-on": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Set a user on duty",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/users/{id}/duty-off": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Set a user off duty",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/users/{id}/test-push": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Send a test mobile push, report the per-device verdict",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/users/{id}/test-notification": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Send one test notification through a real provider",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/users/{id}/password": {
+      "put": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Set a user's password (admin)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Clear a user's password (admin)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/users/{id}/sessions": {
+      "delete": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Revoke all of a user's sessions (admin)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/users/{id}/export": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Export everything held about one person (admin)",
+        "description": "Assembled by reading the records themselves rather than summarising them. Credentials are reported as present/absent and never included: a password hash is not information about the person, only one more place for it to leak. The two audit sections are bounded by audit_export_limit, which the response states, so a truncated section is visible as truncated. Admin-only despite being a GET.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/users/{id}/erase": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Erase a person's data and verify it is gone (admin)",
+        "description": "Credentials, sessions, devices and ChatOps bindings are deleted; the user record, the delivery addresses on their notifications and the actor name/IP on their audit events are pseudonymised. The events themselves are untouched — the record of what happened, including what this person did to other people's data, is what an audit trail exists to keep. The response is a verification rather than a claim: the data is read back and searched for the original identifiers, and the copies outside this database (backups, logs, analytics, traces) are named as out of scope instead of being implied. Idempotent — a second call re-verifies and reports already_erased.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/teams": {
+      "get": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "List teams",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/TeamList"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "Create a team",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Team"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/teams/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "Get a team",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Team"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "Update a team",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Team"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "Delete a team",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          }
+        }
+      }
+    },
+    "/api/v1/schedules": {
+      "get": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "List schedules",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ScheduleList"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Create a schedule",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Schedule"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/on-call": {
+      "get": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Who is on call right now across all schedules (Schedule v2)",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/CurrentOnCall"
+          }
+        }
+      }
+    },
+    "/api/v1/schedules/coverage": {
+      "get": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Standing coverage report across all schedules",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ScheduleCoverage"
+          }
+        }
+      }
+    },
+    "/api/v1/schedules/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Get a schedule",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Schedule"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Update a schedule",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Schedule"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Delete a schedule",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          }
+        }
+      }
+    },
+    "/api/v1/schedules/{id}/on-call": {
+      "get": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Who is on call for a schedule at a time",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/At"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ScheduleOnCall"
+          }
+        }
+      }
+    },
+    "/api/v1/schedules/{id}/preview": {
+      "get": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Preview a schedule's coverage over a window",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/From"
+          },
+          {
+            "$ref": "#/components/parameters/To"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/SchedulePreview"
+          }
+        }
+      }
+    },
+    "/api/v1/schedules/{id}/override": {
+      "post": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Create a schedule override",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/schedules/{id}/overrides": {
+      "post": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Create a schedule override",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/schedules/{id}/overrides/{overrideId}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        },
+        {
+          "$ref": "#/components/parameters/OverrideId"
+        }
+      ],
+      "put": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Update a schedule override",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Delete a schedule override",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          }
+        }
+      }
+    },
+    "/api/v1/escalation-chains": {
+      "get": {
+        "tags": [
+          "escalation-chains"
+        ],
+        "summary": "List escalation chains",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EscalationChainList"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "escalation-chains"
+        ],
+        "summary": "Create an escalation chain",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/EscalationChain"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/escalation-chains/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "escalation-chains"
+        ],
+        "summary": "Get an escalation chain",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EscalationChain"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "escalation-chains"
+        ],
+        "summary": "Update an escalation chain",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EscalationChain"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "escalation-chains"
+        ],
+        "summary": "Delete an escalation chain",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          }
+        }
+      }
+    },
+    "/api/v1/maintenance-windows": {
+      "get": {
+        "tags": [
+          "maintenance-windows"
+        ],
+        "summary": "List maintenance windows",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MaintenanceWindowList"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "maintenance-windows"
+        ],
+        "summary": "Plan a maintenance window",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/MaintenanceWindow"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/maintenance-windows/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "maintenance-windows"
+        ],
+        "summary": "Get a maintenance window",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MaintenanceWindow"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "maintenance-windows"
+        ],
+        "summary": "Update a maintenance window",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MaintenanceWindow"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "maintenance-windows"
+        ],
+        "summary": "Delete a maintenance window",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          }
+        }
+      }
+    },
+    "/api/v1/integrations": {
+      "get": {
+        "tags": [
+          "integrations"
+        ],
+        "summary": "List integrations",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/IntegrationList"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "integrations"
+        ],
+        "summary": "Create an integration",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Integration"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "integrations"
+        ],
+        "summary": "Get an integration",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Integration"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "integrations"
+        ],
+        "summary": "Update an integration",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Integration"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "integrations"
+        ],
+        "summary": "Delete an integration",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/{id}/rotate-key": {
+      "post": {
+        "tags": [
+          "integrations"
+        ],
+        "summary": "Rotate an integration's ingest key",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Integration"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/chatops/channels": {
+      "get": {
+        "tags": [
+          "chatops"
+        ],
+        "summary": "List ChatOps channels",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ChatOpsChannelList"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "chatops"
+        ],
+        "summary": "Create a ChatOps channel",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/ChatOpsChannel"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/chatops/channels/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "chatops"
+        ],
+        "summary": "Get a ChatOps channel",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ChatOpsChannel"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "chatops"
+        ],
+        "summary": "Update a ChatOps channel",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ChatOpsChannel"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "chatops"
+        ],
+        "summary": "Delete a ChatOps channel",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          }
+        }
+      }
+    },
+    "/api/v1/chatops/messages": {
+      "get": {
+        "tags": [
+          "chatops"
+        ],
+        "summary": "List ChatOps messages",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ChatOpsMessageList"
+          }
+        }
+      }
+    },
+    "/api/v1/chatops/commands": {
+      "post": {
+        "tags": [
+          "chatops"
+        ],
+        "summary": "Post a ChatOps command",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ChatOpsMessage"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/devices": {
+      "get": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "List registered mobile devices",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/List"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Register a mobile device",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Object"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/sessions": {
+      "post": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Create a mobile session",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Object"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/dashboard": {
+      "get": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Mobile dashboard for the session",
+        "security": [
+          {
+            "mobileSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MobileSession"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/alert-groups/{id}/acknowledge": {
+      "post": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Acknowledge an alert group from mobile",
+        "security": [
+          {
+            "mobileSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/MobileSession"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/alert-groups/{id}/resolve": {
+      "post": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Resolve an alert group from mobile",
+        "security": [
+          {
+            "mobileSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/MobileSession"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/alert-groups": {
+      "get": {
+        "tags": [
+          "alert-groups"
+        ],
+        "summary": "List alert groups",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AlertGroupList"
+          }
+        }
+      }
+    },
+    "/api/v1/alert-groups/bulk-resolve": {
+      "post": {
+        "tags": [
+          "alert-groups"
+        ],
+        "summary": "Resolve many alert groups",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/BulkResolve"
+          }
+        }
+      }
+    },
+    "/api/v1/alert-groups/bulk-acknowledge": {
+      "post": {
+        "tags": [
+          "alert-groups"
+        ],
+        "summary": "Acknowledge many alert groups",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/BulkAcknowledge"
+          }
+        }
+      }
+    },
+    "/api/v1/alert-groups/bulk-silence": {
+      "post": {
+        "tags": [
+          "alert-groups"
+        ],
+        "summary": "Silence many alert groups",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/DurationMinutes"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/BulkSilence"
+          }
+        }
+      }
+    },
+    "/api/v1/alert-groups/{id}": {
+      "get": {
+        "tags": [
+          "alert-groups"
+        ],
+        "summary": "Get an alert group",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AlertGroup"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/alert-groups/{id}/timeline": {
+      "get": {
+        "tags": [
+          "alert-groups"
+        ],
+        "summary": "An alert group's timeline",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/alert-groups/{id}/acknowledge": {
+      "post": {
+        "tags": [
+          "alert-groups"
+        ],
+        "summary": "Acknowledge an alert group",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AlertGroup"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/alert-groups/{id}/unacknowledge": {
+      "post": {
+        "tags": [
+          "alert-groups"
+        ],
+        "summary": "Un-acknowledge an alert group",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AlertGroup"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/alert-groups/{id}/resolve": {
+      "post": {
+        "tags": [
+          "alert-groups"
+        ],
+        "summary": "Resolve an alert group",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AlertGroup"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/alert-groups/{id}/unresolve": {
+      "post": {
+        "tags": [
+          "alert-groups"
+        ],
+        "summary": "Un-resolve an alert group",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AlertGroup"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/alert-groups/{id}/silence": {
+      "post": {
+        "tags": [
+          "alert-groups"
+        ],
+        "summary": "Silence an alert group",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/DurationMinutes"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AlertGroup"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/alerts": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "List raw alerts",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AlertList"
+          }
+        }
+      }
+    },
+    "/api/v1/notifications": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "List notifications",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/NotificationList"
+          }
+        }
+      }
+    },
+    "/api/v1/delivery-attempts": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Delivery attempts for a notification",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/NotificationId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/DeliveryAttemptList"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/audit": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Query the audit trail (admin)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ActorId"
+          },
+          {
+            "$ref": "#/components/parameters/EntityType"
+          },
+          {
+            "$ref": "#/components/parameters/EntityId"
+          },
+          {
+            "$ref": "#/components/parameters/Action"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/TraceId"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/List"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/history": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Incident/notification history",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/From"
+          },
+          {
+            "$ref": "#/components/parameters/To"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/History"
+          }
+        }
+      }
+    },
+    "/api/v1/routes/debug/{key}": {
+      "post": {
+        "tags": [
+          "debug"
+        ],
+        "summary": "Dump route resolution for an integration key (admin)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Key"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/RouteDebug"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/capabilities": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Report which features are usable here, and why not when they are not",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Capabilities"
+          }
+        }
+      }
+    },
+    "/api/v1/readiness": {
+      "get": {
+        "tags": [
+          "readiness"
+        ],
+        "summary": "Can this installation actually page someone? (BETA-051)",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Readiness"
+          }
+        }
+      }
+    },
+    "/api/v1/readiness/acknowledge": {
+      "post": {
+        "tags": [
+          "readiness"
+        ],
+        "summary": "Accept the readiness blockers that exist right now (admin)",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/ReadinessAcknowledgement"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Readiness"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/backups/report": {
+      "post": {
+        "tags": [
+          "readiness"
+        ],
+        "summary": "Record that a backup completed, for the readiness check (admin; called by the backup job)",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/BackupReport"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/escalations/run": {
+      "post": {
+        "tags": [
+          "debug"
+        ],
+        "summary": "Force one escalation-processing pass (admin)",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ObjectList"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "nxs_anomaly_session",
+        "description": "Browser session cookie issued by /api/v1/auth/login."
+      },
+      "apiKeyHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Static API key mapped to a role."
+      },
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Same static API key sent as `Authorization: Bearer <key>`."
+      },
+      "mobileSession": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Mobile-Session",
+        "description": "Mobile session token from /api/v1/mobile/sessions."
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "description": "The single error envelope used by every failure response."
+      },
+      "Entity": {
+        "type": "object",
+        "description": "A domain object stored as a JSON document, for resources this contract does not model field by field. Always carries an `id`; other fields depend on the resource.",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "ScheduleSegment": {
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "user_ids",
+          "source",
+          "duration_seconds"
+        ],
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "override",
+              "rotation",
+              "shift",
+              ""
+            ],
+            "description": "Which layer produced the segment; \"\" when nobody is on call."
+          },
+          "duration_seconds": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": true,
+        "description": "One interval of a schedule timeline (engine segmentJSON)."
+      },
+      "SchedulePreview": {
+        "type": "object",
+        "required": [
+          "schedule_id",
+          "timezone",
+          "from",
+          "to",
+          "segments",
+          "gaps",
+          "overlaps",
+          "warnings",
+          "coverage_ratio",
+          "participants",
+          "unknown_users"
+        ],
+        "properties": {
+          "schedule_id": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "segments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduleSegment"
+            }
+          },
+          "gaps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduleSegment"
+            }
+          },
+          "overlaps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduleSegment"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "coverage_ratio": {
+            "type": "number"
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "name"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "unknown_users": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Users the schedule names that no longer exist; their slots page nobody."
+          }
+        },
+        "additionalProperties": true
+      },
+      "ScheduleCoverageItem": {
+        "type": "object",
+        "required": [
+          "schedule_id",
+          "name",
+          "disabled",
+          "gap_count",
+          "unknown_users",
+          "attached_to",
+          "acknowledged"
+        ],
+        "properties": {
+          "schedule_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "gap_count": {
+            "type": "integer"
+          },
+          "unknown_users": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "attached_to": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "name"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            },
+            "description": "Escalation chains that page through this schedule."
+          },
+          "acknowledged": {
+            "type": "boolean",
+            "description": "Every referencing step set allow_uncovered, i.e. the gap is an accepted decision."
+          },
+          "first_gap": {
+            "$ref": "#/components/schemas/ScheduleSegment"
+          }
+        },
+        "additionalProperties": true,
+        "description": "Only schedules with a gap, a ghost participant or disabled are listed at all."
+      },
+      "ScheduleCoverageReport": {
+        "type": "object",
+        "required": [
+          "checked_at",
+          "window_days",
+          "items",
+          "degraded_attached",
+          "schedules_total",
+          "schedules_degraded"
+        ],
+        "properties": {
+          "checked_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "window_days": {
+            "type": "integer"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduleCoverageItem"
+            }
+          },
+          "degraded_attached": {
+            "type": "integer",
+            "description": "Degraded schedules an escalation chain actually pages through."
+          },
+          "schedules_total": {
+            "type": "integer",
+            "description": "Counted after team scoping, like items."
+          },
+          "schedules_degraded": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": true
+      },
+      "ScheduleOnCall": {
+        "type": "object",
+        "required": [
+          "schedule_id",
+          "at",
+          "user_ids",
+          "users",
+          "source"
+        ],
+        "properties": {
+          "schedule_id": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "user_ids": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "users": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/User"
+            }
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "override",
+              "rotation",
+              "shift",
+              ""
+            ]
+          },
+          "next": {
+            "$ref": "#/components/schemas/ScheduleSegment"
+          }
+        },
+        "additionalProperties": true,
+        "description": "Who is on call for one schedule. user_ids and users are null (not []) when nobody is: the engine builds them with var declarations. `next` is present only when a later segment has a different roster."
+      },
+      "OnCallEntry": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "name",
+          "username",
+          "exists",
+          "schedule_id",
+          "schedule_name",
+          "source"
+        ],
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "exists": {
+            "type": "boolean",
+            "description": "false when the schedule names a user that no longer exists — a coverage hole, reported rather than hidden."
+          },
+          "schedule_id": {
+            "type": "string"
+          },
+          "schedule_name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "override",
+              "rotation",
+              "shift",
+              ""
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "CurrentOnCall": {
+        "type": "object",
+        "required": [
+          "items",
+          "at"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OnCallEntry"
+            }
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": true,
+        "description": "Everyone on call right now across every enabled, in-scope schedule, resolved through Schedule v2 rather than the manual on_duty flag."
+      },
+      "ChatOpsChannel": {
+        "type": "object",
+        "required": [
+          "id",
+          "platform",
+          "name",
+          "team_id",
+          "user_id",
+          "commands_enabled",
+          "webhook_url",
+          "external_id",
+          "notifications_enabled",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "team_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "commands_enabled": {
+            "type": "boolean"
+          },
+          "webhook_url": {
+            "type": "string",
+            "description": "Incoming-webhook URL of the channel. Empty means command-only: notifications for it are skipped, not delivered. Masked on read paths."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Channel id on the platform itself (Slack channel id, Telegram chat id); inbound commands name this, not the internal id."
+          },
+          "notifications_enabled": {
+            "type": "boolean"
+          },
+          "provisioned_by": {
+            "type": "string",
+            "description": "Name of the infrastructure-as-code tool that created this object (\"terraform\"), absent when a person did. Present means the object is owned by that tool: the API refuses updates and deletes from anyone else, and the web UI disables its own edit controls, because an edit made here would be reverted by the next apply with nothing on screen having said so."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": true
+      },
+      "ChatOpsMessage": {
+        "type": "object",
+        "required": [
+          "id",
+          "channel_id",
+          "direction",
+          "actor",
+          "command",
+          "response",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "channel_id": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "inbound",
+              "outbound"
+            ]
+          },
+          "actor": {
+            "type": "string",
+            "description": "The chat handle for inbound, \"system\" for outbound."
+          },
+          "command": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The command line for inbound; null for outbound."
+          },
+          "response": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "An object, not a string: the command result for inbound, {text, alert_group_id} for outbound."
+          },
+          "notification_id": {
+            "type": "string",
+            "description": "Outbound only — the notification whose delivery carries the final answer."
+          },
+          "delivery_status": {
+            "type": "string",
+            "description": "Outbound only: queued, or skipped_no_transport when the channel has no way to receive."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": true,
+        "description": "There is no updated_at: a message is never updated."
+      },
+      "NotificationBatch": {
+        "type": "object",
+        "required": [
+          "id",
+          "batch_key",
+          "integration_id",
+          "alert_group_id",
+          "status",
+          "flush_at",
+          "deadline_at",
+          "notification_count",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "batch_key": {
+            "type": "string"
+          },
+          "integration_id": {
+            "type": "string"
+          },
+          "alert_group_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "flush_at": {
+            "type": "string",
+            "description": "Empty string, never null — the model field is a string."
+          },
+          "deadline_at": {
+            "type": "string"
+          },
+          "notification_count": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": true
+      },
+      "HistoryItem": {
+        "type": "object",
+        "required": [
+          "alert_group",
+          "alerts",
+          "notifications",
+          "delivery_attempts",
+          "batches",
+          "timeline"
+        ],
+        "properties": {
+          "alert_group": {
+            "$ref": "#/components/schemas/AlertGroup"
+          },
+          "alerts": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Alert"
+            }
+          },
+          "notifications": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Notification"
+            }
+          },
+          "delivery_attempts": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/DeliveryAttempt"
+            }
+          },
+          "batches": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/NotificationBatch"
+            }
+          },
+          "timeline": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/GroupLogEntry"
+            }
+          }
+        },
+        "additionalProperties": true,
+        "description": "Every collection here is null rather than [] when empty — they come from var-declared slices and map lookups in the engine."
+      },
+      "HistoryPage": {
+        "type": "object",
+        "required": [
+          "count",
+          "total",
+          "items"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "description": "Items on this page."
+          },
+          "total": {
+            "type": "integer",
+            "description": "Matching groups overall."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HistoryItem"
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      "BulkAcknowledgeResult": {
+        "type": "object",
+        "required": [
+          "acknowledged",
+          "not_found",
+          "skipped"
+        ],
+        "properties": {
+          "acknowledged": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "not_found": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "skipped": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": true,
+        "description": "Each list is null, not [], when nothing fell into it."
+      },
+      "BulkSilenceResult": {
+        "type": "object",
+        "required": [
+          "silenced",
+          "not_found",
+          "skipped"
+        ],
+        "properties": {
+          "silenced": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "not_found": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "skipped": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      "BulkResolveResult": {
+        "type": "object",
+        "required": [
+          "resolved",
+          "not_found",
+          "already_resolved"
+        ],
+        "properties": {
+          "resolved": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "not_found": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "already_resolved": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      "NotificationPreview": {
+        "type": "object",
+        "required": [
+          "step",
+          "user_id",
+          "username",
+          "targets"
+        ],
+        "properties": {
+          "step": {
+            "type": "string",
+            "description": "The escalation step kind that would page this person."
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "targets": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      "RouteDebug": {
+        "type": "object",
+        "required": [
+          "integration",
+          "route",
+          "dedupe_key",
+          "notification_preview",
+          "message_preview"
+        ],
+        "properties": {
+          "integration": {
+            "$ref": "#/components/schemas/Integration"
+          },
+          "route": {
+            "$ref": "#/components/schemas/IntegrationRoute"
+          },
+          "dedupe_key": {
+            "type": "string"
+          },
+          "notification_preview": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/NotificationPreview"
+            }
+          },
+          "message_preview": {
+            "type": "string"
+          },
+          "pipeline": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Что сделал пайплайн приёма интеграции: лейблы и заголовок до и после, плюс добавленное, изменённое и удалённое. Отсутствует, если пайплайн не задан.",
+            "properties": {
+              "labels_before": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "labels_after": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "labels_added": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "labels_changed": {
+                "type": "object"
+              },
+              "labels_removed": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "title_before": {
+                "type": "string"
+              },
+              "title_after": {
+                "type": "string"
+              }
+            }
+          },
+          "result": {
+            "type": "string",
+            "description": "Присутствует только когда пайплайн отбросил алерт: dropped_by_pipeline. В этом случае маршрут и предпросмотр не считаются."
+          }
+        },
+        "additionalProperties": true,
+        "description": "Dry-run of an alert against an integration: which route and chain it resolves to and who would be paged. Nothing is delivered. notification_preview is null when the route reaches no chain — the case the readiness routing check calls a blocker."
+      },
+      "ChatOpsChannelPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatOpsChannel"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": true
+      },
+      "ChatOpsMessagePage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatOpsMessage"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": true
+      },
+      "PagedList": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Entity"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        },
+        "description": "Pagination envelope returned by list endpoints whose item type is not modelled."
+      },
+      "ReadinessCheck": {
+        "type": "object",
+        "description": "One answerable question about the installation. `blocker` means alerts can be lost or nobody gets paged; `warning` is worth fixing but does not break the alert path. A check that could not run is reported as a blocker, never as a pass.",
+        "required": [
+          "key",
+          "title",
+          "severity",
+          "detail",
+          "items"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "database",
+              "worker",
+              "integrations",
+              "routing",
+              "notification_targets",
+              "schedule_coverage",
+              "backup"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "warning",
+              "blocker"
+            ]
+          },
+          "detail": {
+            "type": "string"
+          },
+          "items": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "The specific objects at fault."
+          }
+        },
+        "additionalProperties": true
+      },
+      "ReadinessAcknowledgement": {
+        "type": "object",
+        "description": "Who accepted which blockers, and why. `current` is false once the set of blockers has changed since — an acknowledgement covers the problems it was made about, not future ones.",
+        "required": [
+          "at",
+          "actor",
+          "reason",
+          "fingerprint"
+        ],
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "actor_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "current": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "Readiness": {
+        "type": "object",
+        "description": "The readiness report. `ready` means nothing is in the way. `production_ready` is the weaker claim the activation gate uses: either nothing is in the way, or a named person accepted exactly the blockers listed here.",
+        "required": [
+          "checked_at",
+          "checks",
+          "blockers",
+          "warnings",
+          "ready",
+          "production_ready",
+          "blocker_fingerprint"
+        ],
+        "properties": {
+          "checked_at": {
+            "type": "string"
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReadinessCheck"
+            }
+          },
+          "blockers": {
+            "type": "integer"
+          },
+          "warnings": {
+            "type": "integer"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "production_ready": {
+            "type": "boolean"
+          },
+          "blocker_fingerprint": {
+            "type": "string",
+            "description": "Identifies the exact set of blockers; empty when there are none."
+          },
+          "acknowledgement": {
+            "$ref": "#/components/schemas/ReadinessAcknowledgement"
+          }
+        },
+        "additionalProperties": true
+      },
+      "AuthMethods": {
+        "type": "object",
+        "description": "How this deployment expects people to authenticate. Drives the sign-in screen.",
+        "required": [
+          "password",
+          "api_key",
+          "anonymous",
+          "oidc",
+          "edition",
+          "sso_available"
+        ],
+        "properties": {
+          "password": {
+            "type": "boolean"
+          },
+          "api_key": {
+            "type": "boolean"
+          },
+          "anonymous": {
+            "type": "boolean"
+          },
+          "oidc": {
+            "type": "boolean"
+          },
+          "oidc_label": {
+            "type": "string",
+            "description": "Issuer host, present only when OIDC is configured, so the button can name the provider."
+          },
+          "edition": {
+            "type": "string",
+            "enum": [
+              "community",
+              "enterprise"
+            ],
+            "description": "Which edition is running. Present so the sign-in screen can explain a door it cannot draw, rather than quietly drawing one fewer button."
+          },
+          "sso_available": {
+            "type": "boolean",
+            "description": "Whether this build contains the OIDC provider at all. False with oidc=false means the edition has no single sign-on; true with oidc=false means nobody has configured it here."
+          }
+        },
+        "additionalProperties": false
+      },
+      "Identity": {
+        "type": "object",
+        "description": "The principal behind the current request, as the backend sees it. `team_scoped` lets the UI explain an empty list as a boundary rather than as \"nothing has happened yet\".",
+        "required": [
+          "id",
+          "kind",
+          "display_name",
+          "role",
+          "permissions",
+          "team_scoped",
+          "team_ids",
+          "locale",
+          "timezone"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "user",
+              "service",
+              "system"
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "",
+              "viewer",
+              "responder",
+              "editor",
+              "admin"
+            ]
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "",
+              "ru-RU",
+              "en-US"
+            ],
+            "description": "UI language this person chose. Empty means no choice recorded — the UI then follows the browser. Always empty for a non-user principal."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA zone the person's timestamps are rendered in. Empty for a non-user principal, in which case the UI uses the browser zone."
+          },
+          "permissions": {
+            "type": "object",
+            "required": [
+              "read",
+              "respond",
+              "edit",
+              "admin"
+            ],
+            "properties": {
+              "read": {
+                "type": "boolean"
+              },
+              "respond": {
+                "type": "boolean"
+              },
+              "edit": {
+                "type": "boolean"
+              },
+              "admin": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
+          "team_scoped": {
+            "type": "boolean"
+          },
+          "team_ids": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserPreferences": {
+        "type": "object",
+        "description": "Presentation settings a person owns about themselves. Writable by the person, unlike the rest of the user record.",
+        "required": [
+          "locale",
+          "timezone"
+        ],
+        "properties": {
+          "locale": {
+            "type": "string",
+            "enum": [
+              "",
+              "ru-RU",
+              "en-US"
+            ]
+          },
+          "timezone": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ActorRef": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "description": "Who performed an action, stored alongside the entity it changed."
+      },
+      "NotificationTarget": {
+        "type": "object",
+        "required": [
+          "type",
+          "target"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "log",
+              "webhook",
+              "telegram",
+              "email",
+              "call",
+              "slack",
+              "mattermost"
+            ]
+          },
+          "target": {
+            "type": "string"
+          }
+        }
+      },
+      "PolicyStep": {
+        "type": "object",
+        "required": [
+          "channel",
+          "target",
+          "wait_minutes"
+        ],
+        "properties": {
+          "channel": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "email",
+              "webhook",
+              "call",
+              "log"
+            ]
+          },
+          "target": {
+            "type": "string"
+          },
+          "wait_minutes": {
+            "type": "integer"
+          }
+        },
+        "description": "One notify/wait step of a personal notification policy (BETA-031)."
+      },
+      "NotificationPolicies": {
+        "type": "object",
+        "properties": {
+          "default": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PolicyStep"
+            }
+          },
+          "important": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PolicyStep"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "User": {
+        "type": "object",
+        "description": "A person: both an on-call roster entry and (optionally) an auth principal. Every key here is written unconditionally by CreateUser, so all are required except the opt-in policies.",
+        "required": [
+          "id",
+          "name",
+          "username",
+          "email",
+          "phone",
+          "telegram_id",
+          "timezone",
+          "locale",
+          "on_duty",
+          "priority",
+          "notification_targets",
+          "role",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "telegram_id": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "",
+              "ru-RU",
+              "en-US"
+            ],
+            "description": "Chosen UI language; empty means the UI follows the browser."
+          },
+          "on_duty": {
+            "type": "boolean"
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "notification_targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NotificationTarget"
+            }
+          },
+          "notification_policies": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NotificationPolicies"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Absent or null means the legacy path: every target fired at once."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "",
+              "viewer",
+              "responder",
+              "editor",
+              "admin"
+            ],
+            "description": "Empty means a roster entry that cannot sign in — the default."
+          },
+          "provisioned_by": {
+            "type": "string",
+            "description": "Name of the infrastructure-as-code tool that created this object (\"terraform\"), absent when a person did. Present means the object is owned by that tool: the API refuses updates and deletes from anyone else, and the web UI disables its own edit controls, because an edit made here would be reverted by the next apply with nothing on screen having said so."
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "Team": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "member_ids",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "member_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "provisioned_by": {
+            "type": "string",
+            "description": "Name of the infrastructure-as-code tool that created this object (\"terraform\"), absent when a person did. Present means the object is owned by that tool: the API refuses updates and deletes from anyone else, and the web UI disables its own edit controls, because an edit made here would be reverted by the next apply with nothing on screen having said so."
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "Shift": {
+        "type": "object",
+        "required": [
+          "id",
+          "user_id",
+          "start_at",
+          "end_at",
+          "recurrence"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "start_at": {
+            "type": "string"
+          },
+          "end_at": {
+            "type": "string"
+          },
+          "recurrence": {
+            "type": "string",
+            "enum": [
+              "none",
+              "daily",
+              "weekly"
+            ]
+          }
+        },
+        "description": "Legacy pre-rotation shift; only consulted when no rotation is configured."
+      },
+      "ScheduleOverride": {
+        "type": "object",
+        "required": [
+          "id",
+          "user_id",
+          "start_at",
+          "until"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "start_at": {
+            "type": "string"
+          },
+          "until": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "created_by": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ActorRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "updated_by": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ActorRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "RotationRestriction": {
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "days"
+        ],
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Local wall clock in the schedule timezone, \"HH:MM\"."
+          },
+          "end": {
+            "type": "string"
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Empty means every day."
+          }
+        }
+      },
+      "Rotation": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "start_at",
+          "handoff_interval",
+          "handoff_unit",
+          "participant_ids"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "start_at": {
+            "type": "string"
+          },
+          "handoff_interval": {
+            "type": "integer"
+          },
+          "handoff_unit": {
+            "type": "string",
+            "enum": [
+              "hours",
+              "days",
+              "weeks"
+            ]
+          },
+          "participant_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "restriction": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RotationRestriction"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "Schedule": {
+        "type": "object",
+        "description": "Schedule v2: overrides beat rotation beats legacy shifts. `team_id` null means unassigned, which stays visible to everyone.",
+        "required": [
+          "id",
+          "name",
+          "timezone",
+          "enabled",
+          "notify_on_shift_change",
+          "team_id",
+          "rotation",
+          "shifts",
+          "overrides",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "notify_on_shift_change": {
+            "type": "boolean"
+          },
+          "team_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rotation": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Rotation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "shifts": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Shift"
+            }
+          },
+          "overrides": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ScheduleOverride"
+            }
+          },
+          "provisioned_by": {
+            "type": "string",
+            "description": "Name of the infrastructure-as-code tool that created this object (\"terraform\"), absent when a person did. Present means the object is owned by that tool: the API refuses updates and deletes from anyone else, and the web UI disables its own edit controls, because an edit made here would be reverted by the next apply with nothing on screen having said so."
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "EscalationStep": {
+        "type": "object",
+        "description": "One step of an escalation chain. Which optional fields apply depends on `kind`.",
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "WAIT",
+              "NOTIFY_USER",
+              "NOTIFY_SCHEDULE",
+              "NOTIFY_TEAM",
+              "NOTIFY_EMERGENCY",
+              "NOTIFY_DUTY_USERS",
+              "TRIGGER_WEBHOOK",
+              "CREATE_ISSUE",
+              "RESOLVE",
+              "REPEAT"
+            ]
+          },
+          "position": {
+            "type": "integer"
+          },
+          "delay_minutes": {
+            "type": "integer"
+          },
+          "user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "schedule_id": {
+            "type": "string"
+          },
+          "allow_uncovered": {
+            "type": "boolean",
+            "description": "Accept a schedule with coverage gaps in the next 7 days."
+          },
+          "team_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fallback_to_all": {
+            "type": "boolean"
+          },
+          "user_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "webhook_url": {
+            "type": "string"
+          },
+          "notify_policy": {
+            "type": "string"
+          },
+          "tracker_type": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "token_env": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "subject_template": {
+            "type": "string"
+          },
+          "body_template": {
+            "type": "string"
+          },
+          "from_position": {
+            "type": "integer"
+          },
+          "max_repeat_count": {
+            "type": "integer"
+          },
+          "cooldown_minutes": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": true
+      },
+      "EscalationChain": {
+        "type": "object",
+        "description": "`steps` is null, not [], for a chain created without any — a draft chain is legal.",
+        "required": [
+          "id",
+          "name",
+          "steps",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "steps": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/EscalationStep"
+            }
+          },
+          "provisioned_by": {
+            "type": "string",
+            "description": "Name of the infrastructure-as-code tool that created this object (\"terraform\"), absent when a person did. Present means the object is owned by that tool: the API refuses updates and deletes from anyone else, and the web UI disables its own edit controls, because an edit made here would be reverted by the next apply with nothing on screen having said so."
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "IntegrationRoute": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "match_type",
+          "is_default",
+          "escalation_chain_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "match_type": {
+            "type": "string",
+            "enum": [
+              "all",
+              "labels",
+              "regex"
+            ]
+          },
+          "is_default": {
+            "type": "boolean"
+          },
+          "labels": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "pattern": {
+            "type": "string"
+          },
+          "escalation_chain_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "IntegrationNotificationPolicy": {
+        "type": "object",
+        "required": [
+          "channels",
+          "batch_timeout_seconds",
+          "batch_deadline_seconds",
+          "emergency_user_id",
+          "epic_user_id",
+          "epic_threshold_count",
+          "epic_threshold_seconds"
+        ],
+        "properties": {
+          "channels": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "batch_timeout_seconds": {
+            "type": "integer"
+          },
+          "batch_deadline_seconds": {
+            "type": "integer"
+          },
+          "emergency_user_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "epic_user_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "epic_threshold_count": {
+            "type": "integer"
+          },
+          "epic_threshold_seconds": {
+            "type": "integer"
+          }
+        }
+      },
+      "Integration": {
+        "type": "object",
+        "description": "An ingest endpoint and its routing. `webhook_secret` is never returned in clear text on read paths.",
+        "required": [
+          "id",
+          "name",
+          "key",
+          "routing_key",
+          "type",
+          "source_type",
+          "group_by",
+          "routes",
+          "notification_policy",
+          "legacy_pool",
+          "templates",
+          "team_id",
+          "webhook_secret",
+          "kafka_topic",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "routing_key": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "source_type": {
+            "type": "string"
+          },
+          "group_by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "routes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntegrationRoute"
+            },
+            "description": "Never empty: an integration without routes gets a synthesised default one."
+          },
+          "notification_policy": {
+            "$ref": "#/components/schemas/IntegrationNotificationPolicy"
+          },
+          "legacy_pool": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true
+          },
+          "templates": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Notification text templates keyed by channel name (telegram, email, webhook, sms, phone); the \"default\" key applies to channels without their own template. Variables: title, severity, reason, group_id, status, user_name, user_username — written as {{ .title }}, {{ title }} or the CamelCase aliases {{ .Title }}, {{ .GroupID }}. An empty object clears all templates and restores the built-in format."
+          },
+          "team_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "webhook_secret": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kafka_topic": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provisioned_by": {
+            "type": "string",
+            "description": "Name of the infrastructure-as-code tool that created this object (\"terraform\"), absent when a person did. Present means the object is owned by that tool: the API refuses updates and deletes from anyone else, and the web UI disables its own edit controls, because an edit made here would be reverted by the next apply with nothing on screen having said so."
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "pipeline": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "description": "Пайплайн приёма: список этапов, каждый — одно действие (extract, set, rename, remove, gsub, truncate, drop) и необязательное условие if. Выполняется ПОСЛЕ выбора маршрута и до всего остального, поэтому влияет на дедупликацию, сохранённый алерт и текст уведомления, но не на маршрутизацию. См. docs/CONFIGURATION.md.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      "GroupLogEntry": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "event": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "AlertGroup": {
+        "type": "object",
+        "description": "The required keys are the ones internal/model/alertgroup.go emits unconditionally for every group shape. The optional ones live in the model's Extra map: they are shape-dependent (a direct-paged group has no integration) or nullable state.",
+        "required": [
+          "id",
+          "route_id",
+          "dedupe_key",
+          "status",
+          "title",
+          "severity",
+          "created_at",
+          "updated_at",
+          "last_received_at",
+          "alert_count",
+          "current_step",
+          "repeat_count",
+          "labels",
+          "alert_ids",
+          "logs"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "route_id": {
+            "type": "string"
+          },
+          "dedupe_key": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "acknowledged",
+              "resolved",
+              "silenced"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "last_received_at": {
+            "type": "string"
+          },
+          "alert_count": {
+            "type": "integer"
+          },
+          "current_step": {
+            "type": "integer"
+          },
+          "repeat_count": {
+            "type": "integer"
+          },
+          "labels": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "alert_ids": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "logs": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/GroupLogEntry"
+            }
+          },
+          "integration_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "escalation_chain_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "next_run_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "acknowledged_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resolved_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "silenced_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "silenced_until": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "notification_channels": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "integration_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "integration_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "emergency_alert": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "epic_sent_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "Alert": {
+        "type": "object",
+        "description": "One received alert. `alert_group_id` is optional: it is set once the group is resolved, and absent for group-less resolves.",
+        "required": [
+          "id",
+          "integration_id",
+          "route_id",
+          "status",
+          "severity",
+          "title",
+          "message",
+          "source",
+          "fingerprint",
+          "received_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "integration_id": {
+            "type": "string"
+          },
+          "route_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "received_at": {
+            "type": "string"
+          },
+          "alert_group_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "labels": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "annotations": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "starts_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ends_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "external_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "Notification": {
+        "type": "object",
+        "description": "One notification and its delivery state machine (delivery_scheduled → delivered | retry_scheduled → … → failed). `skipped` is terminal: no transport existed for the channel, so nobody was told.",
+        "required": [
+          "id",
+          "alert_group_id",
+          "channel",
+          "target",
+          "status",
+          "reason",
+          "idempotency_key",
+          "retry_count",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "alert_group_id": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "delivered",
+              "delivery_scheduled",
+              "retry_scheduled",
+              "failed",
+              "skipped",
+              "batched"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "retry_count": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Null for escalation webhooks, which page no particular person."
+          },
+          "next_retry_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "batch_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "batch_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "DeliveryAttempt": {
+        "type": "object",
+        "description": "One provider call: what was tried, what came back (status, code, redacted excerpt) and how long it took. `provider_code` is present only when the protocol has one.",
+        "required": [
+          "id",
+          "notification_id",
+          "channel",
+          "target",
+          "attempt",
+          "status",
+          "provider_status",
+          "provider_response",
+          "error",
+          "duration_ms",
+          "started_at",
+          "finished_at",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "notification_id": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "attempt": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "provider_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider_response": {
+            "description": "Redacted provider response; shape depends on the transport."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "duration_ms": {
+            "type": "integer"
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "provider_code": {
+            "type": "integer",
+            "description": "Provider response code (HTTP status where the protocol has one)."
+          }
+        },
+        "additionalProperties": true
+      },
+      "UserPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/User"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        }
+      },
+      "TeamPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Team"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        }
+      },
+      "SchedulePage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Schedule"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        }
+      },
+      "MaintenanceWindow": {
+        "type": "object",
+        "description": "Planned work on the named integrations. Alert groups those integrations open between starts_at and ends_at are recorded and silenced instead of paging anyone; `integration_ids` always names at least one integration, because an empty list would mean one typo silenced the whole deployment.",
+        "required": [
+          "id",
+          "name",
+          "integration_ids",
+          "starts_at",
+          "ends_at",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "team_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "integration_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "starts_at": {
+            "type": "string"
+          },
+          "ends_at": {
+            "type": "string"
+          },
+          "provisioned_by": {
+            "type": "string",
+            "description": "Name of the infrastructure-as-code tool that created this object (\"terraform\"), absent when a person did. Present means the object is owned by that tool: the API refuses updates and deletes from anyone else, and the web UI disables its own edit controls, because an edit made here would be reverted by the next apply with nothing on screen having said so."
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "MaintenanceWindowPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MaintenanceWindow"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        }
+      },
+      "EscalationChainPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EscalationChain"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        }
+      },
+      "IntegrationPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Integration"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        }
+      },
+      "AlertGroupPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlertGroup"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        }
+      },
+      "AlertPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Alert"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        }
+      },
+      "NotificationPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Notification"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        }
+      },
+      "Capability": {
+        "type": "object",
+        "description": "One feature and why it is or is not usable here.",
+        "required": [
+          "name",
+          "state",
+          "detail"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "sso",
+              "team_scoping",
+              "analytics_stream"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "available",
+              "unavailable_in_edition",
+              "not_configured"
+            ],
+            "description": "available: present and set up. unavailable_in_edition: this build does not contain it, and no configuration will change that. not_configured: this build contains it and this deployment has not set it up."
+          },
+          "detail": {
+            "type": "string",
+            "description": "One sentence a person can act on."
+          }
+        },
+        "additionalProperties": false
+      },
+      "Capabilities": {
+        "type": "object",
+        "description": "What this edition and this deployment can do.",
+        "required": [
+          "edition",
+          "capabilities"
+        ],
+        "properties": {
+          "edition": {
+            "type": "string",
+            "enum": [
+              "community",
+              "enterprise"
+            ]
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Capability"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "parameters": {
+      "Id": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "OverrideId": {
+        "name": "overrideId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Key": {
+        "name": "key",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "Offset": {
+        "name": "offset",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "Sort": {
+        "name": "sort",
+        "in": "query",
+        "required": false,
+        "description": "Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Order": {
+        "name": "order",
+        "in": "query",
+        "required": false,
+        "description": "Sort direction. Applies to the requested sort column, or to the collection default when none is named.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "asc",
+            "desc"
+          ]
+        }
+      },
+      "At": {
+        "name": "at",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "From": {
+        "name": "from",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "To": {
+        "name": "to",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "DurationMinutes": {
+        "name": "duration_minutes",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "NotificationId": {
+        "name": "notification_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "ActorId": {
+        "name": "actor_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "EntityType": {
+        "name": "entity_type",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "EntityId": {
+        "name": "entity_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Action": {
+        "name": "action",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "RequestId": {
+        "name": "request_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "TraceId": {
+        "name": "trace_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "MobileSession": {
+        "name": "X-Mobile-Session",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "requestBodies": {
+      "Object": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Entity"
+            }
+          }
+        }
+      },
+      "ReadinessAcknowledgement": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "reason"
+              ],
+              "properties": {
+                "reason": {
+                  "type": "string",
+                  "description": "Why these blockers are acceptable. Required: an acknowledgement without one tells the next person nothing."
+                }
+              }
+            }
+          }
+        }
+      },
+      "BackupReport": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "When the backup completed. Defaults to now."
+                },
+                "kind": {
+                  "type": "string",
+                  "description": "Free-form label, e.g. pg_dump or wal-g."
+                }
+              }
+            }
+          }
+        }
+      },
+      "Login": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "login": {
+                  "type": "string"
+                },
+                "username": {
+                  "type": "string"
+                },
+                "password": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "Object": {
+        "description": "A single object",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Entity"
+            }
+          }
+        }
+      },
+      "ObjectList": {
+        "description": "A bare array of objects",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/Entity"
+              }
+            }
+          }
+        }
+      },
+      "List": {
+        "description": "A paginated list",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PagedList"
+            }
+          }
+        }
+      },
+      "SchedulePreview": {
+        "description": "A schedule preview",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/SchedulePreview"
+            }
+          }
+        }
+      },
+      "ScheduleCoverage": {
+        "description": "The schedule coverage report",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ScheduleCoverageReport"
+            }
+          }
+        }
+      },
+      "ScheduleOnCall": {
+        "description": "Who is on call for one schedule",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ScheduleOnCall"
+            }
+          }
+        }
+      },
+      "CurrentOnCall": {
+        "description": "Who is on call right now",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CurrentOnCall"
+            }
+          }
+        }
+      },
+      "ChatOpsChannel": {
+        "description": "A ChatOps channel",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ChatOpsChannel"
+            }
+          }
+        }
+      },
+      "ChatOpsChannelList": {
+        "description": "A paginated list of ChatOps channels",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ChatOpsChannelPage"
+            }
+          }
+        }
+      },
+      "ChatOpsMessage": {
+        "description": "A ChatOps message",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ChatOpsMessage"
+            }
+          }
+        }
+      },
+      "ChatOpsMessageList": {
+        "description": "A paginated list of ChatOps messages",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ChatOpsMessagePage"
+            }
+          }
+        }
+      },
+      "History": {
+        "description": "Alert history",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HistoryPage"
+            }
+          }
+        }
+      },
+      "BulkAcknowledge": {
+        "description": "Bulk acknowledge result",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BulkAcknowledgeResult"
+            }
+          }
+        }
+      },
+      "BulkSilence": {
+        "description": "Bulk silence result",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BulkSilenceResult"
+            }
+          }
+        }
+      },
+      "BulkResolve": {
+        "description": "Bulk resolve result",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BulkResolveResult"
+            }
+          }
+        }
+      },
+      "RouteDebug": {
+        "description": "A route dry-run",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/RouteDebug"
+            }
+          }
+        }
+      },
+      "Error": {
+        "description": "Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "AuthMethods": {
+        "description": "Available sign-in methods",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AuthMethods"
+            }
+          }
+        }
+      },
+      "Readiness": {
+        "description": "The readiness report",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Readiness"
+            }
+          }
+        }
+      },
+      "Identity": {
+        "description": "The current principal",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Identity"
+            }
+          }
+        }
+      },
+      "UserPreferences": {
+        "description": "The caller's saved presentation settings",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UserPreferences"
+            }
+          }
+        }
+      },
+      "User": {
+        "description": "A user",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/User"
+            }
+          }
+        }
+      },
+      "UserList": {
+        "description": "A paginated list of users",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UserPage"
+            }
+          }
+        }
+      },
+      "Team": {
+        "description": "A team",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Team"
+            }
+          }
+        }
+      },
+      "TeamList": {
+        "description": "A paginated list of teams",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/TeamPage"
+            }
+          }
+        }
+      },
+      "Schedule": {
+        "description": "A schedule",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Schedule"
+            }
+          }
+        }
+      },
+      "ScheduleList": {
+        "description": "A paginated list of schedules",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/SchedulePage"
+            }
+          }
+        }
+      },
+      "EscalationChain": {
+        "description": "An escalation chain",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/EscalationChain"
+            }
+          }
+        }
+      },
+      "EscalationChainList": {
+        "description": "A paginated list of escalation chains",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/EscalationChainPage"
+            }
+          }
+        }
+      },
+      "MaintenanceWindow": {
+        "description": "A maintenance window",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/MaintenanceWindow"
+            }
+          }
+        }
+      },
+      "MaintenanceWindowList": {
+        "description": "A paginated list of maintenance windows",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/MaintenanceWindowPage"
+            }
+          }
+        }
+      },
+      "Integration": {
+        "description": "An integration",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Integration"
+            }
+          }
+        }
+      },
+      "IntegrationList": {
+        "description": "A paginated list of integrations",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IntegrationPage"
+            }
+          }
+        }
+      },
+      "AlertGroup": {
+        "description": "An alert group",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AlertGroup"
+            }
+          }
+        }
+      },
+      "AlertGroupList": {
+        "description": "A paginated list of alert groups",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AlertGroupPage"
+            }
+          }
+        }
+      },
+      "AlertList": {
+        "description": "A paginated list of raw alerts",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AlertPage"
+            }
+          }
+        }
+      },
+      "NotificationList": {
+        "description": "A paginated list of notifications",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/NotificationPage"
+            }
+          }
+        }
+      },
+      "DeliveryAttemptList": {
+        "description": "A bare array of delivery attempts",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/DeliveryAttempt"
+              }
+            }
+          }
+        }
+      },
+      "Capabilities": {
+        "description": "Feature availability for this installation",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Capabilities"
+            }
+          }
+        }
+      }
+    }
+  }
+}

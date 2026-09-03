@@ -1,0 +1,37 @@
+# Values for the kind install/upgrade smoke. Everything runs in-cluster: bundled
+# PostgreSQL, an inline dev secret, and locally built images (kind-loaded), so
+# the smoke needs no registry, no external database and no real providers.
+image:
+  repository: nxs-anomaly
+  tag: e2e
+  pullPolicy: IfNotPresent
+
+frontend:
+  image:
+    repository: nxs-anomaly-frontend
+    tag: e2e
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+
+api:
+  replicaCount: 1
+  podDisruptionBudget:
+    enabled: false
+
+postgresql:
+  enabled: true
+  persistence:
+    enabled: false # ephemeral: no PVC/StorageClass needed in kind
+
+inlineSecret:
+  enabled: true
+  data:
+    NXS_ANOMALY_API_KEYS: "e2e-key:admin"
+    NXS_ANOMALY_BOOTSTRAP_ADMIN_USERNAME: "e2e-admin"
+    NXS_ANOMALY_BOOTSTRAP_ADMIN_PASSWORD: "e2e-password-1234"
+
+config:
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+  # The smoke talks plain HTTP; do not force Secure cookies.
+  NXS_ANOMALY_SESSION_COOKIE_SECURE: "false"

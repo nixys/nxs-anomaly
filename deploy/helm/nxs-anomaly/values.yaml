@@ -1,0 +1,443 @@
+# Default values for nxs-anomaly.
+# See README.md for the full contract. Two things decide most of the shape:
+#   1. Where secrets come from  — existingSecret | externalSecrets | vaultSecretOperator | inlineSecret
+#   2. Where data services live — bundled (.enabled) or external (external*).
+
+# Pinned rather than empty: the chart name carries the edition
+# (nxs-anomaly), and object names must not. Both editions therefore
+# render the same names and the same selector labels, which is what lets one
+# release be upgraded from the community chart to this one.
+nameOverride: "nxs-anomaly"
+fullnameOverride: ""
+
+# Backend image (API and worker share it). Published on every tagged release to
+# the same version as this chart; verify its cosign signature before deploying
+# (see README "Verify image signatures").
+image:
+  repository: ghcr.io/nixys/nxs-anomaly
+  # Defaults to .Chart.AppVersion when empty.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+# - name: registry-credentials
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# Pod- and container-level security. Hardened by default: non-root, read-only
+# root filesystem, all capabilities dropped. The app writes nothing to disk.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 2000
+  fsGroup: 2000
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  capabilities:
+    drop: ["ALL"]
+
+# ── Components ────────────────────────────────────────────────────────────────
+# API: stateless HTTP, scales horizontally, runs with --no-scheduler.
+api:
+  replicaCount: 2
+  extraArgs: []
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelectorComponent: api
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  extraEnv: []
+  service:
+    type: ClusterIP
+    port: 8080
+
+# Worker: single logical scheduler; multiple replicas are safe (claim + shards).
+worker:
+  replicaCount: 1
+  pollIntervalSeconds: 5
+  extraArgs: []
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 1000m, memory: 256Mi}
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
+  topologySpreadConstraints: []
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  extraEnv: []
+  telemetryPort: 8081
+
+# Frontend: nginx serving the SPA, same-origin proxy to the API service.
+frontend:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: ghcr.io/nixys/nxs-anomaly-frontend
+    tag: ""
+    pullPolicy: IfNotPresent
+  resources:
+    requests: {cpu: 25m, memory: 32Mi}
+    limits: {cpu: 200m, memory: 128Mi}
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  topologySpreadConstraints: []
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  service:
+    type: ClusterIP
+    port: 8080
+  # nginx runs as its own non-root user (uid 101). fsGroup 101 makes the mounted
+  # emptyDirs (config, cache, run) writable for it, so the standard nginx image
+  # runs unprivileged without a read-only-root workaround.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 101
+    runAsGroup: 101
+    fsGroup: 101
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    runAsNonRoot: true
+    runAsUser: 101
+    capabilities:
+      drop: ["ALL"]
+
+# ── Non-secret configuration (rendered into a ConfigMap, envFrom) ─────────────
+config:
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+  # Security profile. Empty = permissive (dev/kind, works with inlineSecret and
+  # bundled databases). Set to "production" to enable the safe-by-default profile
+  # (SSRF guard, rate limits, circuit breaker, inline-secret ban). The production
+  # preset (values-production.yaml) sets this and the chart preflight then refuses
+  # unsafe combinations (inline secrets, bundled DBs, weakened flags).
+  NXS_ANOMALY_PROFILE: ""
+  NXS_ANOMALY_BLOCK_PRIVATE_WEBHOOKS: "true"
+  NXS_ANOMALY_SESSION_COOKIE_SECURE: "true"
+  # How long serve/run-worker keep retrying a database that is not accepting
+  # connections yet, before giving up and exiting.
+  #
+  # The application's own default is 0 — fail immediately — so that one-shot CLI
+  # commands and tests do not hang on a database that will never come up. That is
+  # the wrong default for a Deployment: pod start order is arbitrary, so a fresh
+  # install or a rollout routinely brings the API and worker up while PostgreSQL
+  # is still starting, and they exit(1) and recover only through
+  # CrashLoopBackOff. Observed on a live rollout: the API restarted once and the
+  # worker twice, both with "store init failed ... connection refused".
+  #
+  # Set to "0" to restore fail-fast.
+  NXS_ANOMALY_DB_CONNECT_MAX_WAIT_SECONDS: "60"
+
+# ── Ingest and API rate limits ───────────────────────────────────────────────
+# These two limiters keep their buckets in each API process, so the figure the
+# application reads is a PER-POD allowance. State them here as the rate you want
+# for the deployment as a whole and the chart divides by api.replicaCount before
+# rendering NXS_ANOMALY_WEBHOOK_RATE / NXS_ANOMALY_API_RATE — otherwise scaling
+# the API up would quietly scale the limits up with it.
+#
+# Empty means "leave it to the application", i.e. off by default and the
+# production profile's own defaults (50 and 20 per pod) under
+# NXS_ANOMALY_PROFILE=production. Set either to 0 to force the limiter off.
+#
+# The sign-in limiter is deliberately not here: it lives in PostgreSQL precisely
+# so that it is global, and needs no adjustment for replica count. See
+# docs/SECURITY_PROFILE.md.
+rateLimits:
+  # Cluster-wide webhook ingest rate, tokens/sec per integration key.
+  webhookRatePerCluster: ""
+  # Cluster-wide management API rate, tokens/sec per client IP.
+  apiRatePerCluster: ""
+
+# ── Distributed tracing (OpenTelemetry) ──────────────────────────────────────
+# Off unless an endpoint is set. Both the API and the worker export, which is the
+# point: an alert's trace starts as a webhook on the API and finishes as a
+# provider call in a worker cycle minutes later, in a different pod.
+#
+# endpoint is an OTLP/HTTP collector base URL (the SDK appends /v1/traces).
+# sampleRatio empty means sample everything — for an alerting system, request
+# volume is the rate at which somebody's infrastructure is breaking, and the
+# traces worth having are the rare slow ones a ratio sampler drops first. Set a
+# ratio between 0 and 1 only if the volume genuinely warrants it.
+#
+# See docs/TRACING.md.
+tracing:
+  enabled: false
+  endpoint: ""
+  # Reported as service.name. Useful to suffix per environment.
+  serviceName: ""
+  sampleRatio: ""
+# ── Outbound delivery proxy ──────────────────────────────────────────────────
+# For deployments that cannot reach a provider directly — an egress-restricted
+# cluster, or a network where a messenger is blocked. Without this, a notification
+# to such a provider fails at dial time, retries, and dead-letters, which is the
+# one failure mode an alerting system cannot have.
+#
+# url applies to every delivery channel; channels overrides it for one. Schemes:
+# http, https, socks5, socks5h, tcp. SOCKS always resolves the destination name at
+# the proxy, which is what a network with poisoned DNS needs. tcp is a transparent
+# relay rather than a proxy — an HAProxy "mode tcp" frontend forwarding to the
+# provider; it needs an explicit port, and it is blind to the destination, so it
+# suits channels with a fixed provider host. socks5 and tcp are the schemes that
+# can carry the two non-HTTP channels, email (SMTP) and call (AMI).
+# Set a channel to "direct" to keep it off the default proxy.
+#
+# noProxy is NO_PROXY syntax: a host, or a domain that also matches subdomains.
+# The internal webhook receiver usually belongs here.
+#
+# CREDENTIALS: these render into the ConfigMap, which is not a secret store — the
+# chart refuses a URL with a password in it. Put such a URL in the application
+# Secret as NXS_ANOMALY_DELIVERY_PROXY_URL instead (the Secret is applied after
+# the ConfigMap, so it wins). See docs/CONFIGURATION.md.
+deliveryProxy:
+  url: ""
+  # channels: {telegram: "socks5://tunnel.internal:1080", webhook: "direct"}
+  channels: {}
+  noProxy: ""
+
+# Free-form extra non-secret env applied to API and worker.
+extraConfig: {}
+
+# ── Secrets: choose exactly one primary source ───────────────────────────────
+# The application env secret must provide at least NXS_ANOMALY_DB_DSN plus any
+# provider/OIDC credentials. This chart never bakes plaintext secrets by default.
+
+# 1) Operator pre-creates the Secret; the chart only references it.
+existingSecret:
+  enabled: false
+  name: ""
+
+# 2) external-secrets.io: chart renders an ExternalSecret syncing from a store.
+externalSecrets:
+  enabled: false
+  refreshInterval: "1h"
+  secretStoreRef:
+    name: ""
+    kind: ClusterSecretStore
+  # remoteKey/property → env var name
+  data: []
+  # - secretKey: NXS_ANOMALY_DB_DSN
+  #   remoteRef: {key: nxs-anomaly, property: db_dsn}
+
+# 3) HashiCorp Vault Secrets Operator: chart renders a VaultStaticSecret.
+vaultSecretOperator:
+  enabled: false
+  mount: "kv"
+  type: "kv-v2"
+  path: "nxs-anomaly"
+  refreshAfter: "1h"
+  # Name of a platform-managed VaultAuth in this namespace. Leave empty to let VSO
+  # use its own default VaultAuth, or set vaultAuth.create below to have the chart
+  # render one (the two are mutually exclusive; the preflight refuses both).
+  vaultAuthRef: ""
+  # Chart-managed VaultAuth. The VaultConnection is NOT created here — address, CA
+  # and TLS are cluster infrastructure that outlives the release, so name the
+  # existing one in vaultConnectionRef.
+  vaultAuth:
+    create: false
+    method: kubernetes
+    # Path of the auth backend in Vault (e.g. "kubernetes"), NOT the KV mount above.
+    mount: ""
+    # Existing VaultConnection to authenticate against. Required when create=true:
+    # left empty, VSO would silently fall back to its default connection.
+    vaultConnectionRef: ""
+    kubernetes:
+      # Vault role bound to this ServiceAccount.
+      role: ""
+      # Defaults to the chart's own ServiceAccount.
+      serviceAccount: ""
+      # JWT audiences the Vault role expects; empty leaves it to Vault's default.
+      audiences: []
+    # Used when method: jwt — for clusters whose API server Vault cannot reach,
+    # so kubernetes auth (it calls TokenReview) is not an option and Vault
+    # verifies the ServiceAccount token signature locally instead.
+    jwt:
+      # Vault role bound to this ServiceAccount's `sub` claim.
+      role: ""
+      # ServiceAccount whose token VSO generates; defaults to the chart's own.
+      serviceAccount: ""
+      # Must match the role's bound_audiences, otherwise Vault rejects the login.
+      audiences: []
+  # Optional transformation; by default all keys at the path become secret keys.
+  # Additional Secrets the release needs but does not consume as config — an image
+  # pull Secret is the usual one. Keyed by suffix; the VaultStaticSecret is named
+  # <fullname>-<key>, while destination.name is the Secret other manifests refer to.
+  # mount, refreshAfter, type and the auth reference default to the block above.
+  #
+  # extraSecrets:
+  #   hub-auth:
+  #     path: apps/nxs-anomaly/prod/harbor
+  #     destination:
+  #       name: nxs-anomaly-hub-auth
+  #       type: kubernetes.io/dockerconfigjson
+  #       transformation:
+  #         excludeRaw: true
+  #         templates:
+  #           .dockerconfigjson:
+  #             # Rendered by VSO, not by Helm.
+  #             text: '{"auths":{"registry.example.com":{"auth":"..."}}}'
+  extraSecrets: {}
+
+# 4) Inline (DEV/CI ONLY, off by default): chart renders a Secret from these
+#    values. Pairs with the bundled databases. NEVER commit real secrets here.
+inlineSecret:
+  enabled: false
+  # NXS_ANOMALY_DB_DSN is auto-filled from the bundled/external Postgres unless
+  # you set it explicitly here. Everything under data is added verbatim.
+  data: {}
+  # NXS_ANOMALY_API_KEYS: "changeme:admin"
+  # NXS_ANOMALY_BOOTSTRAP_ADMIN_USERNAME: "admin"
+  # NXS_ANOMALY_BOOTSTRAP_ADMIN_PASSWORD: "change-me-please"
+
+# ── Data services ────────────────────────────────────────────────────────────
+# Bundled PostgreSQL — a single-node StatefulSet for dev/test/kind. Production
+# should disable this and point externalPostgres at a managed instance/operator.
+postgresql:
+  enabled: false
+  image: postgres:17-alpine
+  auth:
+    username: nxs_anomaly
+    password: change-me
+    database: nxs_anomaly
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: 1000m, memory: 1Gi}
+
+externalPostgres:
+  # Provide either a full dsn, or host/port/username/password/database/sslmode.
+  # In the operator-managed secret modes the DSN comes from the secret, and these
+  # are only used for the inline/dev path.
+  dsn: ""
+  host: ""
+  port: 5432
+  username: nxs_anomaly
+  password: ""
+  database: nxs_anomaly
+  sslmode: require
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  # host the frontend (and, via it, the API) is served on.
+  host: nxs-anomaly.example.com
+  tls: []
+  # - hosts: [nxs-anomaly.example.com]
+  #   secretName: nxs-anomaly-tls
+
+# Istio networking (alternative to the plain Ingress). A VirtualService can
+# attach to an existing Gateway through virtualService.gateways, or this chart
+# can create a small HTTP/optional HTTPS Gateway.
+istio:
+  virtualService:
+    enabled: false
+    namespace: ""
+    annotations: {}
+    gateways: []
+    # Defaults to [ingress.host] when empty.
+    hosts: []
+  gateway:
+    enabled: false
+    name: ""
+    namespace: ""
+    annotations: {}
+    selector:
+      istio: ingressgateway
+    # Defaults to ingress.host (or the first VirtualService host).
+    host: ""
+    tls:
+      enabled: false
+      mode: SIMPLE
+      credentialName: ""
+
+# Kubernetes Gateway API (alternative to Ingress/Istio VirtualService).
+# HTTPRoute can attach to an existing Gateway through parentRefs, or the chart
+# can create a Gateway using gateway.gatewayClassName.
+gatewayAPI:
+  httpRoute:
+    enabled: false
+    namespace: ""
+    annotations: {}
+    parentRefs: []
+    # Defaults to [ingress.host] when empty.
+    hostnames: []
+  gateway:
+    enabled: false
+    name: ""
+    namespace: ""
+    annotations: {}
+    gatewayClassName: istio
+    # Defaults to ingress.host (or the first HTTPRoute hostname).
+    hostname: ""
+    allowedRoutes:
+      namespaces:
+        from: Same
+    tls:
+      enabled: false
+      secretName: ""
+
+networkPolicy:
+  enabled: false
+  # Extra sources allowed to reach the API and worker (e.g. ingress-nginx and
+  # Prometheus, usually matched by namespaceSelector/podSelector rather than
+  # ipBlock). Applies to both the API ingress rule (in addition to the
+  # in-release frontend) and the worker ingress rule (which otherwise has no
+  # allowed source at all). Required for serviceMonitor to actually be
+  # scrapable once networkPolicy.enabled is true — see the production preflight.
+  extraIngress: []
+
+# ── Observability ────────────────────────────────────────────────────────────
+serviceMonitor:
+  enabled: false
+  interval: 15s
+  scrapeTimeout: 10s
+  labels: {}
+
+prometheusRule:
+  enabled: false
+  labels: {}
+
+# helm test hook (curl the API /health).
+tests:
+  enabled: true
+  image: curlimages/curl:8.10.1
+  # Post-install acceptance: a second `helm test` pod that drives a real alert
+  # through a temporary canary integration — ingest → delivery attempt →
+  # acknowledge → resolve → audit — and then deletes everything it created.
+  #
+  # Off by default because it writes to the installation and needs an admin API
+  # key. Turn it on for a staging or beta installation, where a green
+  # `helm upgrade` should mean "paging still works", not "the process started".
+  acceptance:
+    enabled: false
+    # Key in the application Secret holding an admin API key (format
+    # "<key>:admin", the same one NXS_ANOMALY_API_KEYS carries). Read from the
+    # Secret rather than from values so it never appears in the release manifest.
+    apiKeySecretKey: NXS_ANOMALY_ACCEPTANCE_API_KEY
+    # Budget for each of the two waits (the alert group, then the delivery
+    # attempt). The second one is bounded below by worker.pollIntervalSeconds.
+    timeoutSeconds: 120

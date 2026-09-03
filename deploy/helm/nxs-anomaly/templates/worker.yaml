@@ -1,0 +1,97 @@
+{{- $component := "worker" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nxs-anomaly.componentName" (dict "ctx" . "component" $component) }}
+  labels:
+    {{- include "nxs-anomaly.componentLabels" (dict "ctx" . "component" $component) | nindent 4 }}
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "nxs-anomaly.componentSelectorLabels" (dict "ctx" . "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nxs-anomaly.componentLabels" (dict "ctx" . "component" $component) | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      {{- include "nxs-anomaly.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "nxs-anomaly.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: worker
+          image: {{ include "nxs-anomaly.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # The image sets CMD but no ENTRYPOINT, so args alone would replace the
+          # binary; pin the command explicitly.
+          command: ["/usr/local/bin/nxs-anomaly"]
+          args:
+            - run-worker
+            - --poll-interval
+            - {{ .Values.worker.pollIntervalSeconds | quote }}
+            {{- range .Values.worker.extraArgs }}
+            - {{ . | quote }}
+            {{- end }}
+          ports:
+            - name: telemetry
+              containerPort: {{ .Values.worker.telemetryPort }}
+          env:
+            - name: NXS_ANOMALY_WORKER_ADDR
+              value: {{ printf ":%v" .Values.worker.telemetryPort | quote }}
+            {{- with .Values.worker.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "nxs-anomaly.fullname" . }}-config
+            - secretRef:
+                name: {{ include "nxs-anomaly.secretName" . }}
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: telemetry
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: telemetry
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+      {{- with .Values.worker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- include "nxs-anomaly.topologySpread" (dict "ctx" . "component" $component "constraints" .Values.worker.topologySpreadConstraints) | nindent 6 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nxs-anomaly.componentName" (dict "ctx" . "component" $component) }}
+  labels:
+    {{- include "nxs-anomaly.componentLabels" (dict "ctx" . "component" $component) | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    {{- include "nxs-anomaly.componentSelectorLabels" (dict "ctx" . "component" $component) | nindent 4 }}
+  ports:
+    - name: telemetry
+      port: {{ .Values.worker.telemetryPort }}
+      targetPort: telemetry

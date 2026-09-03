@@ -1,0 +1,9 @@
+.git
+.gitignore
+*.tmp
+*.orig
+# Anchored to the chart root on purpose. An unanchored "tests/" also matches
+# templates/tests/, which excluded the helm test hooks from the packaged chart —
+# `helm test` then reported success having run nothing at all.
+/tests/
+/ci/

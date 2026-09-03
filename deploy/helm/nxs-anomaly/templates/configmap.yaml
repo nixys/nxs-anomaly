@@ -1,0 +1,68 @@
+{{- include "nxs-anomaly.preflight" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nxs-anomaly.fullname" . }}-config
+  labels:
+    {{- include "nxs-anomaly.labels" . | nindent 4 }}
+data:
+  {{- range $k, $v := .Values.config }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}
+  {{- range $k, $v := .Values.extraConfig }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}
+  {{- /*
+    The webhook and API limiters are per-pod (see values.yaml rateLimits), so a
+    cluster-wide figure has to be divided by the replica count before the
+    application sees it. Rendered only when the operator states one; otherwise
+    the application's own defaults apply.
+  */}}
+  {{- with .Values.rateLimits }}
+  {{- $replicas := max 1 (int $.Values.api.replicaCount) }}
+  {{- if ne (toString .webhookRatePerCluster) "" }}
+  NXS_ANOMALY_WEBHOOK_RATE: {{ divf (float64 .webhookRatePerCluster) $replicas | quote }}
+  {{- end }}
+  {{- if ne (toString .apiRatePerCluster) "" }}
+  NXS_ANOMALY_API_RATE: {{ divf (float64 .apiRatePerCluster) $replicas | quote }}
+  {{- end }}
+  {{- end }}
+  {{- /*
+    Outbound delivery proxy. Rendered into the shared ConfigMap so API and worker
+    agree: the worker performs the deliveries, but the API sends the test
+    notification and answers Telegram callbacks through the same channels.
+
+    A URL carrying a password is refused rather than rendered: a ConfigMap is
+    readable by anyone with get on the namespace, and silently publishing a
+    proxy credential there would be worse than the misconfiguration it hides.
+  */}}
+  {{- with .Values.deliveryProxy }}
+  {{- $secretInURL := "a delivery proxy URL with a password must not be rendered into a ConfigMap. Put NXS_ANOMALY_DELIVERY_PROXY_URL (or the per-channel variable) in the application Secret instead" }}
+  {{- if .url }}
+  {{- if regexMatch "://[^/@]*:[^/@]*@" .url }}{{ fail $secretInURL }}{{ end }}
+  NXS_ANOMALY_DELIVERY_PROXY_URL: {{ .url | quote }}
+  {{- end }}
+  {{- range $channel, $url := .channels }}
+  {{- if regexMatch "://[^/@]*:[^/@]*@" $url }}{{ fail $secretInURL }}{{ end }}
+  NXS_ANOMALY_DELIVERY_PROXY_{{ $channel | upper }}_URL: {{ $url | quote }}
+  {{- end }}
+  {{- if .noProxy }}
+  NXS_ANOMALY_DELIVERY_NO_PROXY: {{ .noProxy | quote }}
+  {{- end }}
+  {{- end }}
+  {{- /*
+    Tracing. Rendered into the shared ConfigMap so API and worker export to the
+    same collector under the same service name — a trace that only half the
+    deployment reports is worse than none, because it looks complete.
+  */}}
+  {{- with .Values.tracing }}
+  {{- if .enabled }}
+  {{- /* endpoint is required; the preflight above refuses to render without it. */}}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .endpoint | quote }}
+  OTEL_SERVICE_NAME: {{ default (include "nxs-anomaly.fullname" $) .serviceName | quote }}
+  {{- if ne (toString .sampleRatio) "" }}
+  OTEL_TRACES_SAMPLER: "parentbased_traceidratio"
+  OTEL_TRACES_SAMPLER_ARG: {{ .sampleRatio | quote }}
+  {{- end }}
+  {{- end }}
+  {{- end }}

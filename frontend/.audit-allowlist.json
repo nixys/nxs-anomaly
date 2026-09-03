@@ -1,0 +1,11 @@
+{
+  "_comment": "Advisories deliberately accepted by scripts/audit-gate.mjs. Every entry MUST carry a reason and a reviewBy (YYYY-MM-DD); the gate FAILS once an entry is past reviewBy, so exceptions cannot rot. Keep this list as small as possible.",
+  "allow": [
+    {
+      "ghsa": "GHSA-qwww-vcr4-c8h2",
+      "package": "react-router",
+      "reason": "RSC-mode CSRF (React Router 7.12.0-8.2.0). This app is a pure client-side SPA (BrowserRouter, no loaders/actions, no SSR, no React Server Components), so the affected server request-handling path is never mounted. No non-vulnerable react-router version exists as of 2026-07: latest 7.18.1 is inside the affected range and the 7.11.0 backport reintroduces 14 other high advisories. Re-review when react-router ships a fixed >8.2.0.",
+      "reviewBy": "2026-10-01"
+    }
+  ]
+}

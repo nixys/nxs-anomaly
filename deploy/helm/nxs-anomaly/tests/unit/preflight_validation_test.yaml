@@ -1,0 +1,171 @@
+suite: pre-render values validation
+release:
+  name: rel
+  namespace: nxs
+# No `templates:` filter: the preflight lives in a define invoked from
+# configmap.yaml, and rendering the whole chart is what a real `helm install`
+# does. See production_profile_test.yaml for the same reasoning.
+tests:
+  # ── Secret modes ────────────────────────────────────────────────────────────
+  - it: refuses two secret modes at once
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      externalSecrets.enabled: true
+      externalSecrets.secretStoreRef.name: vault-store
+    asserts:
+      - failedTemplate:
+          errorMessage: "incompatible secret modes: existingSecret, externalSecrets are all enabled — exactly one may provide the application Secret. Three of these four render or claim the same Secret name, so the winner would be decided by apply order rather than by anybody's intent."
+
+  - it: names every enabled mode, so the operator does not have to guess which pair conflicts
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      externalSecrets.enabled: true
+      vaultSecretOperator.enabled: true
+      inlineSecret.enabled: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "incompatible secret modes: existingSecret, externalSecrets, vaultSecretOperator, inlineSecret are all enabled — exactly one may provide the application Secret. Three of these four render or claim the same Secret name, so the winner would be decided by apply order rather than by anybody's intent."
+
+  - it: refuses a chart-managed VaultAuth alongside a referenced one
+    set:
+      vaultSecretOperator.enabled: true
+      vaultSecretOperator.vaultAuthRef: platform-auth
+      vaultSecretOperator.vaultAuth.create: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "vaultSecretOperator.vaultAuth.create=true and vaultSecretOperator.vaultAuthRef are both set — the chart-managed VaultAuth always wins, so the name in vaultAuthRef would be created-and-ignored. Pick one: create the VaultAuth here, or reference the platform's."
+
+  - it: refuses a VaultAuth that no enabled secret mode would use
+    set:
+      inlineSecret.enabled: true
+      vaultSecretOperator.vaultAuth.create: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "vaultSecretOperator.vaultAuth.create=true with vaultSecretOperator.enabled=false: the release would install a VaultAuth that nothing in it authenticates through"
+
+  # ── External database host ──────────────────────────────────────────────────
+  - it: refuses an empty external database host when the chart has to compose the DSN
+    set:
+      inlineSecret.enabled: true
+      postgresql.enabled: false
+    asserts:
+      - failedTemplate:
+          errorMessage: "empty external database host: postgresql.enabled=false and neither externalPostgres.dsn nor externalPostgres.host is set, so the DSN would render as postgres://user:pass@:5432/db and every pod would CrashLoop"
+
+  - it: accepts an external host
+    templates: [templates/secret.yaml]
+    set:
+      inlineSecret.enabled: true
+      externalPostgres.host: pg.rf.internal
+    asserts:
+      - matchRegex:
+          path: stringData.NXS_ANOMALY_DB_DSN
+          pattern: "@pg\\.rf\\.internal:5432/nxs_anomaly\\?sslmode=require$"
+
+  - it: does not demand a host in the operator-managed secret modes, where the DSN comes from the Secret
+    templates: [templates/configmap.yaml]
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      externalPostgres.host: ""
+    asserts:
+      - isKind: {of: ConfigMap}
+
+  # ── Replica counts ──────────────────────────────────────────────────────────
+  - it: refuses zero API replicas
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      api.replicaCount: 0
+    asserts:
+      - failedTemplate:
+          errorMessage: "invalid replica count: api.replicaCount must be at least 1 — nothing pages anybody at 0"
+
+  - it: refuses zero worker replicas
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      worker.replicaCount: 0
+    asserts:
+      - failedTemplate:
+          errorMessage: "invalid replica count: worker.replicaCount must be at least 1 — nothing pages anybody at 0"
+
+  - it: refuses zero frontend replicas but accepts frontend.enabled=false
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      frontend.replicaCount: 0
+    asserts:
+      - failedTemplate:
+          errorMessage: "invalid replica count: frontend.replicaCount must be at least 1, or set frontend.enabled=false to leave the UI out entirely"
+
+  - it: a disabled frontend is not held to a replica count
+    templates: [templates/configmap.yaml]
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      frontend.enabled: false
+      frontend.replicaCount: 0
+    asserts:
+      - isKind: {of: ConfigMap}
+
+  - it: production refuses a single API replica
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      config.NXS_ANOMALY_PROFILE: production
+      config.NXS_ANOMALY_TEAM_SCOPING: "true"
+      api.replicaCount: 1
+    asserts:
+      - failedTemplate:
+          errorMessage: "production profile: api.replicaCount must be at least 2 — a single replica makes every restart a paging outage"
+
+  - it: production refuses a PDB that permits no disruption at all
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      config.NXS_ANOMALY_PROFILE: production
+      config.NXS_ANOMALY_TEAM_SCOPING: "true"
+      api.replicaCount: 2
+      api.podDisruptionBudget.enabled: true
+      api.podDisruptionBudget.minAvailable: 2
+    asserts:
+      - failedTemplate:
+          errorMessage: "production profile: api.podDisruptionBudget.minAvailable (2) must be below api.replicaCount (2), otherwise the PDB allows zero voluntary disruptions and no node carrying this pod can ever be drained"
+
+  # ── Database transport security ─────────────────────────────────────────────
+  - it: production refuses a permissive sslmode
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      config.NXS_ANOMALY_PROFILE: production
+      config.NXS_ANOMALY_TEAM_SCOPING: "true"
+      externalPostgres.sslmode: prefer
+    asserts:
+      - failedTemplate:
+          errorMessage: "production profile: unsafe externalPostgres.sslmode \"prefer\" — use require, verify-ca or verify-full. \"prefer\"/\"allow\" silently fall back to plaintext when the server declines TLS, which is exactly the case worth failing on."
+
+  - it: production refuses sslmode=disable
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      config.NXS_ANOMALY_PROFILE: production
+      config.NXS_ANOMALY_TEAM_SCOPING: "true"
+      externalPostgres.sslmode: disable
+    asserts:
+      - failedTemplate:
+          errorMessage: "production profile: unsafe externalPostgres.sslmode \"disable\" — use require, verify-ca or verify-full. \"prefer\"/\"allow\" silently fall back to plaintext when the server declines TLS, which is exactly the case worth failing on."
+
+  - it: production accepts verify-full
+    templates: [templates/configmap.yaml]
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      config.NXS_ANOMALY_PROFILE: production
+      config.NXS_ANOMALY_TEAM_SCOPING: "true"
+      externalPostgres.sslmode: verify-full
+    asserts:
+      - isKind: {of: ConfigMap}
+

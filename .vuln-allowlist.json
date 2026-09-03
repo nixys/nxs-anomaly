@@ -1,0 +1,4 @@
+{
+  "_comment": "Go vulnerabilities deliberately accepted by scripts/vuln-gate.sh, mirroring frontend/.audit-allowlist.json. Every entry MUST carry an `id` (the GO-YYYY-NNNN advisory), a `reason` explaining why this deployment is not affected, and a `reviewBy` (YYYY-MM-DD) — the gate FAILS once an entry is past its review date, so exceptions cannot rot. Only govulncheck's symbol-level findings (code we actually call) are gated; module-level ones are reported as INFO and need no entry. Keep this list empty if you can.",
+  "allow": []
+}

@@ -1,0 +1,89 @@
+{{- if .Values.frontend.enabled -}}
+{{- $component := "frontend" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nxs-anomaly.componentName" (dict "ctx" . "component" $component) }}
+  labels:
+    {{- include "nxs-anomaly.componentLabels" (dict "ctx" . "component" $component) | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "nxs-anomaly.componentSelectorLabels" (dict "ctx" . "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nxs-anomaly.componentLabels" (dict "ctx" . "component" $component) | nindent 8 }}
+    spec:
+      {{- include "nxs-anomaly.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "nxs-anomaly.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.frontend.podSecurityContext | nindent 8 }}
+      containers:
+        - name: frontend
+          image: {{ include "nxs-anomaly.frontendImage" . }}
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          env:
+            # Same-origin proxy target: the API service this release created.
+            - name: NXS_ANOMALY_API_UPSTREAM
+              value: {{ printf "%s:%v" (include "nxs-anomaly.componentName" (dict "ctx" . "component" "api")) .Values.api.service.port | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.frontend.service.port }}
+          readinessProbe:
+            httpGet:
+              path: /index.html
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /index.html
+              port: http
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.frontend.securityContext | nindent 12 }}
+          volumeMounts:
+            # The standard nginx image writes its envsubst-rendered config, pid
+            # and caches at runtime; give uid 101 writable emptyDirs for each.
+            - {name: nginx-conf, mountPath: /etc/nginx/conf.d}
+            - {name: nginx-cache, mountPath: /var/cache/nginx}
+            - {name: nginx-run, mountPath: /run}
+            - {name: nginx-tmp, mountPath: /tmp}
+      volumes:
+        - {name: nginx-conf, emptyDir: {}}
+        - {name: nginx-cache, emptyDir: {}}
+        - {name: nginx-run, emptyDir: {}}
+        - {name: nginx-tmp, emptyDir: {}}
+      {{- with .Values.frontend.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.frontend.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.frontend.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- include "nxs-anomaly.topologySpread" (dict "ctx" . "component" $component "constraints" .Values.frontend.topologySpreadConstraints) | nindent 6 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nxs-anomaly.componentName" (dict "ctx" . "component" $component) }}
+  labels:
+    {{- include "nxs-anomaly.componentLabels" (dict "ctx" . "component" $component) | nindent 4 }}
+spec:
+  type: {{ .Values.frontend.service.type }}
+  selector:
+    {{- include "nxs-anomaly.componentSelectorLabels" (dict "ctx" . "component" $component) | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.frontend.service.port }}
+      targetPort: http
+{{- end }}

@@ -1,0 +1,17 @@
+{{- range $component := (list "api" "worker" "frontend") }}
+{{- $cfg := index $.Values $component }}
+{{- if and $cfg.podDisruptionBudget $cfg.podDisruptionBudget.enabled (or (ne $component "frontend") $.Values.frontend.enabled) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "nxs-anomaly.componentName" (dict "ctx" $ "component" $component) }}
+  labels:
+    {{- include "nxs-anomaly.componentLabels" (dict "ctx" $ "component" $component) | nindent 4 }}
+spec:
+  minAvailable: {{ $cfg.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "nxs-anomaly.componentSelectorLabels" (dict "ctx" $ "component" $component) | nindent 6 }}
+{{- end }}
+{{- end }}

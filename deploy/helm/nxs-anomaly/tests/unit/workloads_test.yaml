@@ -1,0 +1,120 @@
+suite: workloads, probes and hardening
+release:
+  name: rel
+  namespace: nxs
+set:
+  existingSecret.enabled: true
+  existingSecret.name: app-secret
+tests:
+  - it: API runs serve --no-scheduler with a /health readiness and /live liveness probe
+    templates:
+      - templates/api.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 2
+      # The image has CMD but no ENTRYPOINT, so command must be pinned or args
+      # would replace the binary itself (guards the exec-not-found regression).
+      - equal:
+          path: spec.template.spec.containers[0].command[0]
+          value: /usr/local/bin/nxs-anomaly
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--no-scheduler"
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /health
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /live
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.automountServiceAccountToken
+          value: false
+
+  - it: worker runs run-worker with telemetry probes and the WORKER_ADDR env
+    templates:
+      - templates/worker.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "run-worker"
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /ready
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.port
+          value: telemetry
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: NXS_ANOMALY_WORKER_ADDR
+            value: ":8081"
+
+  - it: frontend points its nginx upstream at the API service
+    templates:
+      - templates/frontend.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: NXS_ANOMALY_API_UPSTREAM
+            value: "rel-nxs-anomaly-api:8080"
+
+  - it: pod security context runs non-root
+    templates:
+      - templates/api.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+
+  - it: API PodDisruptionBudget is created by default
+    templates:
+      - templates/pdb.yaml
+    documentSelector:
+      path: metadata.name
+      value: rel-nxs-anomaly-api
+    asserts:
+      - isKind:
+          of: PodDisruptionBudget
+      - equal:
+          path: spec.minAvailable
+          value: 1
+
+  # Pod start order is arbitrary, so a fresh install or a rollout routinely
+  # brings the API and worker up while PostgreSQL is still starting. The
+  # application's own default is fail-fast, which is right for a one-shot CLI and
+  # wrong for a Deployment: observed on a live rollout as one API restart and two
+  # worker restarts, both "store init failed ... connection refused".
+  - it: the chart gives serve and run-worker a budget to wait for the database
+    templates:
+      - templates/configmap.yaml
+    asserts:
+      - equal:
+          path: data.NXS_ANOMALY_DB_CONNECT_MAX_WAIT_SECONDS
+          value: "60"
+
+  - it: fail-fast can be restored
+    templates:
+      - templates/configmap.yaml
+    set:
+      config.NXS_ANOMALY_DB_CONNECT_MAX_WAIT_SECONDS: "0"
+    asserts:
+      - equal:
+          path: data.NXS_ANOMALY_DB_CONNECT_MAX_WAIT_SECONDS
+          value: "0"

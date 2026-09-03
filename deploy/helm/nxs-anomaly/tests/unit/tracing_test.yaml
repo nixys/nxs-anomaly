@@ -1,0 +1,48 @@
+suite: OpenTelemetry tracing configuration
+release:
+  name: rel
+  namespace: nxs
+templates:
+  - templates/configmap.yaml
+tests:
+  # Tracing is off unless an endpoint is given, and enabling it without one is a
+  # render-time failure rather than a deployment that quietly exports nowhere.
+  - it: renders no tracing config by default
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+    asserts:
+      - notExists: {path: data.OTEL_EXPORTER_OTLP_ENDPOINT}
+
+  - it: renders the tracing endpoint and service name when enabled
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      tracing.enabled: true
+      tracing.endpoint: http://otel-collector:4318
+    asserts:
+      - equal: {path: data.OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-collector:4318"}
+      - equal: {path: data.OTEL_SERVICE_NAME, value: "rel-nxs-anomaly"}
+      - notExists: {path: data.OTEL_TRACES_SAMPLER_ARG}
+
+  - it: renders the sampler only when a ratio is stated
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      tracing.enabled: true
+      tracing.endpoint: http://otel-collector:4318
+      tracing.sampleRatio: 0.1
+      tracing.serviceName: nxs-anomaly-staging
+    asserts:
+      - equal: {path: data.OTEL_TRACES_SAMPLER, value: "parentbased_traceidratio"}
+      - equal: {path: data.OTEL_TRACES_SAMPLER_ARG, value: "0.1"}
+      - equal: {path: data.OTEL_SERVICE_NAME, value: "nxs-anomaly-staging"}
+
+  - it: refuses tracing enabled without an endpoint
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      tracing.enabled: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "tracing.enabled requires tracing.endpoint (an OTLP/HTTP collector URL)"

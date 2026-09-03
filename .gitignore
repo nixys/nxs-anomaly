@@ -1,0 +1,35 @@
+# Local/runtime data
+data/
+tmp/
+*.log
+
+# Build outputs
+bin/
+dist/
+coverage.out
+node_modules/
+# Stray binary from `go build ./tests/loadtest/` at repo root (harness is `go run`).
+/loadtest
+# The e2e API binary the CI job builds to $CI_PROJECT_DIR (start-api.sh runs it).
+/nxs-anomaly-e2e
+
+# Python artifacts (project is Go; these should never be committed)
+__pycache__/
+*.pyc
+*.egg-info/
+.venv*/
+
+# Local editor/system files
+.DS_Store
+.idea/
+.vscode/
+
+# Claude Code local state (agent worktrees etc.)
+.claude/
+
+# Archives accidentally dropped into the tree
+*.rar
+
+# cosign release keys must never be committed; they live in CI variables.
+cosign.key
+cosign.pub

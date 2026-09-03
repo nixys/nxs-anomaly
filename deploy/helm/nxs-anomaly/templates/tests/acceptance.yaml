@@ -1,0 +1,201 @@
+{{- if and .Values.tests.enabled .Values.tests.acceptance.enabled -}}
+{{- /*
+Post-install acceptance.
+
+test-connection.yaml answers "is the API up". This answers the only question an
+operator actually cares about after an install or an upgrade: if an alert
+arrives, does somebody get paged, can they act on it, and is the fact recorded?
+
+It drives the whole path through the public API — integration, alert, delivery
+attempt, acknowledge, resolve, audit — and then removes everything it created.
+Two deliberate choices:
+
+  * The canary user's only notification target is the `log` channel. It is a real
+    channel that goes through the whole delivery pipeline and produces a real
+    delivery attempt row, but it reaches no external system. A webhook target
+    would need egress the production profile blocks (SSRF guard) and the RF
+    preset's allowlist may refuse, so an acceptance failure would be reporting
+    the network's opinion rather than the installation's health.
+  * Cleanup runs from a trap, so a failed assertion still removes the canary. A
+    test that leaves a working integration behind on failure has added an
+    unmonitored ingest endpoint to a production installation.
+
+Needs an admin API key in the application Secret. It is read from there rather
+than passed through values so that it never lands in the release manifest.
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nxs-anomaly.fullname" . }}-acceptance
+  labels:
+    {{- include "nxs-anomaly.labels" . | nindent 4 }}
+    # A component label so NetworkPolicy can name these pods. Without one they
+    # carry the release's selector labels, are caught by the default-deny and
+    # have no rule of their own — `helm test` then fails on a policy-enabled
+    # install for reasons that have nothing to do with what it is testing.
+    app.kubernetes.io/component: test
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+data:
+  acceptance.sh: |
+    #!/bin/sh
+    # POSIX sh: the curl image has no bash, and no jq either — hence the
+    # grep/sed extraction, which mirrors the end-to-end scripts in tests/e2e.
+    set -eu
+
+    API="http://{{ include "nxs-anomaly.componentName" (dict "ctx" . "component" "api") }}:{{ .Values.api.service.port }}"
+    TIMEOUT={{ .Values.tests.acceptance.timeoutSeconds }}
+    TAG="helm-acceptance-${HOSTNAME}"
+
+    USER_ID=""; CHAIN_ID=""; INTEGRATION_ID=""; GROUP_ID=""
+    failed=0
+
+    say() { echo "--- $*"; }
+    fail() { echo "FAIL: $*" >&2; failed=1; exit 1; }
+
+    api() {
+      _m="$1"; _p="$2"; _b="${3:-}"
+      if [ -n "${_b}" ]; then
+        curl -sS --fail-with-body -X "${_m}" "${API}${_p}" \
+          -H "X-API-Key: ${ACCEPTANCE_API_KEY}" -H 'Content-Type: application/json' -d "${_b}"
+      else
+        curl -sS --fail-with-body -X "${_m}" "${API}${_p}" -H "X-API-Key: ${ACCEPTANCE_API_KEY}"
+      fi
+    }
+
+    # First "id" of a JSON object response. The API encodes Go maps with sorted
+    # keys, so the object's own id precedes any nested one (steps, routes).
+    first_id() { printf '%s' "$1" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4; }
+
+    # Cleanup is a trap: an assertion that fails midway must not leave a live
+    # ingest endpoint and a roster entry behind on a real installation.
+    cleanup() {
+      _rc=$?
+      say "removing the canary objects"
+      [ -n "${INTEGRATION_ID}" ] && api DELETE "/api/v1/integrations/${INTEGRATION_ID}" >/dev/null 2>&1 || true
+      [ -n "${CHAIN_ID}" ] && api DELETE "/api/v1/escalation-chains/${CHAIN_ID}" >/dev/null 2>&1 || true
+      [ -n "${USER_ID}" ] && api DELETE "/api/v1/users/${USER_ID}" >/dev/null 2>&1 || true
+      if [ -n "${INTEGRATION_ID}" ]; then
+        if api GET "/api/v1/integrations/${INTEGRATION_ID}" >/dev/null 2>&1; then
+          echo "FAIL: the canary integration ${INTEGRATION_ID} still exists after cleanup" >&2
+          [ "${_rc}" -eq 0 ] && _rc=1
+        fi
+      fi
+      if [ "${_rc}" -eq 0 ] && [ "${failed}" -eq 0 ]; then
+        echo "ACCEPTANCE PASSED"
+      fi
+      exit "${_rc}"
+    }
+    trap cleanup EXIT
+
+    say "waiting for the API"
+    curl -fsS --retry 30 --retry-delay 2 --retry-connrefused "${API}/health" >/dev/null \
+      || fail "the API never became healthy"
+
+    say "creating the canary user, chain and integration"
+    # role "" — a roster entry that cannot sign in. The canary exists to be
+    # paged, not to be an account.
+    user="$(api POST /api/v1/users "{\"name\":\"${TAG}\",\"username\":\"${TAG}\",\"role\":\"\",\"on_duty\":true,\"notification_targets\":[{\"type\":\"log\",\"target\":\"${TAG}\"}]}")"
+    USER_ID="$(first_id "${user}")"
+    [ -n "${USER_ID}" ] || fail "no id in the created user: ${user}"
+
+    chain="$(api POST /api/v1/escalation-chains "{\"name\":\"${TAG}\",\"steps\":[{\"kind\":\"NOTIFY_USER\",\"user_ids\":[\"${USER_ID}\"]}]}")"
+    CHAIN_ID="$(first_id "${chain}")"
+    [ -n "${CHAIN_ID}" ] || fail "no id in the created escalation chain: ${chain}"
+
+    integration="$(api POST /api/v1/integrations "{\"name\":\"${TAG}\",\"default_chain_id\":\"${CHAIN_ID}\"}")"
+    INTEGRATION_ID="$(first_id "${integration}")"
+    KEY="$(printf '%s' "${integration}" | sed -n 's/.*"key":"\([^"]*\)".*/\1/p')"
+    [ -n "${KEY}" ] || fail "no routing key in the created integration: ${integration}"
+
+    say "ingesting an alert"
+    api POST "/integrations/v1/webhook/${KEY}" \
+      "{\"title\":\"${TAG}\",\"severity\":\"critical\",\"status\":\"firing\",\"dedupe_key\":\"${TAG}\",\"labels\":{\"origin\":\"helm-test\"}}" >/dev/null \
+      || fail "the alert was not accepted"
+
+    say "waiting for the alert group"
+    deadline=$(( $(date +%s) + TIMEOUT ))
+    while :; do
+      groups="$(api GET "/api/v1/alert-groups?integration_id=${INTEGRATION_ID}&limit=5" || echo '')"
+      GROUP_ID="$(first_id "${groups}")"
+      [ -n "${GROUP_ID}" ] && break
+      [ "$(date +%s)" -ge "${deadline}" ] && fail "no alert group was created within ${TIMEOUT}s: ${groups}"
+      sleep 2
+    done
+
+    # The worker delivers on its own cadence (worker.pollIntervalSeconds), so
+    # this is the one wait that measures the worker rather than the API. A
+    # notification that never leaves delivery_scheduled means the worker is not
+    # running — the single most common broken install, and invisible to /health.
+    say "waiting for a delivery attempt"
+    deadline=$(( $(date +%s) + TIMEOUT ))
+    while :; do
+      attempts="$(api GET "/api/v1/delivery-attempts?limit=50" || echo '')"
+      if printf '%s' "${attempts}" | grep -q "\"target\":\"${TAG}\""; then break; fi
+      [ "$(date +%s)" -ge "${deadline}" ] && fail "no delivery attempt for ${TAG} within ${TIMEOUT}s; the worker is probably not processing. Last response: ${attempts}"
+      sleep 2
+    done
+
+    say "acknowledging and resolving"
+    api POST "/api/v1/alert-groups/${GROUP_ID}/acknowledge" >/dev/null || fail "acknowledge was refused"
+    api POST "/api/v1/alert-groups/${GROUP_ID}/resolve" >/dev/null || fail "resolve was refused"
+    group="$(api GET "/api/v1/alert-groups/${GROUP_ID}")"
+    printf '%s' "${group}" | grep -q '"status":"resolved"' \
+      || fail "the group is not resolved after resolve: ${group}"
+    printf '%s' "${group}" | grep -q '"acknowledged_at":"' \
+      || fail "the group carries no acknowledgement: ${group}"
+
+    # Audit is checked on the alert group rather than on the integration,
+    # because it is the acknowledge/resolve pair that has to be attributable
+    # afterwards — an audit trail that records object creation but not who
+    # silenced a page is not the trail anybody needs.
+    say "checking the audit trail"
+    audit="$(api GET "/api/v1/audit?entity_type=alert_group&entity_id=${GROUP_ID}&limit=50" || echo '')"
+    printf '%s' "${audit}" | grep -q 'acknowledge' \
+      || fail "the acknowledgement is missing from the audit trail: ${audit}"
+    printf '%s' "${audit}" | grep -q 'resolve' \
+      || fail "the resolution is missing from the audit trail: ${audit}"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "nxs-anomaly.fullname" . }}-acceptance
+  labels:
+    {{- include "nxs-anomaly.labels" . | nindent 4 }}
+    # A component label so NetworkPolicy can name these pods. Without one they
+    # carry the release's selector labels, are caught by the default-deny and
+    # have no rule of their own — `helm test` then fails on a policy-enabled
+    # install for reasons that have nothing to do with what it is testing.
+    app.kubernetes.io/component: test
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  {{- include "nxs-anomaly.imagePullSecrets" . | nindent 2 }}
+  securityContext:
+    {{- toYaml .Values.podSecurityContext | nindent 4 }}
+  containers:
+    - name: acceptance
+      image: {{ .Values.tests.image }}
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+      env:
+        - name: ACCEPTANCE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "nxs-anomaly.secretName" . }}
+              key: {{ .Values.tests.acceptance.apiKeySecretKey }}
+      command: ["/bin/sh", "/scripts/acceptance.sh"]
+      volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+          readOnly: true
+  volumes:
+    - name: scripts
+      configMap:
+        name: {{ include "nxs-anomaly.fullname" . }}-acceptance
+{{- end }}

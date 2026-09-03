@@ -1,0 +1,223 @@
+{{- if .Values.networkPolicy.enabled -}}
+{{- $ns := .Release.Namespace -}}
+# Default-deny for all nxs-anomaly pods, then the minimum allowances: DNS out,
+# API/worker → the bundled datastores, frontend → API,
+# and ingress to the frontend/API HTTP ports plus webhook ingest to the API.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nxs-anomaly.fullname" . }}-default-deny
+  labels:
+    {{- include "nxs-anomaly.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "nxs-anomaly.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nxs-anomaly.fullname" . }}-allow-dns
+  labels:
+    {{- include "nxs-anomaly.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "nxs-anomaly.selectorLabels" . | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nxs-anomaly.fullname" . }}-api-ingress
+  labels:
+    {{- include "nxs-anomaly.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "nxs-anomaly.componentSelectorLabels" (dict "ctx" . "component" "api") | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    # From the frontend (same-origin proxy) and Prometheus scrape / ingress.
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "nxs-anomaly.selectorLabels" . | nindent 14 }}
+        {{- range .Values.networkPolicy.extraIngress }}
+        - {{- toYaml . | nindent 10 }}
+        {{- end }}
+      ports:
+        - {protocol: TCP, port: {{ .Values.api.service.port }}}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nxs-anomaly.fullname" . }}-worker-ingress
+  labels:
+    {{- include "nxs-anomaly.labels" . | nindent 4 }}
+spec:
+  # The worker serves no application traffic, only its telemetry port
+  # (/live, /ready, /metrics). Nothing in the release talks to it, so the only
+  # legitimate ingress source is whatever extraIngress names (typically
+  # Prometheus). Without this policy the default-deny above leaves the worker
+  # unscrapable even when serviceMonitor.enabled is true.
+  podSelector:
+    matchLabels:
+      {{- include "nxs-anomaly.componentSelectorLabels" (dict "ctx" . "component" "worker") | nindent 6 }}
+  policyTypes: [Ingress]
+  {{- if .Values.networkPolicy.extraIngress }}
+  # An ingress rule with an empty `from` matches ALL sources in the NetworkPolicy
+  # API, not none — so the rule (and its `from` list) must only be emitted when
+  # extraIngress actually has entries. With no extraIngress configured, this
+  # policy has no ingress rules at all, i.e. still deny-all, same as the
+  # default-deny policy above.
+  ingress:
+    - from:
+        {{- range .Values.networkPolicy.extraIngress }}
+        - {{- toYaml . | nindent 10 }}
+        {{- end }}
+      ports:
+        - {protocol: TCP, port: {{ .Values.worker.telemetryPort }}}
+  {{- end }}
+{{- if .Values.frontend.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nxs-anomaly.fullname" . }}-frontend
+  labels:
+    {{- include "nxs-anomaly.labels" . | nindent 4 }}
+spec:
+  # The frontend was the one component the default-deny above covered and
+  # nothing then allowed: no ingress rule, and no egress rule either, because
+  # egress-app below selects only api and worker. Turning networkPolicy on
+  # therefore cut the browser off from nginx AND nginx off from the API it
+  # proxies /api/ to — the header comment at the top of this file promised
+  # "ingress to the frontend/API HTTP ports" and only the API half existed.
+  # The kind e2e did not catch it: it asserts on the API and worker ports from a
+  # monitoring and an attacker namespace, and never loads the UI.
+  podSelector:
+    matchLabels:
+      {{- include "nxs-anomaly.componentSelectorLabels" (dict "ctx" . "component" "frontend") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  {{- if .Values.networkPolicy.extraIngress }}
+  # Same reasoning as the worker rule: an ingress rule with an empty `from`
+  # matches ALL sources, so the rule is emitted only when extraIngress names
+  # some. Whoever terminates ingress — an ingress controller, an Istio gateway —
+  # lives outside this release and can only be named from values.
+  ingress:
+    - from:
+        {{- range .Values.networkPolicy.extraIngress }}
+        - {{- toYaml . | nindent 10 }}
+        {{- end }}
+      ports:
+        - {protocol: TCP, port: {{ .Values.frontend.service.port }}}
+  {{- end }}
+  egress:
+    # nginx is a same-origin proxy in front of the API; without this it serves
+    # the SPA and every /api/ call inside it fails.
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "nxs-anomaly.componentSelectorLabels" (dict "ctx" . "component" "api") | nindent 14 }}
+      ports:
+        - {protocol: TCP, port: {{ .Values.api.service.port }}}
+    # DNS is granted separately by the allow-dns policy above.
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nxs-anomaly.fullname" . }}-egress-app
+  labels:
+    {{- include "nxs-anomaly.labels" . | nindent 4 }}
+spec:
+  # API and worker reach the databases and arbitrary provider endpoints
+  # (webhooks/SMTP/Telegram), so egress to the wider network is permitted; the
+  # app's own SSRF guard (NXS_ANOMALY_BLOCK_PRIVATE_WEBHOOKS) narrows that.
+  podSelector:
+    matchLabels:
+      {{- include "nxs-anomaly.selectorLabels" . | nindent 6 }}
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [api, worker]
+  policyTypes: [Egress]
+  egress:
+    - {}
+{{- if .Values.tests.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nxs-anomaly.fullname" . }}-tests
+  labels:
+    {{- include "nxs-anomaly.labels" . | nindent 4 }}
+spec:
+  # `helm test` pods talk to the API and nothing else. They are release pods, so
+  # the default-deny selects them; without this they can only resolve names and
+  # the test fails for a reason unrelated to what it checks.
+  podSelector:
+    matchLabels:
+      {{- include "nxs-anomaly.componentSelectorLabels" (dict "ctx" . "component" "test") | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "nxs-anomaly.componentSelectorLabels" (dict "ctx" . "component" "api") | nindent 14 }}
+      ports:
+        - {protocol: TCP, port: {{ .Values.api.service.port }}}
+{{- end }}
+{{/*
+The bundled datastores that need an ingress policy. Built as an accumulator
+rather than one list literal so that the enterprise entries can be removed as
+whole lines: a multi-line list expression cannot carry a comment marker inside
+it, and an edition without those datastores must not be left with a dangling
+element.
+*/}}
+{{- $datastores := list (dict "component" "postgresql" "enabled" .Values.postgresql.enabled "ports" (list 5432) "from" (list "api" "worker")) -}}
+{{- range $ds := $datastores }}
+{{- if $ds.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nxs-anomaly.fullname" $ }}-{{ $ds.component }}-ingress
+  labels:
+    {{- include "nxs-anomaly.labels" $ | nindent 4 }}
+spec:
+  # The bundled datastores carry the release's selector labels, so the
+  # default-deny above applies Ingress to them too — and allowing API/worker
+  # *egress* does nothing on its own, because a NetworkPolicy decision needs the
+  # allowance on both ends. Without this the API and worker come up, fail to
+  # reach PostgreSQL and CrashLoopBackOff, which is exactly what the kind
+  # NetworkPolicy e2e caught: the header comment above promised this rule and
+  # nothing implemented it.
+  podSelector:
+    matchLabels:
+      {{- include "nxs-anomaly.componentSelectorLabels" (dict "ctx" $ "component" $ds.component) | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "nxs-anomaly.selectorLabels" $ | nindent 14 }}
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [{{ join ", " $ds.from }}]
+      ports:
+        {{- range $p := $ds.ports }}
+        - {protocol: TCP, port: {{ $p }}}
+        {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,38 @@
+apiVersion: v2
+name: nxs-anomaly
+# The chart name carries the edition. The two editions ship different contents
+# and are published to different registries, so they must not share coordinates:
+# one name and version resolving to two different charts makes mirroring,
+# caching and signature provenance ambiguous.
+#
+# The name does NOT reach the objects the chart creates: values.yaml pins
+# nameOverride, so resource names and — crucially — the immutable Deployment
+# selectors are identical in both editions. Without that pin, moving a release
+# from one edition to the other would not be an upgrade at all: helm would refuse
+# to change a selector, and every PersistentVolumeClaim would be orphaned.
+description: >-
+  Official Helm chart for nxs-anomaly — a compact Go alerting/on-call service
+  (API, worker and web frontend). Its datastores can be run in-cluster for
+  dev/test or referenced as external managed services.
+type: application
+# Both lines are stamped from ./VERSION by scripts/set-version.sh and gated by
+# scripts/check-version.sh. `appVersion` keeps the `v` because image.tag defaults
+# to it and the published image tags are the git tag verbatim (v0.1.29); the chart
+# version cannot, because chart versions must be SemVer. The release job
+# (release:helm-chart) repackages with the same pair.
+version: 0.1.74
+appVersion: "v0.1.74"
+home: https://github.com/nixys/nxs-anomaly/nxs-anomaly
+sources:
+  - https://github.com/nixys/nxs-anomaly/nxs-anomaly
+maintainers:
+  - name: Nixys Team
+    email: hello@nixys.io
+keywords:
+  - alerting
+  - on-call
+  - incident-response
+  - prometheus
+annotations:
+  artifacthub.io/category: monitoring-logging
+  artifacthub.io/license: Apache-2.0

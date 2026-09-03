@@ -1,0 +1,91 @@
+upstream nxs_anomaly_api {
+    server ${NXS_ANOMALY_API_UPSTREAM};
+}
+
+server {
+    listen 8080;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Do not advertise the nginx version to anyone scanning for a known CVE.
+    server_tokens off;
+
+    # Security headers. Repeated in every location that sets an add_header of
+    # its own: nginx's add_header does not merge, a location that declares one
+    # drops every header inherited from here. Missing that is how index.html —
+    # the one response that most needs them — ends up without any.
+    #
+    # No Strict-Transport-Security: TLS terminates at the ingress, so this
+    # server cannot tell an https request from a plain one, and a wrong HSTS
+    # header pins a host to https for months. It belongs on whatever terminates
+    # TLS.
+    #
+    # The CSP matches what the build actually emits: hashed same-origin assets,
+    # no inline script, no third-party origin. 'unsafe-inline' is granted to
+    # styles only, for the theme variables Mantine injects at runtime.
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Content-Security-Policy "${NXS_ANOMALY_CSP}" always;
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+    gzip_min_length 1024;
+
+    # Hashed assets are immutable; index.html must never be cached.
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Content-Security-Policy "${NXS_ANOMALY_CSP}" always;
+    }
+
+    location = /index.html {
+        add_header Cache-Control "no-store";
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Content-Security-Policy "${NXS_ANOMALY_CSP}" always;
+    }
+
+    # Same-origin proxy to the Go API — this is why the backend needs no CORS.
+    location /api/ {
+        proxy_pass http://nxs_anomaly_api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+
+    location = /health {
+        proxy_pass http://nxs_anomaly_api;
+        proxy_set_header Host $host;
+    }
+
+    # Ingestion endpoints, so the URLs shown on the Integrations page are usable
+    # against this same host. Scoped to /v1/ so the SPA route /integrations/:id
+    # still falls through to index.html.
+    location /integrations/v1/ {
+        proxy_pass http://nxs_anomaly_api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    location = /v2/alert/pool {
+        proxy_pass http://nxs_anomaly_api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # SPA fallback: client-side routes resolve to index.html.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

@@ -1,0 +1,76 @@
+suite: outbound delivery proxy
+release:
+  name: rel
+  namespace: nxs
+templates:
+  - templates/configmap.yaml
+tests:
+  - it: renders no proxy variables by default — a deployment that needs none must not gain one
+    asserts:
+      - isNull: {path: "data.NXS_ANOMALY_DELIVERY_PROXY_URL"}
+      - isNull: {path: "data.NXS_ANOMALY_DELIVERY_NO_PROXY"}
+
+  - it: renders the default proxy and the NO_PROXY list
+    set:
+      deliveryProxy.url: "http://egress.internal:3128"
+      deliveryProxy.noProxy: "receiver.internal,.corp.example"
+    asserts:
+      - equal:
+          path: "data.NXS_ANOMALY_DELIVERY_PROXY_URL"
+          value: "http://egress.internal:3128"
+      - equal:
+          path: "data.NXS_ANOMALY_DELIVERY_NO_PROXY"
+          value: "receiver.internal,.corp.example"
+
+  # The per-channel form is the point of the feature: only the blocked providers
+  # go through the tunnel, the internal receiver keeps going out directly.
+  - it: renders per-channel overrides under the variable name the application reads
+    set:
+      deliveryProxy.url: "http://egress.internal:3128"
+      deliveryProxy.channels:
+        telegram: "socks5://tunnel.internal:1080"
+        webhook: "direct"
+    asserts:
+      - equal:
+          path: "data.NXS_ANOMALY_DELIVERY_PROXY_TELEGRAM_URL"
+          value: "socks5://tunnel.internal:1080"
+      - equal:
+          path: "data.NXS_ANOMALY_DELIVERY_PROXY_WEBHOOK_URL"
+          value: "direct"
+
+  # A ConfigMap is readable by anyone with get on the namespace.
+  - it: refuses a proxy URL carrying a password
+    set:
+      deliveryProxy.url: "http://user:s3cret@egress.internal:3128"
+    asserts:
+      - failedTemplate:
+          errorMessage: "a delivery proxy URL with a password must not be rendered into a ConfigMap. Put NXS_ANOMALY_DELIVERY_PROXY_URL (or the per-channel variable) in the application Secret instead"
+
+  - it: refuses a password in a per-channel override too
+    set:
+      deliveryProxy.channels:
+        telegram: "socks5://user:s3cret@tunnel.internal:1080"
+    asserts:
+      - failedTemplate:
+          errorMessage: "a delivery proxy URL with a password must not be rendered into a ConfigMap. Put NXS_ANOMALY_DELIVERY_PROXY_URL (or the per-channel variable) in the application Secret instead"
+
+  # A username with no password is not a credential worth refusing; refusing it
+  # would push an operator to the Secret for nothing.
+  - it: allows a proxy URL with a bare username
+    set:
+      deliveryProxy.url: "http://svc@egress.internal:3128"
+    asserts:
+      - equal:
+          path: "data.NXS_ANOMALY_DELIVERY_PROXY_URL"
+          value: "http://svc@egress.internal:3128"
+
+  # A tcp relay is an ordinary value here — no credentials to leak, and the chart
+  # stays out of judging schemes, which the application already does at startup.
+  - it: renders a tcp relay endpoint for the channel it was set on
+    set:
+      deliveryProxy.channels:
+        telegram: "tcp://relay.example.com:443"
+    asserts:
+      - equal:
+          path: "data.NXS_ANOMALY_DELIVERY_PROXY_TELEGRAM_URL"
+          value: "tcp://relay.example.com:443"

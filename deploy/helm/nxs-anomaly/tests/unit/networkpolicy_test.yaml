@@ -1,0 +1,203 @@
+suite: NetworkPolicy ingress for API/worker and the Prometheus preflight
+release:
+  name: rel
+  namespace: nxs
+set:
+  existingSecret.enabled: true
+  existingSecret.name: app-secret
+  networkPolicy.enabled: true
+
+tests:
+  - it: worker gets no ingress rule (deny-all) when extraIngress is empty
+    templates:
+      - templates/networkpolicy.yaml
+    documentSelector:
+      path: metadata.name
+      value: rel-nxs-anomaly-worker-ingress
+    asserts:
+      - isKind:
+          of: NetworkPolicy
+      - notExists:
+          path: spec.ingress
+
+  - it: worker allows only extraIngress sources at the telemetry port
+    templates:
+      - templates/networkpolicy.yaml
+    documentSelector:
+      path: metadata.name
+      value: rel-nxs-anomaly-worker-ingress
+    set:
+      networkPolicy.extraIngress:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+    asserts:
+      - equal:
+          path: spec.ingress[0].from[0].namespaceSelector.matchLabels
+          value:
+            kubernetes.io/metadata.name: monitoring
+      - equal:
+          path: spec.ingress[0].ports[0].port
+          value: 8081
+      - lengthEqual:
+          path: spec.ingress[0].from
+          count: 1
+
+  - it: API ingress keeps the in-release frontend allowance plus extraIngress
+    templates:
+      - templates/networkpolicy.yaml
+    documentSelector:
+      path: metadata.name
+      value: rel-nxs-anomaly-api-ingress
+    set:
+      networkPolicy.extraIngress:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+    asserts:
+      - lengthEqual:
+          path: spec.ingress[0].from
+          count: 2
+      - equal:
+          path: spec.ingress[0].from[1].namespaceSelector.matchLabels
+          value:
+            kubernetes.io/metadata.name: monitoring
+
+  # Regression: the default-deny selects the bundled datastores too, so without a
+  # matching ingress rule the API and worker CrashLoopBackOff against an
+  # unreachable PostgreSQL. Egress on the API/worker side is not enough — a
+  # NetworkPolicy decision needs the allowance at both ends.
+  - it: bundled PostgreSQL accepts ingress from the API and worker on 5432
+    templates:
+      - templates/networkpolicy.yaml
+    documentSelector:
+      path: metadata.name
+      value: rel-nxs-anomaly-postgresql-ingress
+    set:
+      postgresql.enabled: true
+    asserts:
+      - equal:
+          path: spec.podSelector.matchLabels["app.kubernetes.io/component"]
+          value: postgresql
+      - equal:
+          path: spec.ingress[0].from[0].podSelector.matchExpressions[0].values
+          value: [api, worker]
+      - equal:
+          path: spec.ingress[0].ports[0].port
+          value: 5432
+      - lengthEqual:
+          path: spec.ingress[0].from
+          count: 1
+
+  - it: production profile rejects NetworkPolicy+ServiceMonitor with no extraIngress
+    set:
+      config.NXS_ANOMALY_PROFILE: production
+      # Stating the boundary decision: the preflight refuses to render without it.
+      config.NXS_ANOMALY_TEAM_SCOPING: "true"
+      serviceMonitor.enabled: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "production profile: networkPolicy.enabled + serviceMonitor.enabled with no networkPolicy.extraIngress leaves Prometheus unable to reach the API/worker — set extraIngress to your Prometheus namespaceSelector/podSelector"
+
+  - it: production profile accepts NetworkPolicy+ServiceMonitor once extraIngress is set
+    templates:
+      - templates/configmap.yaml
+    set:
+      config.NXS_ANOMALY_PROFILE: production
+      # Stating the boundary decision: the preflight refuses to render without it.
+      config.NXS_ANOMALY_TEAM_SCOPING: "true"
+      serviceMonitor.enabled: true
+      networkPolicy.extraIngress:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+    asserts:
+      - equal: {path: data.NXS_ANOMALY_PROFILE, value: production}
+
+  - it: production profile does not require extraIngress when ServiceMonitor is disabled
+    templates:
+      - templates/configmap.yaml
+    set:
+      config.NXS_ANOMALY_PROFILE: production
+      # Stating the boundary decision: the preflight refuses to render without it.
+      config.NXS_ANOMALY_TEAM_SCOPING: "true"
+      serviceMonitor.enabled: false
+    asserts:
+      - equal: {path: data.NXS_ANOMALY_PROFILE, value: production}
+
+  # The frontend was the component default-deny covered and nothing allowed:
+  # no ingress rule and no egress rule, so turning networkPolicy on cut the
+  # browser off from nginx and nginx off from the API it proxies to. The kind
+  # e2e never loads the UI, so nothing caught it.
+  - it: the frontend may be reached and may reach the API
+    templates:
+      - templates/networkpolicy.yaml
+    set:
+      networkPolicy.enabled: true
+      frontend.enabled: true
+      networkPolicy.extraIngress:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+    asserts:
+      - exists:
+          path: spec.egress
+        documentSelector:
+          path: metadata.name
+          value: rel-nxs-anomaly-frontend
+      - equal:
+          path: spec.egress[0].ports[0].port
+          value: 8080
+        documentSelector:
+          path: metadata.name
+          value: rel-nxs-anomaly-frontend
+      - equal:
+          path: spec.egress[0].to[0].podSelector.matchLabels['app.kubernetes.io/component']
+          value: api
+        documentSelector:
+          path: metadata.name
+          value: rel-nxs-anomaly-frontend
+      - equal:
+          path: spec.ingress[0].from[0].namespaceSelector.matchLabels['kubernetes.io/metadata.name']
+          value: istio-system
+        documentSelector:
+          path: metadata.name
+          value: rel-nxs-anomaly-frontend
+
+  # Same trap as the worker rule: an ingress rule with an empty `from` matches
+  # every source, so with no extraIngress the policy must carry no ingress rule
+  # at all rather than one that allows the world.
+  - it: without extraIngress the frontend keeps egress but allows no ingress
+    templates:
+      - templates/networkpolicy.yaml
+    set:
+      networkPolicy.enabled: true
+      frontend.enabled: true
+    asserts:
+      - notExists:
+          path: spec.ingress
+        documentSelector:
+          path: metadata.name
+          value: rel-nxs-anomaly-frontend
+      - exists:
+          path: spec.egress
+        documentSelector:
+          path: metadata.name
+          value: rel-nxs-anomaly-frontend
+
+  - it: helm test pods may reach the API
+    templates:
+      - templates/networkpolicy.yaml
+    set:
+      networkPolicy.enabled: true
+      tests.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: rel-nxs-anomaly-tests
+    asserts:
+      - equal:
+          path: spec.podSelector.matchLabels['app.kubernetes.io/component']
+          value: test
+      - equal:
+          path: spec.egress[0].ports[0].port
+          value: 8080

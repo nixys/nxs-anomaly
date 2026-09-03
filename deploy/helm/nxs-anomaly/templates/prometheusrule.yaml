@@ -1,0 +1,26 @@
+{{- if and .Values.prometheusRule.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1") -}}
+{{/*
+  The CRD check is not defensiveness for its own sake. Without it, enabling the
+  flag on a cluster that has no Prometheus Operator emits a manifest of an
+  unknown kind, and a GitOps controller then fails to sync the ENTIRE release —
+  one observability toggle takes the whole application out of reconciliation.
+  Observed on a dev cluster, where this is exactly why the flag had to stay off.
+
+  The trade is a silent no-op where the CRDs are missing. That is the lesser
+  harm: nothing you had keeps working either way, and the readiness report
+  already tells an operator whether metrics are being scraped.
+*/}}
+# Rule groups are kept in files/alerting-rules.yaml, copied from
+# docs/prometheus-rules.yaml (BETA-021). Keep the two in sync.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "nxs-anomaly.fullname" . }}
+  labels:
+    {{- include "nxs-anomaly.labels" . | nindent 4 }}
+    {{- with .Values.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+{{ .Files.Get "files/alerting-rules.yaml" | indent 2 }}
+{{- end }}

@@ -1,0 +1,97 @@
+{{- $vs := .Values.istio.virtualService -}}
+{{- $gateway := .Values.istio.gateway -}}
+{{- if $vs.enabled }}
+{{- $vsNamespace := default .Release.Namespace $vs.namespace -}}
+{{- $gateways := $vs.gateways -}}
+{{- if and (not $gateways) $gateway.enabled -}}
+{{-   $gatewayName := required "istio.gateway.name is required when istio.gateway.enabled" $gateway.name -}}
+{{-   $gatewayNamespace := default .Release.Namespace $gateway.namespace -}}
+{{-   $gatewayRef := $gatewayName -}}
+{{-   if ne $gatewayNamespace $vsNamespace -}}
+{{-     $gatewayRef = printf "%s/%s" $gatewayNamespace $gatewayName -}}
+{{-   end -}}
+{{-   $gateways = list $gatewayRef -}}
+{{- end -}}
+{{- $hosts := $vs.hosts -}}
+{{- if not $hosts -}}
+{{-   $hosts = list (required "istio.virtualService: set hosts or ingress.host" .Values.ingress.host) -}}
+{{- end -}}
+{{- $serviceName := include "nxs-anomaly.componentName" (dict "ctx" . "component" "api") -}}
+{{- $servicePort := .Values.api.service.port -}}
+{{- if .Values.frontend.enabled -}}
+{{-   $serviceName = include "nxs-anomaly.componentName" (dict "ctx" . "component" "frontend") -}}
+{{-   $servicePort = .Values.frontend.service.port -}}
+{{- end -}}
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: {{ include "nxs-anomaly.fullname" . }}
+  namespace: {{ $vsNamespace }}
+  labels:
+    {{- include "nxs-anomaly.labels" . | nindent 4 }}
+  {{- with $vs.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  hosts:
+    {{- toYaml $hosts | nindent 4 }}
+  {{- with $gateways }}
+  gateways:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: {{ printf "%s.%s.svc.cluster.local" $serviceName .Release.Namespace }}
+            port:
+              number: {{ $servicePort }}
+{{ end }}
+{{- if $gateway.enabled }}
+{{- $gatewayName := required "istio.gateway.name is required when istio.gateway.enabled" $gateway.name -}}
+{{- $gatewayNamespace := default .Release.Namespace $gateway.namespace -}}
+{{- $gatewayHost := $gateway.host -}}
+{{- if not $gatewayHost -}}
+{{-   if $vs.hosts -}}
+{{-     $gatewayHost = first $vs.hosts -}}
+{{-   else -}}
+{{-     $gatewayHost = required "istio.gateway: set host, virtualService.hosts or ingress.host" .Values.ingress.host -}}
+{{-   end -}}
+{{- end -}}
+---
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: {{ $gatewayName }}
+  namespace: {{ $gatewayNamespace }}
+  labels:
+    {{- include "nxs-anomaly.labels" . | nindent 4 }}
+  {{- with $gateway.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  selector:
+    {{- toYaml $gateway.selector | nindent 4 }}
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - {{ $gatewayHost | quote }}
+    {{- if $gateway.tls.enabled }}
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      tls:
+        mode: {{ $gateway.tls.mode }}
+        credentialName: {{ required "istio.gateway.tls.credentialName is required when TLS is enabled" $gateway.tls.credentialName }}
+      hosts:
+        - {{ $gatewayHost | quote }}
+    {{- end }}
+{{- end }}

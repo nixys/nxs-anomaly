@@ -1,0 +1,14 @@
+node_modules
+dist
+*.tsbuildinfo
+# Playwright (BETA-002 e2e)
+test-results
+playwright-report
+.playwright
+e2e/nxs-anomaly-e2e
+
+# vitest --coverage output
+coverage/
+
+# Design export artefacts (frontend/design, regenerated on demand)
+design-export/

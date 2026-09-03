@@ -1,0 +1,577 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "nxs-anomaly chart values",
+  "description": "Shape and type checks for the values Helm can judge on its own. Anything that depends on the relationship between two values — a secret mode against another secret mode, a replica count against a PodDisruptionBudget, sslmode against the security profile — lives in the chart preflight (templates/_helpers.tpl), because JSON Schema cannot say 'unsafe only when the production profile is on' in a way an operator can read. The two are complementary: this file rejects a value that is the wrong kind of thing, the preflight rejects a combination that is the wrong thing to do.",
+  "type": "object",
+  "properties": {
+    "nameOverride": {
+      "type": "string"
+    },
+    "fullnameOverride": {
+      "type": "string"
+    },
+    "image": {
+      "type": "object",
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tag": {
+          "type": "string",
+          "description": "Empty means .Chart.AppVersion."
+        },
+        "pullPolicy": {
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        }
+      },
+      "required": [
+        "repository"
+      ]
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "annotations": {
+          "type": "object"
+        }
+      }
+    },
+    "podSecurityContext": {
+      "type": "object"
+    },
+    "securityContext": {
+      "type": "object"
+    },
+    "api": {
+      "$ref": "#/$defs/backendComponent"
+    },
+    "worker": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/backendComponent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "pollIntervalSeconds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "telemetryPort": {
+              "$ref": "#/$defs/port"
+            }
+          }
+        }
+      ]
+    },
+    "frontend": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/backendComponent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "image": {
+              "type": "object",
+              "properties": {
+                "repository": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "tag": {
+                  "type": "string"
+                },
+                "pullPolicy": {
+                  "enum": [
+                    "Always",
+                    "IfNotPresent",
+                    "Never"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "config": {
+      "$ref": "#/$defs/envMap"
+    },
+    "extraConfig": {
+      "$ref": "#/$defs/envMap"
+    },
+    "rateLimits": {
+      "type": "object",
+      "description": "Cluster-wide rates; the chart divides by api.replicaCount. Empty string means 'leave it to the application'.",
+      "properties": {
+        "webhookRatePerCluster": {
+          "$ref": "#/$defs/optionalNumber"
+        },
+        "apiRatePerCluster": {
+          "$ref": "#/$defs/optionalNumber"
+        }
+      }
+    },
+    "tracing": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "endpoint": {
+          "type": "string",
+          "description": "OTLP/HTTP collector base URL. Required when enabled — enforced by the preflight, which can say why.",
+          "pattern": "^$|^https?://"
+        },
+        "serviceName": {
+          "type": "string"
+        },
+        "sampleRatio": {
+          "$ref": "#/$defs/optionalUnitInterval"
+        }
+      }
+    },
+    "existingSecret": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "externalSecrets": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "refreshInterval": {
+          "type": "string"
+        },
+        "secretStoreRef": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "SecretStore",
+                "ClusterSecretStore"
+              ]
+            }
+          }
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "secretKey": {
+                "type": "string",
+                "minLength": 1
+              },
+              "remoteRef": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "secretKey",
+              "remoteRef"
+            ]
+          }
+        }
+      }
+    },
+    "vaultSecretOperator": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "mount": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "refreshAfter": {
+          "type": "string"
+        },
+        "vaultAuthRef": {
+          "type": "string"
+        }
+      }
+    },
+    "inlineSecret": {
+      "type": "object",
+      "description": "Dev/CI only. The production profile refuses to render with this enabled.",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "data": {
+          "$ref": "#/$defs/envMap"
+        }
+      }
+    },
+    "postgresql": {
+      "$ref": "#/$defs/bundledDatabase"
+    },
+    "externalPostgres": {
+      "type": "object",
+      "properties": {
+        "dsn": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "port": {
+          "$ref": "#/$defs/port"
+        },
+        "username": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        },
+        "database": {
+          "type": "string"
+        },
+        "sslmode": {
+          "description": "libpq sslmode. 'prefer' and 'allow' fall back to plaintext when the server declines TLS; the production preflight refuses everything below 'require'.",
+          "enum": [
+            "disable",
+            "allow",
+            "prefer",
+            "require",
+            "verify-ca",
+            "verify-full"
+          ]
+        }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "className": {
+          "type": "string"
+        },
+        "annotations": {
+          "type": "object"
+        },
+        "host": {
+          "type": "string"
+        },
+        "tls": {
+          "type": "array"
+        }
+      }
+    },
+    "istio": {
+      "type": "object"
+    },
+    "gatewayAPI": {
+      "type": "object"
+    },
+    "networkPolicy": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "extraIngress": {
+          "type": "array",
+          "description": "NetworkPolicyPeer list. With serviceMonitor on, the production preflight requires at least one, since the default-deny policy has no rule for Prometheus.",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "serviceMonitor": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "interval": {
+          "$ref": "#/$defs/duration"
+        },
+        "scrapeTimeout": {
+          "$ref": "#/$defs/duration"
+        },
+        "labels": {
+          "type": "object"
+        }
+      }
+    },
+    "prometheusRule": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "labels": {
+          "type": "object"
+        }
+      }
+    },
+    "tests": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "acceptance": {
+          "type": "object",
+          "description": "Post-install acceptance: drives a real alert through a temporary integration and removes it again.",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "apiKeySecretKey": {
+              "type": "string",
+              "minLength": 1
+            },
+            "timeoutSeconds": {
+              "type": "integer",
+              "minimum": 10
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "duration": {
+      "type": "string",
+      "pattern": "^[0-9]+(ms|s|m|h)$"
+    },
+    "optionalNumber": {
+      "description": "A number, or an empty string meaning 'unset'.",
+      "anyOf": [
+        {
+          "type": "number",
+          "minimum": 0
+        },
+        {
+          "type": "string",
+          "pattern": "^$|^[0-9]+(\\.[0-9]+)?$"
+        }
+      ]
+    },
+    "optionalUnitInterval": {
+      "description": "A ratio in [0,1], or an empty string meaning 'sample everything'.",
+      "anyOf": [
+        {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        {
+          "type": "string",
+          "pattern": "^$|^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+        }
+      ]
+    },
+    "envMap": {
+      "description": "Environment entries. Scalars only: a map or list here would render as a Go-formatted string into the ConfigMap and the application would read that string.",
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "string",
+          "number",
+          "boolean"
+        ]
+      }
+    },
+    "topologySpread": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "maxSkew": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "topologyKey": {
+            "type": "string",
+            "minLength": 1
+          },
+          "whenUnsatisfiable": {
+            "enum": [
+              "DoNotSchedule",
+              "ScheduleAnyway"
+            ]
+          },
+          "labelSelectorComponent": {
+            "enum": [
+              "api",
+              "worker",
+              "frontend"
+            ]
+          }
+        }
+      }
+    },
+    "backendComponent": {
+      "type": "object",
+      "properties": {
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "0 is refused by the preflight rather than here, so the error names the component and says what it means."
+        },
+        "extraArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "extraEnv": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "resources": {
+          "type": "object"
+        },
+        "nodeSelector": {
+          "type": "object"
+        },
+        "tolerations": {
+          "type": "array"
+        },
+        "affinity": {
+          "type": "object"
+        },
+        "topologySpreadConstraints": {
+          "$ref": "#/$defs/topologySpread"
+        },
+        "podDisruptionBudget": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "minAvailable": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "service": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "enum": [
+                "ClusterIP",
+                "NodePort",
+                "LoadBalancer"
+              ]
+            },
+            "port": {
+              "$ref": "#/$defs/port"
+            }
+          }
+        }
+      }
+    },
+    "bundledDatabase": {
+      "type": "object",
+      "description": "Single-node StatefulSet for dev/kind. The production profile refuses to render with any of these enabled.",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "auth": {
+          "type": "object",
+          "properties": {
+            "username": {
+              "type": "string"
+            },
+            "password": {
+              "type": "string"
+            },
+            "database": {
+              "type": "string"
+            }
+          }
+        },
+        "persistence": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "size": {
+              "type": "string",
+              "pattern": "^[0-9]+(Mi|Gi|Ti)$"
+            },
+            "storageClass": {
+              "type": "string"
+            }
+          }
+        },
+        "resources": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+.git
+.gitignore
+.gitlab-ci.yml
+AGENTS.md
+CLAUDE.md
+README.md
+docs
+dev
+tests
+tmp
+data
+*.log
+docker-compose.yml
+frontend

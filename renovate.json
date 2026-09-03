@@ -1,0 +1,80 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    ":dependencyDashboard",
+    "schedule:weekly"
+  ],
+  "timezone": "Europe/Moscow",
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "deps",
+  "labels": ["dependencies"],
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "schedule": ["at any time"],
+    "labels": ["dependencies", "security"]
+  },
+  "osvVulnerabilityAlerts": true,
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on the first day of the month"]
+  },
+  "gomod": {
+    "postUpdateOptions": ["gomodTidy"]
+  },
+  "packageRules": [
+    {
+      "description": "Vendored, hot-path Go deps: patch/minor grouped so they land in one MR instead of a dozen.",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "groupName": "Go dependencies (patch/minor)"
+    },
+    {
+      "description": "Frontend (frontend/) grouped separately from Go so a Mantine/Vite bump doesn't block a Go patch and vice versa.",
+      "matchManagers": ["npm"],
+      "matchFileNames": ["frontend/**"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "groupName": "frontend dependencies (patch/minor)"
+    },
+    {
+      "description": "CI/runtime base images (golang, node, postgres, golangci-lint, playwright, docker, distroless, nginx).",
+      "matchManagers": ["dockerfile", "docker-compose", "gitlabci"],
+      "groupName": "container images"
+    },
+    {
+      "description": "apache/kafka is pinned in three independent places — docker-compose.yml, .gitlab-ci.yml (test:kafka's services container) and the Helm chart's values.yaml (helm-values manager, so it's outside the 'container images' group above) — kept deliberately in lockstep during the Bitnami migration. Group them so a bump lands as one MR instead of three drifting ones.",
+      "matchManagers": ["dockerfile", "docker-compose", "gitlabci", "helm-values"],
+      "matchPackageNames": ["apache/kafka"],
+      "groupName": "apache/kafka"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "GO_VERSION drives golang:${GO_VERSION}-bookworm images AND the go.dev download in test:pitr-drill — the gitlabci manager can't see through the variable interpolation.",
+      "fileMatch": ["^\\.gitlab-ci\\.yml$"],
+      "matchStrings": ["GO_VERSION:\\s*\"(?<currentValue>[^\"]+)\""],
+      "datasourceTemplate": "golang-version",
+      "depNameTemplate": "golang",
+      "versioningTemplate": "loose"
+    },
+    {
+      "customType": "regex",
+      "description": "NODE_VERSION drives node:${NODE_VERSION}-alpine images across the frontend/e2e jobs.",
+      "fileMatch": ["^\\.gitlab-ci\\.yml$"],
+      "matchStrings": ["NODE_VERSION:\\s*\"(?<currentValue>[^\"]+)\""],
+      "datasourceTemplate": "node-version",
+      "depNameTemplate": "node",
+      "versioningTemplate": "loose"
+    },
+    {
+      "customType": "regex",
+      "description": "COSIGN_VERSION pins the cosign binary downloaded straight from GitHub releases for image/chart signing and release:verify.",
+      "fileMatch": ["^\\.gitlab-ci\\.yml$"],
+      "matchStrings": ["COSIGN_VERSION:\\s*\"(?<currentValue>v[^\"]+)\""],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "sigstore/cosign"
+    }
+  ]
+}

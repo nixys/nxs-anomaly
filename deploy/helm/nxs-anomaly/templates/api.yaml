@@ -1,0 +1,95 @@
+{{- $component := "api" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nxs-anomaly.componentName" (dict "ctx" . "component" $component) }}
+  labels:
+    {{- include "nxs-anomaly.componentLabels" (dict "ctx" . "component" $component) | nindent 4 }}
+spec:
+  replicas: {{ .Values.api.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "nxs-anomaly.componentSelectorLabels" (dict "ctx" . "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nxs-anomaly.componentLabels" (dict "ctx" . "component" $component) | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      {{- include "nxs-anomaly.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "nxs-anomaly.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: api
+          image: {{ include "nxs-anomaly.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # The image sets CMD but no ENTRYPOINT, so args alone would replace the
+          # binary; pin the command explicitly.
+          command: ["/usr/local/bin/nxs-anomaly"]
+          args:
+            - serve
+            - --host
+            - 0.0.0.0
+            - --port
+            - {{ .Values.api.service.port | quote }}
+            - --no-scheduler
+            {{- range .Values.api.extraArgs }}
+            - {{ . | quote }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.api.service.port }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "nxs-anomaly.fullname" . }}-config
+            - secretRef:
+                name: {{ include "nxs-anomaly.secretName" . }}
+          {{- with .Values.api.extraEnv }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: http
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+      {{- with .Values.api.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.api.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.api.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- include "nxs-anomaly.topologySpread" (dict "ctx" . "component" $component "constraints" .Values.api.topologySpreadConstraints) | nindent 6 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nxs-anomaly.componentName" (dict "ctx" . "component" $component) }}
+  labels:
+    {{- include "nxs-anomaly.componentLabels" (dict "ctx" . "component" $component) | nindent 4 }}
+spec:
+  type: {{ .Values.api.service.type }}
+  selector:
+    {{- include "nxs-anomaly.componentSelectorLabels" (dict "ctx" . "component" $component) | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.api.service.port }}
+      targetPort: http

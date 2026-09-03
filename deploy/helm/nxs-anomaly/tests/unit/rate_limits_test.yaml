@@ -1,0 +1,73 @@
+suite: per-pod rate limits divided by replica count
+release:
+  name: rel
+  namespace: nxs
+templates:
+  - templates/configmap.yaml
+tests:
+  # The webhook and API limiters keep their buckets in each API process, so what
+  # the application reads is a per-pod allowance. Operators state a cluster-wide
+  # figure; without the division, scaling the API up would silently scale the
+  # limits up with it.
+  - it: divides the cluster-wide rates by api.replicaCount
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      api.replicaCount: 4
+      rateLimits.webhookRatePerCluster: 100
+      rateLimits.apiRatePerCluster: 40
+    asserts:
+      - equal: {path: data.NXS_ANOMALY_WEBHOOK_RATE, value: "25"}
+      - equal: {path: data.NXS_ANOMALY_API_RATE, value: "10"}
+
+  - it: passes the rate through unchanged on a single replica
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      api.replicaCount: 1
+      rateLimits.webhookRatePerCluster: 50
+    asserts:
+      - equal: {path: data.NXS_ANOMALY_WEBHOOK_RATE, value: "50"}
+
+  # Fractional results must survive: 3 replicas of a rate of 50 is 16.67/s each,
+  # not 16 and not an error.
+  - it: keeps a fractional per-pod rate
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      api.replicaCount: 3
+      rateLimits.apiRatePerCluster: 50
+    asserts:
+      - matchRegex: {path: data.NXS_ANOMALY_API_RATE, pattern: "^16\\.6"}
+
+  # Unset means "leave it to the application": off by default, and the
+  # production profile's own defaults when that profile is on.
+  - it: renders nothing when no cluster-wide rate is stated
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+    asserts:
+      - notExists: {path: data.NXS_ANOMALY_WEBHOOK_RATE}
+      - notExists: {path: data.NXS_ANOMALY_API_RATE}
+
+  # An explicit 0 disables the limiter and must not be mistaken for "unset".
+  - it: renders an explicit zero
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      api.replicaCount: 3
+      rateLimits.webhookRatePerCluster: 0
+    asserts:
+      - equal: {path: data.NXS_ANOMALY_WEBHOOK_RATE, value: "0"}
+      - notExists: {path: data.NXS_ANOMALY_API_RATE}
+
+  # Only one of the two stated is a valid configuration.
+  - it: renders each rate independently
+    set:
+      existingSecret.enabled: true
+      existingSecret.name: app-secret
+      api.replicaCount: 2
+      rateLimits.apiRatePerCluster: 30
+    asserts:
+      - notExists: {path: data.NXS_ANOMALY_WEBHOOK_RATE}
+      - equal: {path: data.NXS_ANOMALY_API_RATE, value: "15"}

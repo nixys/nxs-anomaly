@@ -1,0 +1,43 @@
+{{- /*
+VaultAuth for the Vault Secrets Operator. Optional: platforms that manage auth
+centrally leave vaultAuth.create=false and name their object in vaultAuthRef.
+The VaultConnection is never rendered here — it is cluster-wide infrastructure
+(address, CA, TLS) that outlives any one release, so this only references it.
+
+Everything below is required rather than defaulted on purpose: VSO silently
+falls back to its own default VaultAuth/VaultConnection in the operator's
+namespace when a reference is missing, which does not fail — it just keeps
+authenticating as somebody else until a secret quietly goes stale.
+*/ -}}
+{{- if and .Values.vaultSecretOperator.enabled .Values.vaultSecretOperator.vaultAuth.create }}
+{{- $va := .Values.vaultSecretOperator.vaultAuth }}
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: {{ include "nxs-anomaly.fullname" . }}
+  labels:
+    {{- include "nxs-anomaly.labels" . | nindent 4 }}
+spec:
+  method: {{ $va.method }}
+  mount: {{ required "vaultSecretOperator.vaultAuth.mount is required — the auth backend path (e.g. \"kubernetes\"), not the KV mount" $va.mount }}
+  vaultConnectionRef: {{ required "vaultSecretOperator.vaultAuth.vaultConnectionRef is required — name the existing VaultConnection; leaving it empty makes VSO fall back to its default one" $va.vaultConnectionRef }}
+  {{- if eq $va.method "kubernetes" }}
+  kubernetes:
+    role: {{ required "vaultSecretOperator.vaultAuth.kubernetes.role is required" $va.kubernetes.role }}
+    serviceAccount: {{ default (include "nxs-anomaly.serviceAccountName" .) $va.kubernetes.serviceAccount }}
+    {{- with $va.kubernetes.audiences }}
+    audiences:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  {{- else if eq $va.method "jwt" }}
+  jwt:
+    role: {{ required "vaultSecretOperator.vaultAuth.jwt.role is required" $va.jwt.role }}
+    serviceAccount: {{ default (include "nxs-anomaly.serviceAccountName" .) $va.jwt.serviceAccount }}
+    {{- with $va.jwt.audiences }}
+    audiences:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  {{- else }}
+  {{- fail (printf "vaultSecretOperator.vaultAuth.method=%q is not supported by this chart — use \"kubernetes\" or \"jwt\", or manage the VaultAuth outside the release via vaultSecretOperator.vaultAuthRef" $va.method) }}
+  {{- end }}
+{{- end }}
