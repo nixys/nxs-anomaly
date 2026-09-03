@@ -1,0 +1,520 @@
+# Community release: build, publish, sign and verify the public artefacts.
+#
+# This is the other half of `publish:community` in the private pipeline. That job
+# pushes the generated source tree here and stops; everything an outsider can pull
+# is built by this workflow, from this repository, from these sources. That split
+# is the whole point of it:
+#
+#   * cosign keyless signing mints its certificate from the CI's OIDC issuer, and
+#     public Sigstore trusts github.com — not the self-hosted GitLab the
+#     enterprise edition is released from. A signature made there is one nobody
+#     outside the company could verify. Here, `cosign verify` works for a stranger
+#     with no key to pin, which is why this workflow signs keyless while the
+#     private pipeline signs with a release key.
+#   * an image built in public from public sources is one a reader can reproduce.
+#     An image built privately and pushed outward is a binary you are asked to
+#     trust.
+#
+# Artefact names follow the one naming policy — `<product>[-component]-<edition>`,
+# edition last — so the community edition is the bare name:
+#
+#   ghcr.io/<owner>/nxs-anomaly            application image, tag vX.Y.Z
+#   ghcr.io/<owner>/nxs-anomaly-frontend   frontend image,    tag vX.Y.Z
+#   ghcr.io/<owner>/nxs-anomaly            Helm chart,        tag X.Y.Z
+#
+# The chart shares a GHCR repository with the application image, on purpose: it is
+# the coordinate the README and the chart documentation tell an operator to install
+# from (`helm install nxs-anomaly oci://ghcr.io/nixys/nxs-anomaly`), and the two
+# cannot collide — chart versions are SemVer and image tags keep the `v`, so no tag
+# is ever claimed twice. `helm pull --version X.Y.Z` and `docker pull :vX.Y.Z`
+# resolve to different artefacts in the same package, each signed separately.
+#
+# First run only: GHCR creates a package on first push and it is private until
+# somebody makes it public. Do that once per package — application image, frontend
+# image, chart — in the repository's Packages settings, or the released artefacts
+# are unreachable for everyone but the owner and `release-verify` will fail on the
+# anonymous pull it does deliberately.
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Two releases at once would race on the same tags. Never cancel a running one:
+# a cancelled release leaves images pushed and unsigned.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  GO_VERSION: '1.25'
+
+jobs:
+  # ── Release metadata ───────────────────────────────────────────────────────
+  #
+  # ./VERSION is the single source of truth, and check-version.sh asserts that the
+  # tag, the chart version, the chart appVersion and the OpenAPI version all agree
+  # with it. Running it first means a mistyped tag fails in twenty seconds instead
+  # of after two image builds — and, more importantly, before anything is pushed:
+  # a published tag cannot be taken back.
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      version: ${{ steps.v.outputs.version }}
+      owner: ${{ steps.v.outputs.owner }}
+      image: ${{ steps.v.outputs.image }}
+      frontend_image: ${{ steps.v.outputs.frontend_image }}
+      stable: ${{ steps.v.outputs.stable }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: v
+        run: |
+          set -eu
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          # Registry references must be lowercase; a GitHub owner need not be.
+          OWNER="$(printf '%s' "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+
+          sh scripts/check-version.sh --tag "$TAG"
+
+          # `latest` follows stable releases only. A pre-release tag (v1.2.3-rc1)
+          # publishes under its own tag and moves nothing, so `docker pull :latest`
+          # never lands on a release candidate.
+          case "$VERSION" in
+            *-*) STABLE=false ;;
+            *)   STABLE=true ;;
+          esac
+
+          {
+            echo "tag=$TAG"
+            echo "version=$VERSION"
+            echo "owner=$OWNER"
+            echo "image=${{ env.REGISTRY }}/$OWNER/nxs-anomaly"
+            echo "frontend_image=${{ env.REGISTRY }}/$OWNER/nxs-anomaly-frontend"
+            echo "stable=$STABLE"
+          } >> "$GITHUB_OUTPUT"
+
+  # ── Gate: the tree builds and its tests pass ───────────────────────────────
+  #
+  # The private pipeline generates this tree and tests it on every commit
+  # (`community:cut`), so a release tag has normally been through it already. It is
+  # run again here because that is a claim about a different repository: what is
+  # released is what is in *this* checkout, and a mirror push can be edited, be
+  # incomplete, or arrive from a tree the gate never saw. No build tags — this is
+  # how a stranger builds it.
+  test:
+    runs-on: ubuntu-latest
+    needs: meta
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          # Dependencies are vendored; the module cache would restore nothing.
+          cache: false
+
+      - name: Build, vet and test
+        run: |
+          go build ./...
+          go vet ./...
+          go test ./...
+
+  # ── Gate: the chart renders and its unit tests pass ────────────────────────
+  #
+  # Separate from the Go gate because a chart that stops rendering is a different
+  # failure from a tree that stops compiling, and because it needs different tools.
+  # The renders are the dev shape a community user starts from — bundled
+  # PostgreSQL, an inline secret — plus the assertion that a render with no secret
+  # configured still refuses.
+  chart-test:
+    runs-on: ubuntu-latest
+    needs: meta
+    env:
+      CHART: deploy/helm/nxs-anomaly
+    steps:
+      - uses: actions/checkout@v4
+
+      # The pair the private pipeline runs these same tests with
+      # (helmunittest/helm-unittest:3.21.0-1.0.3), so a chart test that passes
+      # there passes here for the same reasons.
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.21.0
+
+      - name: Install helm-unittest
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version 1.0.3
+
+      - name: Lint and render
+        run: |
+          set -eu
+          helm lint "$CHART" --set inlineSecret.enabled=true
+          helm template t "$CHART" \
+            --set inlineSecret.enabled=true --set postgresql.enabled=true \
+            --set ingress.enabled=true --set ingress.host=h \
+            --set networkPolicy.enabled=true \
+            --set serviceMonitor.enabled=true --set prometheusRule.enabled=true >/dev/null
+
+      - name: A render without a secret must still fail
+        run: |
+          if helm template t "$CHART" >/dev/null 2>&1; then
+            echo "no-secret render should have failed"
+            exit 1
+          fi
+
+      - name: Unit tests
+        run: helm unittest -f 'tests/unit/*_test.yaml' "$CHART"
+
+  # ── Images: build, push, SBOM, signature ───────────────────────────────────
+  #
+  # The two images are built in parallel. The private pipeline serialises them —
+  # there, two BuildKit builds land on one shared runner and starve each other;
+  # here each job is its own VM, so the contention that ordering exists to avoid
+  # does not exist.
+  #
+  # Signing is by digest, never by tag: a tag can later be moved to a different
+  # artefact, and a signature bound to it would then vouch for something this
+  # release never published.
+  #
+  # linux/amd64 only. The Dockerfiles are not cross-compilation aware (the Go build
+  # sets GOOS but no GOARCH, so an arm64 build would run the toolchain under QEMU
+  # for tens of minutes), and shipping a second architecture is a change to the
+  # Dockerfile — shared with the enterprise edition — not to this workflow.
+  images:
+    runs-on: ubuntu-latest
+    needs: [meta, test, chart-test]
+    permissions:
+      contents: read
+      packages: write
+      # Keyless cosign: the OIDC token is the identity the signature carries.
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: backend
+            context: .
+            image: ${{ needs.meta.outputs.image }}
+          - component: frontend
+            context: ./frontend
+            image: ${{ needs.meta.outputs.frontend_image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: v2.4.1
+
+      - id: tags
+        run: |
+          set -eu
+          {
+            echo 'value<<TAGS'
+            echo "${{ matrix.image }}:${{ needs.meta.outputs.tag }}"
+            if [ "${{ needs.meta.outputs.stable }}" = "true" ]; then
+              echo "${{ matrix.image }}:latest"
+            fi
+            echo 'TAGS'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          # No provenance attestation. buildx would then push an index whose
+          # digest names a manifest list rather than the image, and the signature
+          # below would be attached to the list — cosign verify on the plain
+          # `:tag` an operator pulls would not find it.
+          provenance: false
+          tags: ${{ steps.tags.outputs.value }}
+          # VERSION reaches the binary's -ldflags and the frontend image label, and
+          # /health reports it. It carries the `v`, exactly like the published tag,
+          # so a running installation names the release it came from verbatim.
+          build-args: |
+            VERSION=${{ needs.meta.outputs.tag }}
+          # Without this label GHCR shows the package detached from the repository:
+          # no source link, no README, no inherited visibility.
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ needs.meta.outputs.tag }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=Apache-2.0
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+
+      - name: SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ matrix.image }}@${{ steps.build.outputs.digest }}
+          format: cyclonedx-json
+          artifact-name: sbom-${{ matrix.component }}.cdx.json
+          output-file: sbom-${{ matrix.component }}.cdx.json
+
+      - name: Sign and attest
+        env:
+          COSIGN_YES: 'true'
+        run: |
+          set -eu
+          REF="${{ matrix.image }}@${{ steps.build.outputs.digest }}"
+          cosign sign "$REF"
+          cosign attest --predicate "sbom-${{ matrix.component }}.cdx.json" \
+            --type cyclonedx "$REF"
+
+  # ── Chart: package, publish, sign ──────────────────────────────────────────
+  #
+  # After the images, and only after them: a chart resolves image tags, and one
+  # published ahead of the images it names is a chart that installs to
+  # ImagePullBackOff.
+  #
+  # The chart version is the tag without `v` (chart versions must be SemVer);
+  # appVersion keeps it, because image.tag defaults to appVersion and the published
+  # image tags carry the prefix. Both are already committed that way — check-version.sh
+  # is the gate — and are passed again here so a mismatch cannot survive packaging.
+  chart:
+    runs-on: ubuntu-latest
+    needs: [meta, images]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+
+      - uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: v2.4.1
+
+      - name: The chart's defaults must name the images this release published
+        run: |
+          set -eu
+          # Not a rewrite: the committed values already point at GHCR, and this is
+          # the assertion that they do. A chart packaged with defaults pointing
+          # somewhere else installs something this workflow never built.
+          grep -Fqx "  repository: ${{ needs.meta.outputs.image }}" deploy/helm/nxs-anomaly/values.yaml
+          grep -Fqx "    repository: ${{ needs.meta.outputs.frontend_image }}" deploy/helm/nxs-anomaly/values.yaml
+
+      - name: Package
+        run: |
+          helm package deploy/helm/nxs-anomaly \
+            --version "${{ needs.meta.outputs.version }}" \
+            --app-version "${{ needs.meta.outputs.tag }}" \
+            --destination ./dist
+          ls -l dist/
+
+      - name: Push and sign
+        id: push
+        env:
+          COSIGN_YES: 'true'
+        run: |
+          set -eu
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | helm registry login "${{ env.REGISTRY }}" -u "${{ github.actor }}" --password-stdin
+          helm push "dist/nxs-anomaly-${{ needs.meta.outputs.version }}.tgz" \
+            "oci://${{ env.REGISTRY }}/${{ needs.meta.outputs.owner }}" 2>&1 | tee push.log
+
+          DIGEST="$(grep -oE 'sha256:[0-9a-f]{64}' push.log | head -1)"
+          test -n "$DIGEST" || { echo "could not read the pushed chart digest"; exit 1; }
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+          cosign sign "${{ needs.meta.outputs.image }}@${DIGEST}"
+
+  # ── Release acceptance ─────────────────────────────────────────────────────
+  #
+  # Prove that what the README tells an operator to run works against what was just
+  # published — as an outsider runs it. No checkout: everything comes from the
+  # registry, so a step that accidentally reads the source tree instead of the
+  # published artefact fails here rather than passing on a file nobody downloads.
+  #
+  # No registry login either. The artefacts are meant to be public, and an
+  # anonymous pull is the only check that says so: with a login this job passes
+  # just as well on packages GHCR still has marked private.
+  #
+  # The image references are read out of the *published* chart, so the release also
+  # proves that the tags the chart resolves to are the tags that exist — the
+  # appVersion `v` prefix, in particular.
+  verify:
+    runs-on: ubuntu-latest
+    needs: [meta, chart]
+    steps:
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+
+      - uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: v2.4.1
+
+      - name: Verify the published release
+        run: |
+          set -eu
+          # The identity a keyless signature from this workflow carries. Pinned to
+          # this repository, this file and a tag ref: a signature made by a fork, by
+          # another workflow, or from a branch does not satisfy it.
+          IDENTITY="^https://github.com/${{ github.repository }}/\.github/workflows/release\.yml@refs/tags/"
+          ISSUER="https://token.actions.githubusercontent.com"
+          CHART_REF="${{ needs.meta.outputs.image }}"
+          VER="${{ needs.meta.outputs.version }}"
+          TAG="${{ needs.meta.outputs.tag }}"
+
+          verify() (
+            set -eu
+            echo "release      ${TAG} (chart ${VER})"
+            echo "chart        oci://${CHART_REF} ${VER}"
+            echo
+
+            echo "== chart pull (anonymous) =="
+            helm pull "oci://${CHART_REF}" --version "$VER" --untar --untardir /tmp/chart
+            # helm unpacks into a directory named after the chart. Asserted rather
+            # than assumed: helm's own error for a wrong path reads like the pull
+            # failed, when in fact it succeeded and only this job looked in the
+            # wrong place.
+            test -d /tmp/chart/nxs-anomaly || {
+              echo "the chart unpacked somewhere else than /tmp/chart/nxs-anomaly:"
+              ls -la /tmp/chart
+              exit 1
+            }
+
+            echo "== chart signature (cosign, keyless) =="
+            cosign verify --certificate-identity-regexp "$IDENTITY" \
+              --certificate-oidc-issuer "$ISSUER" \
+              "${CHART_REF}@${{ needs.chart.outputs.digest }}" >/dev/null
+            echo "ok"
+
+            echo "== image references the published chart resolves to =="
+            REFS="$(helm template t /tmp/chart/nxs-anomaly \
+                      --set inlineSecret.enabled=true --set postgresql.enabled=true \
+                    | sed -n 's/^[[:space:]]*image:[[:space:]]*"\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' \
+                    | grep "^${{ env.REGISTRY }}/${{ needs.meta.outputs.owner }}/" | sort -u)"
+            test -n "$REFS" || { echo "no application image refs rendered"; exit 1; }
+            echo "$REFS"
+            for ref in $REFS; do
+              case "$ref" in
+                *:"${TAG}") ;;
+                *) echo "rendered ref '$ref' is not tagged ${TAG}"; exit 1 ;;
+              esac
+            done
+
+            echo "== image signatures and SBOM attestations =="
+            for ref in $REFS; do
+              echo "--- $ref"
+              cosign verify --certificate-identity-regexp "$IDENTITY" \
+                --certificate-oidc-issuer "$ISSUER" "$ref" >/dev/null
+              cosign verify-attestation --certificate-identity-regexp "$IDENTITY" \
+                --certificate-oidc-issuer "$ISSUER" --type cyclonedx "$ref" >/dev/null
+              echo "ok"
+            done
+
+            echo
+            echo "Chart and images verified anonymously, with no key to pin."
+          )
+
+          set +e
+          verify > release-verification.txt 2>&1
+          rc=$?
+          set -e
+          cat release-verification.txt
+          exit "$rc"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-verification
+          path: release-verification.txt
+
+  # ── The GitHub release ─────────────────────────────────────────────────────
+  #
+  # Last, and only on a verified release: the release entry is what a reader treats
+  # as the announcement that these artefacts exist and are good.
+  #
+  # The SBOMs are attached as assets as well as being attestations on the images.
+  # The attestation is the authoritative one — it is signed and bound to a digest —
+  # but it takes cosign to read, and a reader answering "does this release ship
+  # library X" deserves a file they can download.
+  release:
+    runs-on: ubuntu-latest
+    needs: [meta, verify]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          IMAGE: ${{ needs.meta.outputs.image }}
+          FRONTEND_IMAGE: ${{ needs.meta.outputs.frontend_image }}
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          set -eu
+          cat > notes.md <<EOF
+          ## Artefacts
+
+          | | |
+          |---|---|
+          | Application image | \`${IMAGE}:${TAG}\` |
+          | Frontend image | \`${FRONTEND_IMAGE}:${TAG}\` |
+          | Helm chart | \`oci://${IMAGE}\`, version \`${VERSION}\` |
+
+          \`\`\`bash
+          helm install nxs-anomaly oci://${IMAGE} --version ${VERSION} \\
+            --set existingSecret.enabled=true --set existingSecret.name=nxs-anomaly-env \\
+            --set externalPostgres.host=postgres.internal
+          \`\`\`
+
+          ## Verifying
+
+          Every artefact is signed with keyless cosign — there is no key to obtain,
+          the signature carries the workflow that produced it:
+
+          \`\`\`bash
+          cosign verify \\
+            --certificate-identity-regexp '^https://github.com/${{ github.repository }}/\.github/workflows/release\.yml@refs/tags/' \\
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \\
+            ${IMAGE}:${TAG}
+          \`\`\`
+
+          The same command verifies \`${FRONTEND_IMAGE}:${TAG}\` and the chart at
+          \`${IMAGE}:${VERSION}\`. Add \`verify-attestation --type cyclonedx\` for the SBOM.
+
+          ## Changes
+
+          See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${TAG}/CHANGELOG.md).
+          EOF
+
+          PRERELEASE=''
+          [ "${{ needs.meta.outputs.stable }}" = "true" ] || PRERELEASE='--prerelease'
+
+          # shellcheck disable=SC2086
+          gh release create "$TAG" \
+            --repo "${{ github.repository }}" \
+            --title "nxs-anomaly $TAG" \
+            --notes-file notes.md \
+            $PRERELEASE \
+            assets/*

@@ -16,7 +16,7 @@ helm install nxs-anomaly deploy/helm/nxs-anomaly \
 Production (OCI-chart + внешний managed PostgreSQL + production-пресет):
 
 ```bash
-VERSION=0.1.74          # устанавливаемый релиз; образы имеют тег v$VERSION
+VERSION=0.1.75          # устанавливаемый релиз; образы имеют тег v$VERSION
 HELM_PROJECT="<значение HARBOR_HELM_PROJECT>"
 
 # 1. Создать Secret как минимум с NXS_ANOMALY_DB_DSN (и учётными данными провайдеров).
@@ -86,7 +86,7 @@ SSRF/secure-cookie: наполовину переведённая в production 
 артефакт, за который он ручается, сам по себе доказывает мало):
 
 ```bash
-VERSION=0.1.74
+VERSION=0.1.75
 HELM_PROJECT="<значение HARBOR_HELM_PROJECT>"
 IMAGE_PROJECT="<значение HARBOR_PROJECT>"
 
@@ -154,7 +154,7 @@ OIDC-issuer-а CI, а публичный Sigstore доверяет `gitlab.com`,
 ## Обновления
 
 ```bash
-VERSION=0.1.74          # релиз, на который обновляемся
+VERSION=0.1.75          # релиз, на который обновляемся
 HELM_PROJECT="<значение HARBOR_HELM_PROJECT>"
 # Сначала посмотрите, что изменится.
 helm diff upgrade nxs-anomaly "oci://ghcr.io/nixys/nxs-anomaly" \
