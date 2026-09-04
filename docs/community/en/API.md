@@ -202,6 +202,8 @@ When degraded: `status: "degraded"` and `db_ok: false` alongside `db_error`.
 | POST | `/integrations/v1/pagerduty/{key}` | PagerDuty Events v2 |
 | POST | `/integrations/v1/victorops/{key}` | VictorOps / Splunk On-Call |
 | POST | `/integrations/v1/grafana-alerting/{key}` | The Grafana Alerting webhook |
+| POST | `/integrations/v1/opensearch/{key}` | OpenSearch Alerting, a channel template |
+| POST | `/integrations/v1/elasticsearch/{key}` | Kibana Rules, Elasticsearch Watcher |
 | POST | `/v2/alert/pool` | The legacy NXS pool (authenticated by the `X-Auth-Key` header) |
 
 `{key}` is the integration's routing key. HMAC verification through

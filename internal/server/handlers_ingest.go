@@ -134,6 +134,54 @@ func (srv *Server) handleGrafanaAlerting(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusAccepted, result)
 }
 
+func (srv *Server) handleOpenSearch(w http.ResponseWriter, r *http.Request) {
+	t0 := time.Now()
+	defer func() { srv.metrics.ingestDuration.WithLabelValues("opensearch").Observe(time.Since(t0).Seconds()) }()
+	key := r.PathValue("key")
+	if srv.webhookLimiter != nil && !srv.webhookLimiter.allow(key) {
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
+		return
+	}
+	body, ok := readJSON(w, r)
+	if !ok {
+		return
+	}
+	result, err := srv.eng.IngestOpenSearch(r.Context(), key, body)
+	if err != nil {
+		srv.metrics.incIngestError("opensearch")
+		writeIngestError(w, err, "opensearch", key)
+		return
+	}
+	if n, ok := result["processed"].(int); ok && n > 0 {
+		srv.metrics.incAlerts(n)
+	}
+	writeJSON(w, http.StatusAccepted, result)
+}
+
+func (srv *Server) handleElasticsearch(w http.ResponseWriter, r *http.Request) {
+	t0 := time.Now()
+	defer func() {
+		srv.metrics.ingestDuration.WithLabelValues("elasticsearch").Observe(time.Since(t0).Seconds())
+	}()
+	key := r.PathValue("key")
+	if srv.webhookLimiter != nil && !srv.webhookLimiter.allow(key) {
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
+		return
+	}
+	body, ok := readJSON(w, r)
+	if !ok {
+		return
+	}
+	result, err := srv.eng.IngestElasticsearch(r.Context(), key, body)
+	if err != nil {
+		srv.metrics.incIngestError("elasticsearch")
+		writeIngestError(w, err, "elasticsearch", key)
+		return
+	}
+	srv.metrics.incAlerts(1)
+	writeJSON(w, http.StatusAccepted, result)
+}
+
 func (srv *Server) handleLegacyPool(w http.ResponseWriter, r *http.Request) {
 	t0 := time.Now()
 	defer func() { srv.metrics.ingestDuration.WithLabelValues("legacy-pool").Observe(time.Since(t0).Seconds()) }()

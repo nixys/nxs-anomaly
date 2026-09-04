@@ -300,6 +300,8 @@ func (srv *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /integrations/v1/pagerduty/{key}", srv.handlePagerDuty)
 	mux.HandleFunc("POST /integrations/v1/victorops/{key}", srv.handleVictorOps)
 	mux.HandleFunc("POST /integrations/v1/grafana-alerting/{key}", srv.handleGrafanaAlerting)
+	mux.HandleFunc("POST /integrations/v1/opensearch/{key}", srv.handleOpenSearch)
+	mux.HandleFunc("POST /integrations/v1/elasticsearch/{key}", srv.handleElasticsearch)
 	mux.HandleFunc("POST /v2/alert/pool", srv.handleLegacyPool)
 
 	// Inbound ChatOps slash commands, authenticated by the platform's own

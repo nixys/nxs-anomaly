@@ -201,6 +201,8 @@ admin: учётные данные автоматизации обязаны з�
 | POST | `/integrations/v1/pagerduty/{key}` | PagerDuty Events v2 |
 | POST | `/integrations/v1/victorops/{key}` | VictorOps / Splunk On-Call |
 | POST | `/integrations/v1/grafana-alerting/{key}` | Webhook Grafana Alerting |
+| POST | `/integrations/v1/opensearch/{key}` | OpenSearch Alerting, шаблон канала |
+| POST | `/integrations/v1/elasticsearch/{key}` | Kibana Rules, Elasticsearch Watcher |
 | POST | `/v2/alert/pool` | Legacy-пул NXS (аутентификация заголовком `X-Auth-Key`) |
 
 `{key}` — маршрутный ключ интеграции. Опциональная проверка HMAC через

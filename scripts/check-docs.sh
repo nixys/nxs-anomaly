@@ -146,7 +146,7 @@ while IFS= read -r line; do
   bad_ingest=$((bad_ingest + 1))
   fail "ingest URL without a source segment: ${line}"
 done < <(grep -rnE 'integrations/v1/(<|\$|\{|[a-z]*key)' "${DOCS[@]}" 2>/dev/null \
-  | grep -vE 'integrations/v1/(webhook|alertmanager|pagerduty|victorops|grafana-alerting|legacy-pool|<source>)/' || true)
+  | grep -vE 'integrations/v1/(webhook|alertmanager|pagerduty|victorops|grafana-alerting|opensearch|elasticsearch|legacy-pool|<source>)/' || true)
 [ "${bad_ingest}" -eq 0 ] && ok "documented ingest URLs carry a source segment"
 
 # ── 6. CI jobs named in CONTRIBUTING.md exist in .gitlab-ci.yml ─────────────

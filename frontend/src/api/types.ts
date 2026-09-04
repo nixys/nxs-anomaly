@@ -141,6 +141,8 @@ export const INTEGRATION_TYPES = [
   'pagerduty',
   'victorops',
   'grafana-alerting',
+  'opensearch',
+  'elasticsearch',
 ] as const;
 
 export type GroupLogEntry = Schemas['GroupLogEntry'];

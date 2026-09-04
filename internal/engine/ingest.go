@@ -508,6 +508,49 @@ func (e *Engine) ingestOneLocked(state *store.State, integration map[string]any,
 	return map[string]any{"alert": alert, "group": g.Raw(), "result": "ingested"}
 }
 
+// ingestNormalizedBatch ingests already-normalized alerts of one integration in
+// a single locked transaction, and answers per alert. Route selection and the
+// pipeline run up front, so a batch that fails validation ingests nothing; a
+// batch whose every alert was dropped by the pipeline opens no transaction and
+// still answers, because the sender delivered them.
+func (e *Engine) ingestNormalizedBatch(ctx context.Context, integrationKey string, normalized []map[string]any) ([]any, error) {
+	integration, err := e.store.FindIntegrationByKey(ctx, integrationKey)
+	if err != nil {
+		return nil, err
+	}
+	if integration == nil {
+		return nil, errNotFound("integration key not found")
+	}
+	preps := make([]*preparedAlert, 0, len(normalized))
+	dropped := 0
+	for _, alert := range normalized {
+		prep, err := e.prepareAlert(ctx, integration, alert)
+		if err != nil {
+			return nil, err
+		}
+		if prep == nil {
+			dropped++
+			continue
+		}
+		preps = append(preps, prep)
+	}
+	var batchResults []map[string]any
+	if len(preps) > 0 {
+		batchResults, err = e.ingestPrepared(ctx, integration, preps)
+		if err != nil {
+			return nil, err
+		}
+	}
+	results := make([]any, 0, len(batchResults)+dropped)
+	for _, r := range batchResults {
+		results = append(results, r)
+	}
+	for i := 0; i < dropped; i++ {
+		results = append(results, map[string]any{"alert": nil, "group": nil, "result": "dropped_by_pipeline"})
+	}
+	return results, nil
+}
+
 // IngestAlertmanager processes an Alertmanager webhook envelope. All alerts in
 // the envelope are ingested in one locked transaction; route selection and
 // validation run up front, so an invalid envelope ingests nothing.

@@ -54,6 +54,8 @@ the route, grouping and templates all work on the same fields.
 | `POST /integrations/v1/pagerduty/{key}` | `normalizePagerDutyAlert` | `pagerduty` |
 | `POST /integrations/v1/victorops/{key}` | `normalizeVictorOpsAlert` | `victorops` |
 | `POST /integrations/v1/grafana-alerting/{key}` | `normalizeGrafanaAlertingAlert` | `grafana_alerting` |
+| `POST /integrations/v1/opensearch/{key}` | `normalizeOpenSearchAlert` | `opensearch` |
+| `POST /integrations/v1/elasticsearch/{key}` | `normalizeElasticsearchAlert` | `elasticsearch` |
 | `POST /v2/alert/pool` | `IngestLegacyPool` | `nxs-alert-compat` |
 
 ### 2.1. The common shape
@@ -130,7 +132,117 @@ Like Alertmanager, with two differences: `status` also becomes `resolved` when
 Grafana's own fields — `ruleUrl`, `dashboardURL`, `panelURL`, `silenceURL`,
 `values`, `valueString`, `orgId` — are kept in `payload.grafana_alerting`.
 
-### 2.6. The legacy NXS pool (`/v2/alert/pool`)
+### 2.6. OpenSearch Alerting
+
+The Alerting plugin has no webhook format of its own: a notification channel
+posts whatever Mustache template is saved on the trigger, and the default one is
+plain text rather than JSON. So the shape below is ours, and it goes into the
+channel's message field. A non-JSON body is rejected with `400`.
+
+```json
+{
+  "status": "firing",
+  "monitor": { "id": "{{ctx.monitor._id}}", "name": "{{ctx.monitor.name}}" },
+  "trigger": { "id": "{{ctx.trigger._id}}", "name": "{{ctx.trigger.name}}",
+               "severity": "{{ctx.trigger.severity}}" },
+  "period_start": "{{ctx.periodStart}}",
+  "period_end": "{{ctx.periodEnd}}",
+  "hits": "{{ctx.results.0.hits.total.value}}",
+  "error": "{{ctx.error}}",
+  "url": "https://opensearch.example.com/app/alerting#/monitors/{{ctx.monitor._id}}"
+}
+```
+
+Double braces, not triple: `{{ }}` HTML-escapes, so a quote in a monitor name
+arrives as `&quot;` and the JSON stays valid. `{{{ }}}` would substitute the
+quote as it is and break the body.
+
+| Internal field | From |
+|---|---|
+| `title` | `trigger.name` → `monitor.name` → `OpenSearch alert`; a bucket-level monitor appends `(bucket_keys)` |
+| `message` | `error`, otherwise the title and the hit count |
+| `status` | `resolved` on `COMPLETED` (and on `resolved`/`ok`/`closed`), otherwise `firing` |
+| `severity` | `trigger.severity` `1`…`5` → `critical`, `error`, `warning`, `info`, `debug` |
+| `labels` | the non-empty ones of `monitor`, `trigger`, `hits`, `bucket_keys` |
+| `starts_at`, `ends_at` | `period_start`, `period_end` |
+| `dedupe_key` | `monitor.id` + `trigger.id` (+ `bucket_keys`), empty parts dropped; a name stands in for an unfilled id |
+| `generator_url` | `url` |
+
+The plugin's severity scale is inverted (1 is the highest) and has exactly the
+five levels the on-call queue sorts by, so the translation is one to one.
+
+**Closing a group.** The plugin sends recovery as a separate action: on the same
+trigger, add a second action with
+`action_execution_policy.actionable_alerts: [COMPLETED]` and the same template
+with `"status": "resolved"`.
+
+**Bucket-level monitors.** One trigger fires for several buckets at once. Add an
+`alerts` array to the template and the envelope is taken apart the way an
+Alertmanager one is — N alerts in one transaction under one advisory lock on the
+integration:
+
+```json
+{
+  "monitor": { "id": "{{ctx.monitor._id}}", "name": "{{ctx.monitor.name}}" },
+  "trigger": { "id": "{{ctx.trigger._id}}", "severity": "{{ctx.trigger.severity}}" },
+  "alerts": [ {{#ctx.newAlerts}} { "bucket_keys": "{{bucket_keys}}" }, {{/ctx.newAlerts}} ]
+}
+```
+
+An empty `alerts: []` is a `400`: an envelope with no alerts in it means a broken
+template, not an event with nothing to do.
+
+### 2.7. Kibana Rules and Elasticsearch Watcher
+
+Both products are templated by the operator too, so they share one endpoint and
+one normaliser; what differs is what they can name an alert by — a rule and its
+instance, or a watch.
+
+The Kibana webhook connector:
+
+```json
+{
+  "status": "{{alert.actionGroup}}",
+  "severity": "critical",
+  "rule": { "id": "{{rule.id}}", "name": "{{rule.name}}" },
+  "alert": { "id": "{{alert.id}}" },
+  "message": "{{context.message}}",
+  "url": "{{context.viewInAppUrl}}",
+  "date": "{{date}}"
+}
+```
+
+A Watcher `webhook` action:
+
+```json
+{
+  "watch_id": "{{ctx.watch_id}}",
+  "execution_time": "{{ctx.execution_time}}",
+  "hits": "{{ctx.payload.hits.total}}",
+  "metadata": { "severity": "warning", "team": "db" }
+}
+```
+
+| Internal field | From |
+|---|---|
+| `title` | `rule.name` → `watch_id` → `message` → `Elasticsearch alert` |
+| `status` | `resolved` on `alert.actionGroup = recovered` (and on `resolved`/`ok`/`closed`), otherwise `firing` |
+| `severity` | the template's `severity` → `metadata.severity` → `warning` |
+| `labels` | everything in `metadata`, plus the non-empty `rule`, `watch`, `hits` |
+| `starts_at` | `date` → `execution_time` |
+| `dedupe_key` | `rule.id` (or `rule.name`, or `watch_id`) + `alert.id` |
+| `generator_url` | `url` |
+
+An action in the `recovered` group closes the group — add one to the same rule
+with the same template. Its dedupe key has to be the one that opened the group,
+so do not leave `rule.id` and `alert.id` out of the recovery template.
+
+Neither Kibana rules nor Watcher have a severity of their own, so the template
+carries it as a literal. The default is `warning` rather than `unknown`:
+`unknown` ranks below every known level and would sink these alerts to the bottom
+of the on-call queue.
+
+### 2.8. The legacy NXS pool (`/v2/alert/pool`)
 
 Compatibility with `nxs-alert`. `triggerMessage` and `monitoringURL` are
 required. `title` is the first line of `triggerMessage`, truncated to 160 runes.

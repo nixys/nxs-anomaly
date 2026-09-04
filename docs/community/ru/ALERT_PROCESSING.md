@@ -54,6 +54,8 @@ HTTP-запрос на /integrations/v1/<source>/{key}
 | `POST /integrations/v1/pagerduty/{key}` | `normalizePagerDutyAlert` | `pagerduty` |
 | `POST /integrations/v1/victorops/{key}` | `normalizeVictorOpsAlert` | `victorops` |
 | `POST /integrations/v1/grafana-alerting/{key}` | `normalizeGrafanaAlertingAlert` | `grafana_alerting` |
+| `POST /integrations/v1/opensearch/{key}` | `normalizeOpenSearchAlert` | `opensearch` |
+| `POST /integrations/v1/elasticsearch/{key}` | `normalizeElasticsearchAlert` | `elasticsearch` |
 | `POST /v2/alert/pool` | `IngestLegacyPool` | `nxs-alert-compat` |
 
 ### 2.1. Общий вид алерта после разбора
@@ -130,7 +132,117 @@ externalURL, truncatedAlerts) сохраняется в `payload.alertmanager`.
 Специфика Grafana (`ruleUrl`, `dashboardURL`, `panelURL`, `silenceURL`,
 `values`, `valueString`, `orgId`) сохраняется в `payload.grafana_alerting`.
 
-### 2.6. Legacy-пул NXS (`/v2/alert/pool`)
+### 2.6. OpenSearch Alerting
+
+У плагина Alerting нет своего формата вебхука: канал уведомления отправляет тот
+Mustache-шаблон, который сохранён на триггере, а шаблон по умолчанию — простой
+текст, не JSON. Поэтому формат ниже — наш, и его нужно вставить в поле сообщения
+канала. Тело не-JSON отклоняется с `400`.
+
+```json
+{
+  "status": "firing",
+  "monitor": { "id": "{{ctx.monitor._id}}", "name": "{{ctx.monitor.name}}" },
+  "trigger": { "id": "{{ctx.trigger._id}}", "name": "{{ctx.trigger.name}}",
+               "severity": "{{ctx.trigger.severity}}" },
+  "period_start": "{{ctx.periodStart}}",
+  "period_end": "{{ctx.periodEnd}}",
+  "hits": "{{ctx.results.0.hits.total.value}}",
+  "error": "{{ctx.error}}",
+  "url": "https://opensearch.example.com/app/alerting#/monitors/{{ctx.monitor._id}}"
+}
+```
+
+Скобки двойные, а не тройные: `{{ }}` экранирует по правилам HTML, и кавычка в
+имени монитора превратится в `&quot;` — JSON останется валидным. `{{{ }}}`
+подставит кавычку как есть и порвёт тело.
+
+| Внутреннее поле | Откуда |
+|---|---|
+| `title` | `trigger.name` → `monitor.name` → `OpenSearch alert`; при bucket-мониторе к нему добавляется `(bucket_keys)` |
+| `message` | `error`, иначе `title` и число попаданий |
+| `status` | `resolved` при `COMPLETED` (и при `resolved`/`ok`/`closed`), иначе `firing` |
+| `severity` | `trigger.severity` `1`…`5` → `critical`, `error`, `warning`, `info`, `debug` |
+| `labels` | непустые `monitor`, `trigger`, `hits`, `bucket_keys` |
+| `starts_at`, `ends_at` | `period_start`, `period_end` |
+| `dedupe_key` | `monitor.id` + `trigger.id` (+ `bucket_keys`), пустые части выбрасываются; вместо незаполненного id берётся имя |
+| `generator_url` | `url` |
+
+Шкала severity у плагина инвертирована (1 — самая высокая) и содержит ровно те
+же пять уровней, по которым сортируется очередь дежурного, — перевод взаимно
+однозначный.
+
+**Закрытие группы.** Плагин шлёт восстановление отдельным действием: на том же
+триггере заведите вторую action с
+`action_execution_policy.actionable_alerts: [COMPLETED]` и тем же шаблоном, где
+`"status": "resolved"`.
+
+**Bucket-level мониторы.** Один триггер срабатывает сразу по нескольким бакетам.
+Добавьте в шаблон массив `alerts`, и конверт разберётся как у Alertmanager — N
+алертов в одной транзакции под одним advisory-локом интеграции:
+
+```json
+{
+  "monitor": { "id": "{{ctx.monitor._id}}", "name": "{{ctx.monitor.name}}" },
+  "trigger": { "id": "{{ctx.trigger._id}}", "severity": "{{ctx.trigger.severity}}" },
+  "alerts": [ {{#ctx.newAlerts}} { "bucket_keys": "{{bucket_keys}}" }, {{/ctx.newAlerts}} ]
+}
+```
+
+Пустой `alerts: []` — ошибка `400`: конверт без алертов означает сломанный
+шаблон, а не событие, которое нечего обрабатывать.
+
+### 2.7. Kibana Rules и Elasticsearch Watcher
+
+Оба продукта тоже шаблонизируются оператором, поэтому у них один эндпоинт и один
+нормализатор; различаются они тем, чем называют алерт — правилом и его
+инстансом или watch'ем.
+
+Webhook connector в Kibana:
+
+```json
+{
+  "status": "{{alert.actionGroup}}",
+  "severity": "critical",
+  "rule": { "id": "{{rule.id}}", "name": "{{rule.name}}" },
+  "alert": { "id": "{{alert.id}}" },
+  "message": "{{context.message}}",
+  "url": "{{context.viewInAppUrl}}",
+  "date": "{{date}}"
+}
+```
+
+Action `webhook` в Watcher:
+
+```json
+{
+  "watch_id": "{{ctx.watch_id}}",
+  "execution_time": "{{ctx.execution_time}}",
+  "hits": "{{ctx.payload.hits.total}}",
+  "metadata": { "severity": "warning", "team": "db" }
+}
+```
+
+| Внутреннее поле | Откуда |
+|---|---|
+| `title` | `rule.name` → `watch_id` → `message` → `Elasticsearch alert` |
+| `status` | `resolved` при `alert.actionGroup = recovered` (и при `resolved`/`ok`/`closed`), иначе `firing` |
+| `severity` | `severity` из шаблона → `metadata.severity` → `warning` |
+| `labels` | всё из `metadata` плюс непустые `rule`, `watch`, `hits` |
+| `starts_at` | `date` → `execution_time` |
+| `dedupe_key` | `rule.id` (или `rule.name`, или `watch_id`) + `alert.id` |
+| `generator_url` | `url` |
+
+Группу закрывает действие в группе `recovered` — заведите его на том же правиле
+с тем же шаблоном. Ключ дедупликации при этом обязан совпасть с тем, что открыл
+группу, поэтому `rule.id` и `alert.id` в шаблоне восстановления не пропускайте.
+
+Своего понятия severity нет ни у Kibana Rules, ни у Watcher, поэтому в шаблоне
+она задаётся литералом. Значение по умолчанию — `warning`, а не `unknown`:
+`unknown` имеет ранг ниже любого известного уровня и утопил бы такие алерты в
+самый низ очереди дежурного.
+
+### 2.8. Legacy-пул NXS (`/v2/alert/pool`)
 
 Совместимость с `nxs-alert`. Обязательны `triggerMessage` и `monitoringURL`.
 `title` — первая строка `triggerMessage`, обрезанная до 160 рун. Severity —
