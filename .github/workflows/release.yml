@@ -307,6 +307,15 @@ jobs:
         with:
           cosign-release: v2.4.1
 
+      # `helm registry login` writes helm's own registry config; cosign reads the
+      # docker one. Without this the push below succeeds and the signature that
+      # follows it fails on an anonymous GET of the digest it just wrote.
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: The chart's defaults must name the images this release published
         run: |
           set -eu

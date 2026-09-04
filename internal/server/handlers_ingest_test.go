@@ -107,6 +107,83 @@ func TestHandleGrafanaAlerting(t *testing.T) {
 	}
 }
 
+func TestHandleOpenSearch(t *testing.T) {
+	srv, st := newTestServer()
+	seedIntegration(srv)
+
+	body := `{"status":"firing","monitor":{"id":"m1","name":"5xx rate"},` +
+		`"trigger":{"id":"t1","name":"too many 5xx","severity":"1"}}`
+	w := ingest(srv.handleOpenSearch, body, "k1")
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("success: code=%d body=%s", w.Code, w.Body.String())
+	}
+	if st.Count("alert_groups") != 1 {
+		t.Errorf("alert group not created: count=%d", st.Count("alert_groups"))
+	}
+
+	// A bucket-level envelope is one event: two buckets, two alerts, two groups.
+	envelope := `{"monitor":{"id":"m2","name":"errors by host"},` +
+		`"trigger":{"id":"t2","name":"per host","severity":"2"},` +
+		`"alerts":[{"bucket_keys":"host-a"},{"bucket_keys":"host-b"}]}`
+	w = ingest(srv.handleOpenSearch, envelope, "k1")
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("envelope: code=%d body=%s", w.Code, w.Body.String())
+	}
+	if st.Count("alert_groups") != 3 {
+		t.Errorf("bucket alerts did not open a group each: count=%d", st.Count("alert_groups"))
+	}
+
+	// Empty alerts[] → 400 (validation, before the key lookup).
+	w = ingest(srv.handleOpenSearch, `{"alerts":[]}`, "k1")
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("empty alerts: code=%d, want 400", w.Code)
+	}
+
+	// The default channel message is plain text, not JSON: it must not be ingested
+	// as an alert with no monitor, trigger or dedupe key.
+	w = ingest(srv.handleOpenSearch, `Monitor 5xx rate just entered alert status.`, "k1")
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("plain text body: code=%d, want 400", w.Code)
+	}
+
+	w = ingest(srv.handleOpenSearch, body, "nope")
+	if w.Code != http.StatusNotFound {
+		t.Errorf("unknown key: code=%d, want 404", w.Code)
+	}
+}
+
+func TestHandleElasticsearch(t *testing.T) {
+	srv, st := newTestServer()
+	seedIntegration(srv)
+
+	body := `{"status":"active","severity":"critical","rule":{"id":"r1","name":"disk full"},` +
+		`"alert":{"id":"a1","actionGroup":"default"},"message":"disk 95%"}`
+	w := ingest(srv.handleElasticsearch, body, "k1")
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("success: code=%d body=%s", w.Code, w.Body.String())
+	}
+	if st.Count("alert_groups") != 1 {
+		t.Errorf("alert group not created: count=%d", st.Count("alert_groups"))
+	}
+
+	// The recovery action group closes the group it opened rather than opening a
+	// second one.
+	recovery := `{"rule":{"id":"r1","name":"disk full"},` +
+		`"alert":{"id":"a1","actionGroup":"recovered"}}`
+	w = ingest(srv.handleElasticsearch, recovery, "k1")
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("recovery: code=%d body=%s", w.Code, w.Body.String())
+	}
+	if st.Count("alert_groups") != 1 {
+		t.Errorf("recovery opened a new group: count=%d", st.Count("alert_groups"))
+	}
+
+	w = ingest(srv.handleElasticsearch, body, "nope")
+	if w.Code != http.StatusNotFound {
+		t.Errorf("unknown key: code=%d, want 404", w.Code)
+	}
+}
+
 func TestHandlePagerDuty(t *testing.T) {
 	srv, _ := newTestServer()
 	seedIntegration(srv)

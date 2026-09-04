@@ -177,6 +177,44 @@ func FuzzNormalizeGrafanaAlertingAlert(f *testing.F) {
 	})
 }
 
+func FuzzNormalizeOpenSearchAlert(f *testing.F) {
+	f.Add([]byte(`{"status":"firing","monitor":{"id":"m1","name":"5xx rate"},"trigger":{"id":"t1","name":"too many 5xx","severity":"1"},"period_start":"2026-01-01T00:00:00Z","period_end":"2026-01-01T00:05:00Z","hits":"42","error":"","url":"https://os.example.com/app/alerting"}`))
+	// The template left everything unfilled — the shape a Mustache miss produces.
+	f.Add([]byte(`{"status":"","monitor":{"id":"","name":""},"trigger":{"id":"","name":"","severity":""},"hits":"","error":""}`))
+	f.Add([]byte(`{"monitor":"not-an-object","trigger":[1,2],"alerts":{"a":1},"hits":{"b":2}}`))
+	f.Add([]byte(`{"monitor":{"name":"Ошибки приложения"},"trigger":{"name":"Слишком много 5xx","severity":"3"}}`))
+	// A bucket-level entry, including one COMPLETED bucket among firing ones.
+	f.Add([]byte(`{"monitor":{"id":"m1"},"trigger":{"id":"t1","severity":"2"},"alerts":[{"bucket_keys":"host-a","status":"COMPLETED"}]}`))
+	// A severity outside 1..5 must survive as itself rather than become empty.
+	f.Add([]byte(`{"trigger":{"severity":"99"}}`))
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		envelope := decodeObject(t, data)
+		alerts, _ := envelope["alerts"].([]any)
+		var first map[string]any
+		if len(alerts) > 0 {
+			first, _ = alerts[0].(map[string]any)
+		}
+		// nil is the single-alert path, not a missing case: the normalizer is
+		// called that way for every monitor that is not bucket-level.
+		checkNormalized(t, "opensearch", normalizeOpenSearchAlert(envelope, first))
+	})
+}
+
+func FuzzNormalizeElasticsearchAlert(f *testing.F) {
+	f.Add([]byte(`{"status":"active","severity":"critical","rule":{"id":"r1","name":"disk full"},"alert":{"id":"a1","actionGroup":"default"},"message":"disk 95%","url":"https://kibana.example.com/app/o11y","date":"2026-01-01T00:00:00Z"}`))
+	f.Add([]byte(`{"rule":{"id":"r1"},"alert":{"id":"a1","actionGroup":"recovered"}}`))
+	// The Watcher shape: no rule, no alert, a watch id instead.
+	f.Add([]byte(`{"watch_id":"w1","execution_time":"2026-01-01T00:00:00Z","hits":"7","metadata":{"severity":"error","team":"db"}}`))
+	f.Add([]byte(`{"rule":42,"alert":"x","metadata":[1,2],"severity":{"a":1}}`))
+	f.Add([]byte(`{"rule":{"name":"Диск заполнен"},"message":"Свободно 5%"}`))
+	f.Add([]byte(`{}`))
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		checkNormalized(t, "elasticsearch", normalizeElasticsearchAlert(decodeObject(t, data)))
+	})
+}
+
 // FuzzLegacyTitle guards the one place ingest shortens operator-supplied text.
 // The cap must never split a rune: the title goes into a text column, and
 // PostgreSQL rejects an invalid byte sequence outright — so on a long Cyrillic

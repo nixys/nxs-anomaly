@@ -28,6 +28,22 @@ semantic versioning once it reaches 1.0.
   the schema underneath is the same.
 
 ### Added
+- **OpenSearch Alerting, Kibana Rules and Elasticsearch Watcher as alert sources.**
+  `POST /integrations/v1/opensearch/{key}` and `POST /integrations/v1/elasticsearch/{key}`,
+  with `normalizeOpenSearchAlert` and `normalizeElasticsearchAlert` behind them. None of
+  the three products has a webhook format of its own — every one of them posts a Mustache
+  template the operator wrote, and OpenSearch's default template is not even JSON — so the
+  shape is ours and ALERT_PROCESSING.md §2.6–2.7 carries the template to paste into each.
+  What a template cannot express is what these endpoints are for: the plugin's inverted
+  `1`…`5` trigger severity translated onto the five levels the on-call queue sorts by, a
+  dedupe key built from monitor and trigger ids (plus bucket keys) rather than from the
+  tail of whatever field was handy, recovery recognised from OpenSearch's `COMPLETED` and
+  Kibana's `recovered` action group, and a bucket-level monitor's several buckets ingested
+  as one envelope in one transaction under one advisory lock, the way an Alertmanager
+  envelope is. The Elastic side defaults to severity `warning` rather than `unknown`
+  because neither Kibana rules nor Watcher have a severity of their own, and `unknown`
+  ranks below every known level — the default would have put these alerts at the bottom of
+  the on-call queue.
 - **Two editions, cut from one tree.** The service now builds as a community edition
   (everything but single sign-on, team boundaries and the Kafka analytics stream) or as
   the full one, from the same sources: `go build -tags community ./...` produces the

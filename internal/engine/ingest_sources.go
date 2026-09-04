@@ -299,6 +299,267 @@ func normalizeGrafanaAlertingAlert(envelope, alert map[string]any) map[string]an
 	}
 }
 
+// IngestOpenSearch processes an OpenSearch Alerting notification.
+//
+// The Alerting plugin has no wire format of its own: a notification channel
+// posts whatever Mustache template the operator saved on the trigger, and the
+// default one is plain text. So the shape below is ours — documented in
+// ALERT_PROCESSING.md and pasted into the channel — and this normaliser stays
+// tolerant of every field being absent.
+//
+// A bucket-level monitor fires for several buckets at once. Those arrive as
+// `alerts[]` and are ingested in one locked transaction, the way an Alertmanager
+// envelope is: a monitor that produced eight buckets is one event, and eight
+// transactions would take the integration's advisory lock eight times.
+func (e *Engine) IngestOpenSearch(ctx context.Context, integrationKey string, payload map[string]any) (map[string]any, error) {
+	if payload == nil {
+		return nil, errValidation("OpenSearch payload must be an object")
+	}
+	entries, hasEntries := payload["alerts"].([]any)
+	if hasEntries && len(entries) == 0 {
+		return nil, errValidation("OpenSearch alerts[] must not be empty")
+	}
+
+	var normalized []map[string]any
+	if hasEntries {
+		for _, raw := range entries {
+			entry, ok := raw.(map[string]any)
+			if !ok {
+				return nil, errValidation("each OpenSearch alert must be an object")
+			}
+			normalized = append(normalized, normalizeOpenSearchAlert(payload, entry))
+		}
+	} else {
+		normalized = []map[string]any{normalizeOpenSearchAlert(payload, nil)}
+	}
+
+	results, err := e.ingestNormalizedBatch(ctx, integrationKey, normalized)
+	if err != nil {
+		return nil, err
+	}
+	monitor, _ := payload["monitor"].(map[string]any)
+	trigger, _ := payload["trigger"].(map[string]any)
+	return map[string]any{
+		"monitor":   utils.StrVal(monitor, "name"),
+		"trigger":   utils.StrVal(trigger, "name"),
+		"processed": len(results),
+		"results":   results,
+	}, nil
+}
+
+// openSearchSeverities maps the plugin's trigger severity — 1 is the highest —
+// onto the vocabulary the on-call queue sorts by (store.SeverityRank). The two
+// scales have the same five levels, so nothing is lost in the translation.
+var openSearchSeverities = map[string]string{
+	"1": "critical",
+	"2": "error",
+	"3": "warning",
+	"4": "info",
+	"5": "debug",
+}
+
+func normalizeOpenSearchAlert(envelope, entry map[string]any) map[string]any {
+	monitor, _ := envelope["monitor"].(map[string]any)
+	trigger, _ := envelope["trigger"].(map[string]any)
+
+	monitorID := utils.StrVal(monitor, "id")
+	monitorName := utils.StrVal(monitor, "name")
+	triggerID := utils.StrVal(trigger, "id")
+	triggerName := utils.StrVal(trigger, "name")
+	bucketKeys := utils.StrVal(entry, "bucket_keys")
+
+	// A per-alert status wins over the envelope's: one COMPLETED bucket in an
+	// envelope of firing ones closes only its own group.
+	status := "firing"
+	rawStatus := strings.ToLower(pickFirst([]string{
+		utils.StrVal(entry, "status"),
+		utils.StrVal(envelope, "status"),
+	}, "firing"))
+	if rawStatus == "completed" || resolvedStatuses[rawStatus] {
+		status = "resolved"
+	}
+
+	rawSeverity := strings.ToLower(pickFirst([]string{
+		utils.StrVal(entry, "severity"),
+		utils.StrVal(trigger, "severity"),
+	}, ""))
+	severity := rawSeverity
+	if mapped, ok := openSearchSeverities[rawSeverity]; ok {
+		severity = mapped
+	}
+	if severity == "" {
+		severity = "warning"
+	}
+
+	hits := pickFirst([]string{utils.StrVal(entry, "hits"), utils.StrVal(envelope, "hits")}, "")
+	osError := utils.StrVal(envelope, "error")
+
+	labels := map[string]string{}
+	for k, v := range map[string]string{
+		"monitor":     monitorName,
+		"trigger":     triggerName,
+		"hits":        hits,
+		"bucket_keys": bucketKeys,
+	} {
+		if v != "" {
+			labels[k] = v
+		}
+	}
+
+	title := pickFirst([]string{triggerName, monitorName}, "OpenSearch alert")
+	if bucketKeys != "" {
+		title += " (" + bucketKeys + ")"
+	}
+	message := osError
+	if message == "" && hits != "" {
+		message = title + ": " + hits + " hits"
+	}
+
+	dedupeKey := strings.Join(nonEmpty([]string{
+		pickFirst([]string{monitorID, monitorName}, ""),
+		pickFirst([]string{triggerID, triggerName}, ""),
+		bucketKeys,
+	}), ":")
+
+	return map[string]any{
+		"title":         title,
+		"message":       strDefault(message, title),
+		"status":        status,
+		"severity":      severity,
+		"labels":        labelsAny(labels),
+		"annotations":   map[string]any{},
+		"starts_at":     nilIfEmpty(utils.StrVal(envelope, "period_start")),
+		"ends_at":       nilIfEmpty(utils.StrVal(envelope, "period_end")),
+		"generator_url": nilIfEmpty(utils.StrVal(envelope, "url")),
+		"fingerprint":   dedupeKey,
+		"dedupe_key":    nilIfEmpty(dedupeKey),
+		"source":        "opensearch",
+		"opensearch": map[string]any{
+			"monitor_id":   monitorID,
+			"monitor_name": monitorName,
+			"trigger_id":   triggerID,
+			"trigger_name": triggerName,
+			"severity":     rawSeverity,
+			"bucket_keys":  bucketKeys,
+			"hits":         hits,
+			"error":        osError,
+			"period_start": utils.StrVal(envelope, "period_start"),
+			"period_end":   utils.StrVal(envelope, "period_end"),
+		},
+	}
+}
+
+// IngestElasticsearch processes a Kibana rule action or an Elasticsearch Watcher
+// webhook. Both are templated by the operator the same way an OpenSearch channel
+// is, and both are answered by one normaliser: the two products differ in what
+// they can name an alert by — a rule and an alert instance, or a watch — which is
+// a difference in three fields, not in a format.
+func (e *Engine) IngestElasticsearch(ctx context.Context, integrationKey string, payload map[string]any) (map[string]any, error) {
+	if payload == nil {
+		return nil, errValidation("Elasticsearch payload must be an object")
+	}
+	normalized := normalizeElasticsearchAlert(payload)
+	result, err := e.IngestAlert(ctx, integrationKey, normalized)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"status":     utils.StrVal(normalized, "status"),
+		"dedupe_key": normalized["dedupe_key"],
+		"result":     result,
+	}, nil
+}
+
+func normalizeElasticsearchAlert(payload map[string]any) map[string]any {
+	rule, _ := payload["rule"].(map[string]any)
+	alert, _ := payload["alert"].(map[string]any)
+	metadata, _ := utils.CoerceLabelMap(payload["metadata"])
+
+	ruleID := utils.StrVal(rule, "id")
+	ruleName := utils.StrVal(rule, "name")
+	alertID := utils.StrVal(alert, "id")
+	watchID := utils.StrVal(payload, "watch_id")
+	// Kibana names its recovery action group `recovered`, which is not one of the
+	// statuses the engine already treats as a closure; the mapping is local, the
+	// way Grafana's `state=ok` is.
+	actionGroup := strings.ToLower(utils.StrVal(alert, "actionGroup"))
+
+	status := "firing"
+	rawStatus := strings.ToLower(pickFirst([]string{utils.StrVal(payload, "status"), actionGroup}, "firing"))
+	if rawStatus == "recovered" || resolvedStatuses[rawStatus] {
+		status = "resolved"
+	}
+
+	// Neither Kibana rules nor Watcher have a severity of their own, so it comes
+	// from the template as a literal. The default is `warning` rather than
+	// `unknown`: an unknown severity ranks below every known one, which would sink
+	// these alerts to the bottom of the on-call queue.
+	severity := strings.ToLower(pickFirst([]string{
+		utils.StrVal(payload, "severity"),
+		metadata["severity"],
+	}, "warning"))
+
+	hits := utils.StrVal(payload, "hits")
+	message := utils.StrVal(payload, "message")
+
+	labels := map[string]string{}
+	for k, v := range metadata {
+		labels[k] = v
+	}
+	for k, v := range map[string]string{
+		"rule":  ruleName,
+		"watch": watchID,
+		"hits":  hits,
+	} {
+		if v != "" {
+			labels[k] = v
+		}
+	}
+
+	title := pickFirst([]string{ruleName, watchID, message}, "Elasticsearch alert")
+	dedupeKey := strings.Join(nonEmpty([]string{
+		pickFirst([]string{ruleID, ruleName, watchID}, ""),
+		alertID,
+	}), ":")
+
+	return map[string]any{
+		"title":         title,
+		"message":       strDefault(message, title),
+		"status":        status,
+		"severity":      severity,
+		"labels":        labelsAny(labels),
+		"annotations":   map[string]any{},
+		"starts_at":     nilIfEmpty(pickFirst([]string{utils.StrVal(payload, "date"), utils.StrVal(payload, "execution_time")}, "")),
+		"generator_url": nilIfEmpty(utils.StrVal(payload, "url")),
+		"fingerprint":   dedupeKey,
+		"dedupe_key":    nilIfEmpty(dedupeKey),
+		"source":        "elasticsearch",
+		"elasticsearch": map[string]any{
+			"rule_id":        ruleID,
+			"rule_name":      ruleName,
+			"alert_id":       alertID,
+			"action_group":   actionGroup,
+			"watch_id":       watchID,
+			"execution_time": utils.StrVal(payload, "execution_time"),
+			"hits":           hits,
+			"metadata":       strMapAny(metadata),
+		},
+	}
+}
+
+// nonEmpty drops the empty strings from parts. A dedupe key is joined from
+// identifiers a template may leave unfilled, and "mon::bucket" and "mon:bucket"
+// must not name two different groups for the same alert.
+func nonEmpty(parts []string) []string {
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // IngestLegacyPool processes a legacy nxs-alert (NXS pool) payload.
 func (e *Engine) IngestLegacyPool(ctx context.Context, integrationKey string, payload map[string]any) (map[string]any, error) {
 	if err := utils.EnsureRequired(payload, []string{"triggerMessage", "monitoringURL"}); err != nil {
