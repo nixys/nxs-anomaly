@@ -48,6 +48,17 @@ semantic versioning once it reaches 1.0.
   the same time.
 
 ### Changed
+- **The Kafka analytics relay drains the outbox every cycle instead of one batch of
+  100.** The queue could only shrink by a hundred events per worker cycle however far
+  behind it was, so a burst outran it: measured on a live installation, ingest reached
+  ~600 alerts/s across four integrations while the relay moved ~80 events/s, and 3000
+  events peaked at a backlog of 2348 that took another ~30 s to reach ClickHouse. Nothing
+  was ever lost — the outbox is durable and the consumer caught up — but the analytics
+  tables answered questions about a state of the world minutes old, and the lag grew with
+  the burst. One cycle now keeps taking batches until the queue is empty, bounded at 2
+  seconds or 5000 events so that escalation and delivery, which share the same worker
+  cycle, are not held behind the relay; whatever is left goes out on the next cycle.
+
 - **One naming policy for every release artefact: the edition is the last name
   segment.** The enterprise edition publishes `nxs-anomaly`,
   `nxs-anomaly-frontend` and the chart `nxs-anomaly`; the community
