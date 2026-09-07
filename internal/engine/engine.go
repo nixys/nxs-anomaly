@@ -124,9 +124,14 @@ type Engine struct {
 	refCache      *refCache // short-TTL cache of reference collections; nil in unit tests
 	kafkaProducer outboxProducer
 	kafkaTopic    string
-	metrics       MetricsSink     // engine-level metric sink; noopMetrics until SetMetricsSink
-	breaker       *circuitBreaker // per-channel/target delivery breaker; nil when disabled
-	workerID      string          // identifies this process when claiming notifications
+	// kafkaOutboxCycleBudget overrides outboxCycleBudget when non-zero. Tests
+	// use this to remove the wall-clock race between the drain loop and the
+	// count-based outboxCycleLimit (the default budget is real time, and a
+	// slow test run — e.g. under -race — can hit it before the count does).
+	kafkaOutboxCycleBudget time.Duration
+	metrics                MetricsSink     // engine-level metric sink; noopMetrics until SetMetricsSink
+	breaker                *circuitBreaker // per-channel/target delivery breaker; nil when disabled
+	workerID               string          // identifies this process when claiming notifications
 	// lastCoverageCheck throttles the standing schedule-coverage check. Only
 	// the worker goroutine touches it, and RunWorkerCycle is serialised against
 	// itself, so it needs no lock.
