@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -133,6 +134,12 @@ type Engine struct {
 	// lastHeartbeat throttles the worker heartbeat that readiness reads. Same
 	// ownership as lastCoverageCheck: worker goroutine only.
 	lastHeartbeat time.Time
+	// reopenAckedOnNewAlert is the deployment's policy for an alert arriving on
+	// an acknowledged group. Off by default: an acknowledgement means an
+	// operator answered, and a source that keeps re-sending the same alert must
+	// not be able to page them again for the event they already took. See
+	// ingestOneLocked.
+	reopenAckedOnNewAlert bool
 }
 
 // coverageCheckInterval is how often the worker re-checks schedule coverage.
@@ -160,12 +167,13 @@ func New(s store.PostgreSQLStore) *Engine {
 	cfg.warnClaimTimeoutRisk()
 	cfg.proxies.logStartup()
 	return &Engine{
-		store:       refInvalidatingStore{PostgreSQLStore: s, cache: cache},
-		refCache:    cache,
-		deliveryCfg: cfg,
-		metrics:     noopMetrics{},
-		breaker:     newCircuitBreaker(cfg.CircuitBreakerThreshold, cfg.CircuitBreakerCooldown),
-		workerID:    utils.MakeID("wkr"),
+		store:                 refInvalidatingStore{PostgreSQLStore: s, cache: cache},
+		refCache:              cache,
+		deliveryCfg:           cfg,
+		metrics:               noopMetrics{},
+		breaker:               newCircuitBreaker(cfg.CircuitBreakerThreshold, cfg.CircuitBreakerCooldown),
+		workerID:              utils.MakeID("wkr"),
+		reopenAckedOnNewAlert: os.Getenv("NXS_ANOMALY_REOPEN_ACKED_ON_NEW_ALERT") == "true",
 	}
 }
 

@@ -57,12 +57,21 @@ dump_diagnostics() {
   kubectl -n "${NS}" get pods -o wide 2>&1 | sed 's/^/  /' >&2 || true
   kubectl -n monitoring get pods -o wide 2>&1 | sed 's/^/  /' >&2 || true
   kubectl -n attacker get pods -o wide 2>&1 | sed 's/^/  /' >&2 || true
-  # Container logs for anything not ready. A pod that cannot reach its database
+  # Container logs for anything not ready or restarted. A pod that cannot reach its database
   # looks identical from `get pods` to one that crashed on a bad config; only the
   # log says which. kind-smoke.sh has had this since it was written.
   for p in $(kubectl -n "${NS}" get pods -o name 2>/dev/null); do
     ready="$(kubectl -n "${NS}" get "$p" -o jsonpath='{.status.containerStatuses[0].ready}' 2>/dev/null || echo false)"
-    if [ "${ready}" != "true" ]; then
+    restarts="$(kubectl -n "${NS}" get "$p" -o jsonpath='{.status.containerStatuses[0].restartCount}' 2>/dev/null || echo 0)"
+    if [ "${ready}" != "true" ] || [ "${restarts:-0}" != "0" ]; then
+      # Events and lastState.terminated.reason, which the logs do not carry: a
+      # container killed for exceeding its memory limit and one killed by a
+      # liveness probe leave the same empty log behind, and only this says which.
+      # Restarted-but-ready pods are described too — by the time a run fails on a
+      # starved node they are usually Running again, and their restart reason is
+      # the whole story.
+      echo "  --- describe $p (ready=${ready} restarts=${restarts}) ---" >&2
+      kubectl -n "${NS}" describe "$p" 2>&1 | sed 's/^/    /' >&2 || true
       echo "  --- logs $p ---" >&2
       kubectl -n "${NS}" logs "$p" --all-containers --tail=40 2>&1 | sed 's/^/    /' >&2 || true
       kubectl -n "${NS}" logs "$p" --all-containers --previous --tail=40 2>&1 | sed 's/^/    prev: /' >&2 || true
@@ -141,12 +150,18 @@ kubectl -n attacker wait --for=condition=Ready pod/attacker-probe --timeout=60s
 log "helm install (networkPolicy.enabled, extraIngress scoped to the monitoring namespace)"
 kubectl create namespace "${NS}" >/dev/null 2>&1 || true
 ANALYTICS_SET=""
+# 20m, not the 10m this used to wait: on a busy shared runner the kind node runs
+# out of memory, the control plane restarts, and helm spends minutes on
+# "TLS handshake timeout" against an apiserver that is simply absent — a release
+# that does converge is then reported as one that never installed. The window is
+# a bound on how long the cluster may be sick, not on how long the install takes;
+# the job's own 45m timeout still caps the run.
 # shellcheck disable=SC2086  # deliberate word splitting: the list may be empty
 if ! helm upgrade --install "${RELEASE}" "${CHART_DIR}" -n "${NS}" -f "${VALUES}" \
   --set networkPolicy.enabled=true \
   ${ANALYTICS_SET} \
   --set 'networkPolicy.extraIngress[0].namespaceSelector.matchLabels.kubernetes\.io/metadata\.name=monitoring' \
-  --wait --timeout 10m; then
+  --wait --timeout 20m; then
   echo "FAIL: the release did not install under the policy."
   exit 1
 fi

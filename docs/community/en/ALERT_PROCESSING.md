@@ -265,6 +265,38 @@ A practical consequence: **the pipeline affects grouping**. A build id cut out o
 the title collapses a night of failures into one incident; a label added and
 named in `group_by` does the opposite and splits alerts into separate groups.
 
+### 3.1. A repeat firing of an already open group
+
+A source normally keeps re-sending the same alert while the problem lasts:
+Alertmanager every `repeat_interval`, the others on their own period. Such a
+repeat firing joins the same group and does exactly three things: it is stored
+as its own row in `alerts`, it increments `alert_count`, and it refreshes the
+group's `last_received_at`, `severity`, `title` and labels.
+
+What it does **not** do:
+
+- **it does not advance the escalation.** The position in the chain is a promise
+  about time: `WAIT 10 minutes` means the next step runs ten minutes later, not
+  the moment the source repeats the alert. The timer (`next_run_at`) belongs to
+  the worker, and a repeat neither consumes nor restarts it;
+- **it does not undo an acknowledgement.** An ACK is the on-call engineer saying
+  "I know, stop waking me". A source restating the same alert does not overrule
+  that, or an acknowledged group would page a person on every repeat.
+
+Escalation starts over only when an alert opens a group — a new one, or one that
+came back to `open`.
+
+**The reopen policy.** `NXS_ANOMALY_REOPEN_ACKED_ON_NEW_ALERT=true` turns on the
+opposite behaviour: any new alert on an acknowledged group takes it back to
+`open`, starts a new episode and **runs the chain from step zero** (not from the
+position the ACK stopped it at). The policy is off by default. It makes sense
+where a source sends a firing only for a genuinely new event rather than on a
+repeat timer — otherwise it becomes a permanent wake-up call.
+
+A separate incident after the group was closed is a different case and always
+works: a resolved group is not matched by the (`integration_id`, `dedupe_key`)
+lookup, so the next firing opens a new group.
+
 ## 4. The pipeline: enrichment and removal
 
 An integration's `pipeline` field is a list of stages that rewrites the alert

@@ -599,6 +599,14 @@ func (g AlertGroup) ReopenOnNewAlert() bool {
 	}
 	g.d.Status = StatusOpen
 	g.d.Extra["acknowledged_at"] = nil
+	// The chain restarts from the top, as it does for Unresolve, because a
+	// reopen is a new episode and a new episode is escalated from the
+	// beginning. Resuming from the stored position would run whatever step the
+	// chain had already reached — for a group parked behind a WAIT, that is the
+	// step the WAIT was still counting down to, executed the moment the alert
+	// came back.
+	g.d.CurrentStep = 0
+	g.d.RepeatCount = 0
 	// Same reasoning as Unresolve: somebody acknowledged this, it came back,
 	// and the acknowledgement of the next pass is a second response time.
 	g.StartEpisode()
