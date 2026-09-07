@@ -144,15 +144,9 @@ func New(ctx context.Context, s store.PostgreSQLStore, eng *engine.Engine, cfg C
 		srv.apiLimiter = newRateLimiter(cfg.APIRate, cfg.APIRate)
 	}
 
-	mux := http.NewServeMux()
-	srv.registerRoutes(mux)
-
 	httpSrv := &http.Server{
-		Addr: cfg.Addr,
-		// Outermost first: recover catches panics from everything including the
-		// tracing middleware; tracing wraps the rest so the span covers the whole
-		// request and the access log can read the trace id out of the context.
-		Handler:           srv.withRecover(srv.withTracing(srv.withRequestID(srv.withObservability(mux)))),
+		Addr:              cfg.Addr,
+		Handler:           srv.handler(),
 		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
 		ReadTimeout:       cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,
@@ -282,6 +276,17 @@ func (srv *Server) runWorkerLoop(ctx context.Context) {
 		srv.metrics.updateOperationalGauges(srv.store)
 		applyCycleResult(srv.metrics, result)
 	}
+}
+
+// handler builds the routed, fully wrapped HTTP handler this server serves.
+//
+// Outermost first: recover catches panics from everything including the tracing
+// middleware; tracing wraps the rest so the span covers the whole request and
+// the access log can read the trace id out of the context.
+func (srv *Server) handler() http.Handler {
+	mux := http.NewServeMux()
+	srv.registerRoutes(mux)
+	return srv.withRecover(srv.withTracing(srv.withRequestID(srv.withObservability(mux))))
 }
 
 func (srv *Server) registerRoutes(mux *http.ServeMux) {

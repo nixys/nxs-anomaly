@@ -6,6 +6,47 @@ semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Fixed
+- **A repeat firing no longer executes the escalation step a `WAIT` is still counting
+  down to.** Every accepted alert ran the chain from the group's stored position, so an
+  alert arriving on a group already parked behind a `WAIT` ran the step the wait was
+  counting down to. With the chain `WAIT 10 minutes → RESOLVE`, a source repeating the
+  same alert half a second after the first one closed the incident half a second after it
+  opened, and the firing after that had to open a second group for an incident that had
+  never stopped. The chain's position is a promise about time and the timer
+  (`next_run_at`) belongs to the worker; ingest now advances escalation only for an alert
+  that opens a group.
+
+- **A repeat firing no longer clears an acknowledgement.** An acknowledged group returned
+  to `open` on the next alert with the same dedupe key, which for a source that re-sends
+  on a timer meant paging the person who had just answered, on every repeat. The default
+  is now that the acknowledgement stands; `NXS_ANOMALY_REOPEN_ACKED_ON_NEW_ALERT=true`
+  restores the previous behaviour for deployments whose sources fire only on genuinely
+  new events. A group that does reopen now restarts its chain from step zero, the way an
+  unresolve already did, instead of resuming at the position the acknowledgement stopped
+  it at — resuming there was the same early-step bug wearing a different hat.
+
+- **Concurrent ingests no longer overwrite each other's group state.** Each request built
+  its update on a copy of the alert group read *before* the per-integration advisory lock,
+  so two requests inside the lock in turn both started from the same pre-lock snapshot and
+  the second wrote back a group that had never seen the first: twenty accepted alerts left
+  a group reporting `alert_count` 10 and 12 across runs, with `alert_ids` short by the same
+  amount, while all twenty alert rows were stored. The rows were never lost — the
+  aggregate the counters, the group view and the epic threshold read was. The group is now
+  resolved only from the state loaded under the lock, and the pre-lock lookup that fed the
+  stale copy is gone (one query less per alert).
+
+- **A group its own escalation chain resolved during ingest now closes its alerts.** Only
+  the ingest result "resolved" — a resolving event from the source — carried the status
+  down to the group's alerts, so a group closed by a `RESOLVE` step reached during the
+  ingest kept alerts marked `firing` forever, on a group nobody would touch again. The
+  group's final status is what decides now, not the per-alert result.
+
+  Regressions for all four run over real HTTP against a real PostgreSQL
+  (`tests/ingest_live_test.go`), because none of them is reachable otherwise: two need the
+  group row to survive between requests, and one needs two requests inside the ingest at
+  the same time.
+
 ### Changed
 - **One naming policy for every release artefact: the edition is the last name
   segment.** The enterprise edition publishes `nxs-anomaly`,

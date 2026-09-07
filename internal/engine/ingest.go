@@ -54,8 +54,11 @@ func (e *Engine) CreateDirectPageGroup(ctx context.Context, payload map[string]a
 	return group["id"].(string), nil
 }
 
-// preparedAlert carries the pre-lock work for one alert: route selection,
-// normalized fields and the pre-lock active-group lookup.
+// preparedAlert carries the pre-lock work for one alert: route selection and
+// normalized fields. It deliberately carries no alert group: a group read
+// before the advisory lock is a snapshot that a concurrent ingest may already
+// have superseded, and acting on it loses that ingest's updates. The group is
+// resolved under the lock, from the state the mutator loaded.
 type preparedAlert struct {
 	payload          map[string]any
 	route            map[string]any
@@ -64,7 +67,6 @@ type preparedAlert struct {
 	title            string
 	severity         string
 	dedupeKey        string
-	activeGroup      map[string]any
 	filteredChannels []string
 	emergencyAlert   bool
 	// traceParent carries the ingesting request's span context down to group
@@ -122,12 +124,6 @@ func (e *Engine) prepareAlert(ctx context.Context, integration, payload map[stri
 		dedupeKey = buildDedupeKey(integration, labels, title)
 	}
 
-	// Pre-lock look-up (may race with concurrent ingest, re-checked under lock).
-	activeGroup, err := e.store.FindActiveAlertGroup(ctx, utils.StrVal(integration, "id"), dedupeKey)
-	if err != nil {
-		return nil, err
-	}
-
 	notifChannels, _ := utils.CoerceStringList(payload["notification_channels"])
 	var filteredChannels []string
 	for _, ch := range notifChannels {
@@ -148,7 +144,6 @@ func (e *Engine) prepareAlert(ctx context.Context, integration, payload map[stri
 		title:            title,
 		severity:         severity,
 		dedupeKey:        dedupeKey,
-		activeGroup:      activeGroup,
 		filteredChannels: filteredChannels,
 		emergencyAlert:   emergencyAlert,
 		traceParent:      tracing.Traceparent(ctx),
@@ -316,18 +311,29 @@ func (e *Engine) ingestPrepared(ctx context.Context, integration map[string]any,
 		return nil, err
 	}
 	results := result.([]map[string]any)
-	// A resolving event from the source closes the group, and the group's
-	// earlier alerts are still firing: only the event that arrived now carries
-	// the resolved status. Without this they stay firing forever, on a group
-	// nobody will touch again.
+	// A group left resolved by this ingest takes its alerts with it, and the
+	// group's status is the thing to read — not the per-alert result. A
+	// resolving event from the source reports "resolved", but an escalation
+	// chain that reached a RESOLVE step during the ingest reports "ingested"
+	// while closing the group all the same, and its alerts stayed firing on a
+	// group nobody would touch again. Ids are de-duplicated because several
+	// alerts of one envelope can land on the same group.
 	var closed []string
+	seenClosed := make(map[string]bool, len(results))
 	for _, r := range results {
-		if utils.StrVal(r, "result") != "resolved" {
+		g, ok := r["group"].(map[string]any)
+		if !ok {
 			continue
 		}
-		if g, ok := r["group"].(map[string]any); ok {
-			closed = append(closed, utils.StrVal(g, "id"))
+		if utils.StrVal(g, "status") != model.StatusResolved {
+			continue
 		}
+		id := utils.StrVal(g, "id")
+		if id == "" || seenClosed[id] {
+			continue
+		}
+		seenClosed[id] = true
+		closed = append(closed, id)
 	}
 	e.syncAlertStatusForGroups(ctx, closed, model.AlertStatusResolved)
 	// Wake worker loops immediately: the ingest may have scheduled
@@ -359,30 +365,40 @@ func (e *Engine) ingestOneLocked(state *store.State, integration map[string]any,
 	}
 	state.Alerts[alert["id"].(string)] = model.WrapAlert(alert)
 
-	// Re-check for concurrent ingest under the lock. The scan also runs for
-	// resolved statuses so that a resolve event finds groups created by a
-	// concurrent ingest or earlier in the same envelope, which the pre-lock
-	// lookup cannot see. We always work on a deep copy of any pre-existing
-	// group so the mutator's intermediate edits never leak into other paths
-	// that may peek at state.AlertGroups before we write the final version back.
+	// The group is found here and only here, in the state the mutator loaded
+	// under the advisory lock. A copy read before the lock would be a snapshot
+	// of the row as it was before any concurrent ingest committed, and building
+	// this alert's update on it silently discards that ingest's work: two
+	// parallel alerts both read alert_count=N and both write N+1, so N events
+	// leave a group counting fewer than N (the same loss applies to alert_ids
+	// and to every state transition the other ingest made).
+	//
+	// The load spec asks for exactly the rows this scan looks for — this
+	// integration, one of this envelope's dedupe keys, status <> resolved — so
+	// a group that exists is here, and one that is absent either does not exist
+	// or was resolved, in which case a firing event must open a new group
+	// rather than revive a stale copy. Groups created earlier in this same
+	// envelope are in state.AlertGroups too, and a concurrent ingest cannot be
+	// inside the lock we hold.
+	//
+	// The scan runs for resolving statuses as well, so a resolve event finds a
+	// group opened by a concurrent ingest or earlier in the same envelope.
+	//
+	// We work on a deep copy so the mutator's intermediate edits never leak
+	// into other paths that may peek at state.AlertGroups before we write the
+	// final version back.
 	var g model.AlertGroup
 	var hasGroup bool
-	if p.activeGroup != nil {
-		g = model.WrapAlertGroup(deepCopyItem(p.activeGroup))
-		hasGroup = true
-	}
-	if !hasGroup {
-		integID := utils.StrVal(integration, "id")
-		for _, rec := range state.AlertGroups {
-			cand, ok := groupAG(rec)
-			if !ok {
-				continue
-			}
-			if cand.IntegrationID() == integID && cand.DedupeKey() == p.dedupeKey && cand.Status() != model.StatusResolved {
-				g = model.WrapAlertGroup(deepCopyItem(cand.Raw()))
-				hasGroup = true
-				break
-			}
+	integID := utils.StrVal(integration, "id")
+	for _, rec := range state.AlertGroups {
+		cand, ok := groupAG(rec)
+		if !ok {
+			continue
+		}
+		if cand.IntegrationID() == integID && cand.DedupeKey() == p.dedupeKey && cand.Status() != model.StatusResolved {
+			g = model.WrapAlertGroup(deepCopyItem(cand.Raw()))
+			hasGroup = true
+			break
 		}
 	}
 
@@ -420,6 +436,10 @@ func (e *Engine) ingestOneLocked(state *store.State, integration map[string]any,
 	}
 
 	// Firing event.
+	// reopened records that this alert took an acknowledged group back to open,
+	// which is the one case where an alert arriving on an existing group has to
+	// restart its escalation chain.
+	reopened := false
 	if !hasGroup {
 		g = model.NewAlertGroup(model.NewAlertGroupParams{
 			IntegrationID:        utils.StrVal(integration, "id"),
@@ -462,10 +482,20 @@ func (e *Engine) ingestOneLocked(state *store.State, integration map[string]any,
 		// suppression path to keep in step with the first.
 		silenceForMaintenance(g, maintenance, utils.UTCNow(), ts)
 	} else {
+		// An acknowledgement is an operator saying "I know about this, stop
+		// paging me". A repeat firing of the same event is the source restating
+		// what they acknowledged, so by default it does not undo the
+		// acknowledgement: a monitoring system that re-sends every 30 seconds
+		// would otherwise page a person who already answered, on every repeat,
+		// forever. Deployments that want the opposite policy — where any new
+		// alert on an acknowledged group resumes escalation — opt into it with
+		// NXS_ANOMALY_REOPEN_ACKED_ON_NEW_ALERT=true.
+		//
 		// ReopenOnNewAlert starts a new episode when it returns true, so the
 		// event carries the new one: the second time this group was answered is
 		// a second response, not a continuation of the first.
-		if g.ReopenOnNewAlert() {
+		if e.reopenAckedOnNewAlert && g.ReopenOnNewAlert() {
+			reopened = true
 			e.emitGroupEvent(state, g, EventGroupReopened, ts, map[string]any{
 				"reason":            "new_alert",
 				"severity":          p.severity,
@@ -494,7 +524,21 @@ func (e *Engine) ingestOneLocked(state *store.State, integration map[string]any,
 	g.SetLabels(labelsAny(p.labels))
 	g.SetLastReceivedAt(ts)
 
-	e.advanceGroupLocked(state, g, ts)
+	// Escalation is advanced only when this alert started a chain: a new group,
+	// or a group this alert took back to open. A repeat firing on a group that
+	// is already escalating must not execute the next step, because the chain's
+	// position is a promise about time — a WAIT of ten minutes means the step
+	// after it runs ten minutes later, not the moment the source re-sends. The
+	// group is already scheduled (next_run_at) and the worker owns that clock;
+	// calling advance here executed the step the WAIT was still counting down
+	// to, which is how a chain ending in RESOLVE closed a group half a second
+	// after it opened.
+	//
+	// A group whose chain has run out has no timer either, and re-advancing it
+	// would only re-log "escalation chain completed" once per repeat.
+	if !hasGroup || reopened {
+		e.advanceGroupLocked(state, g, ts)
+	}
 	// The epic threshold pages a named person when a group turns into a storm.
 	// A storm is what maintenance produces, so it is skipped for a group that a
 	// window has silenced — including later alerts attaching to a group

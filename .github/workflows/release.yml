@@ -72,7 +72,7 @@ jobs:
       frontend_image: ${{ steps.v.outputs.frontend_image }}
       stable: ${{ steps.v.outputs.stable }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - id: v
         run: |
@@ -113,9 +113,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: meta
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}
           # Dependencies are vendored; the module cache would restore nothing.
@@ -140,12 +140,12 @@ jobs:
     env:
       CHART: deploy/helm/nxs-anomaly
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The pair the private pipeline runs these same tests with
       # (helmunittest/helm-unittest:3.21.0-1.0.3), so a chart test that passes
       # there passes here for the same reasons.
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
         with:
           version: v3.21.0
 
@@ -206,11 +206,11 @@ jobs:
             context: ./frontend
             image: ${{ needs.meta.outputs.frontend_image }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -234,7 +234,7 @@ jobs:
 
       - name: Build and push
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
           push: true
@@ -297,9 +297,9 @@ jobs:
     outputs:
       digest: ${{ steps.push.outputs.digest }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
         with:
           version: v3.16.4
 
@@ -310,7 +310,7 @@ jobs:
       # `helm registry login` writes helm's own registry config; cosign reads the
       # docker one. Without this the push below succeeds and the signature that
       # follows it fails on an anonymous GET of the digest it just wrote.
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -368,7 +368,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [meta, chart]
     steps:
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
         with:
           version: v3.16.4
 
@@ -447,7 +447,7 @@ jobs:
           cat release-verification.txt
           exit "$rc"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: release-verification
@@ -468,8 +468,21 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      # Named, not "everything this run uploaded": build-push-action also uploads
+      # a `*.dockerbuild` build record per image, and an unfiltered download pulls
+      # those too — then unpacks them into `assets/`, where `gh release create
+      # assets/*` attaches them as release assets nobody asked for. They are also
+      # the only artefacts a release has ever failed on (a blob download that gave
+      # up after five retries, with the SBOMs and the log fetched fine), so not
+      # asking for them removes a way to lose an otherwise finished release.
+      - uses: actions/download-artifact@v8
         with:
+          name: release-verification
+          path: assets
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: sbom-*
           path: assets
           merge-multiple: true
 

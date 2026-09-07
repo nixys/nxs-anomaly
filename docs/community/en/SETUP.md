@@ -146,6 +146,10 @@ Two that are worth knowing by name:
 - `NXS_ANOMALY_BLOCK_PRIVATE_WEBHOOKS=true` — outbound delivery refuses private,
   loopback and link-local addresses. On by default under the production profile.
 - `NXS_ANOMALY_EGRESS_ALLOWLIST` — hostnames and CIDRs delivery may reach at all.
+- `NXS_ANOMALY_REOPEN_ACKED_ON_NEW_ALERT=true` — a new alert on an acknowledged
+  group takes it back to `open` and runs the chain from step zero. Off by
+  default: a repeat firing does not undo an acknowledgement. See
+  [ALERT_PROCESSING.md](ALERT_PROCESSING.md) §3.1.
 
 ## Interface language and timezone
 
