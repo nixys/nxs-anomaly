@@ -16,7 +16,7 @@ helm install nxs-anomaly deploy/helm/nxs-anomaly \
 Production (OCI-chart + внешний managed PostgreSQL + production-пресет):
 
 ```bash
-VERSION=0.1.81          # устанавливаемый релиз; образы имеют тег v$VERSION
+VERSION=0.1.86          # устанавливаемый релиз; образы имеют тег v$VERSION
 HELM_PROJECT="<значение HARBOR_HELM_PROJECT>"
 
 # 1. Создать Secret как минимум с NXS_ANOMALY_DB_DSN (и учётными данными провайдеров).
@@ -86,7 +86,7 @@ SSRF/secure-cookie: наполовину переведённая в production 
 артефакт, за который он ручается, сам по себе доказывает мало):
 
 ```bash
-VERSION=0.1.81
+VERSION=0.1.86
 HELM_PROJECT="<значение HARBOR_HELM_PROJECT>"
 IMAGE_PROJECT="<значение HARBOR_PROJECT>"
 
@@ -154,7 +154,7 @@ OIDC-issuer-а CI, а публичный Sigstore доверяет `gitlab.com`,
 ## Обновления
 
 ```bash
-VERSION=0.1.81          # релиз, на который обновляемся
+VERSION=0.1.86          # релиз, на который обновляемся
 HELM_PROJECT="<значение HARBOR_HELM_PROJECT>"
 # Сначала посмотрите, что изменится.
 helm diff upgrade nxs-anomaly "oci://ghcr.io/nixys/nxs-anomaly" \
@@ -218,18 +218,32 @@ Chart по умолчанию не зашивает секреты в откры
 ## Сеть и наблюдаемость
 
 - `ingress.enabled` — опубликовать фронтенд (который проксирует API same-origin).
+- `ingress.name` — имя `Ingress`; по умолчанию — полное имя релиза.
 - `istio.virtualService.enabled` — отрендерить Istio `VirtualService`. Привяжите его
   к существующему Gateway через `istio.virtualService.gateways` либо задайте
   `istio.gateway.enabled=true` и укажите `istio.gateway.name`; опциональный TLS
   использует `istio.gateway.tls.credentialName`.
+- `istio.virtualService.name` — имя `VirtualService`; по умолчанию — полное имя
+  релиза.
 - `gatewayAPI.httpRoute.enabled` — отрендерить `HTTPRoute`
   (`gateway.networking.k8s.io/v1`). Привяжите через `gatewayAPI.httpRoute.parentRefs`
   либо позвольте chart-у создать Gateway через `gatewayAPI.gateway.enabled=true`,
   `name` и `gatewayClassName`. Маршрут между namespace-ами автоматически получает
   нужный backend `ReferenceGrant`.
+- `gatewayAPI.httpRoute.name` — имя `HTTPRoute`; по умолчанию — полное имя релиза.
+  `ReferenceGrant` для меж-namespace маршрута называется по этому же имени.
 - Ingress, Istio и Gateway API отключаются независимо. Обычно включают ровно один;
   все три маршрутизируют `/` на same-origin прокси фронтенда либо напрямую в API,
   если `frontend.enabled=false`.
+
+Имя задаётся у всех трёх маршрутов — `ingress.name`, `istio.virtualService.name`,
+`gatewayAPI.httpRoute.name` — и по одной причине. Два релиза, публикующиеся через
+один контроллер или кладущие маршруты в один namespace (community и enterprise
+рядом, или по релизу на команду), дают одинаковое имя объекта, и GitOps-контроллер
+видит один объект, принадлежащий двум приложениям: `VirtualService/nxs-anomaly is
+part of applications argocd/nxs-anomaly-ce-team-x and nxs-anomaly-ee-team-x`.
+**Переименование — не косметика:** старый объект удаляется, новый создаётся, и на
+это время маршрут пропадает; меняйте имя в окно обслуживания.
 - `networkPolicy.enabled` — default-deny плюс минимальные разрешения (DNS, внутри
   релиза, вход в API, исходящий трафик приложения). В остальном API и worker
   недостижимы извне релиза — включая Prometheus. Задайте

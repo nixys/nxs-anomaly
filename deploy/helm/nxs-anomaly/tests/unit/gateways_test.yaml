@@ -44,6 +44,40 @@ tests:
           path: spec.http[0].route[0].destination.port.number
           value: 8080
 
+  - it: names the VirtualService after the release by default
+    templates:
+      - templates/istio.yaml
+    set:
+      ingress.host: alerts.example.com
+      istio.virtualService.enabled: true
+    asserts:
+      # The default is load-bearing: renaming a VirtualService on upgrade drops
+      # the route until the new object is reconciled.
+      - equal:
+          path: metadata.name
+          value: rel-nxs-anomaly
+
+  - it: takes an explicit VirtualService name so two releases can share a routing namespace
+    templates:
+      - templates/istio.yaml
+    set:
+      ingress.host: alerts.example.com
+      istio.virtualService.enabled: true
+      istio.virtualService.namespace: app-routes
+      istio.virtualService.name: nxs-anomaly-ee-team-x
+    asserts:
+      - equal:
+          path: metadata.name
+          value: nxs-anomaly-ee-team-x
+      - equal:
+          path: metadata.namespace
+          value: app-routes
+      # Only the object's own name moves: what it routes to is still this
+      # release's service, which is the whole point of naming it separately.
+      - equal:
+          path: spec.http[0].route[0].destination.host
+          value: rel-nxs-anomaly-frontend.nxs.svc.cluster.local
+
   - it: routes Istio directly to the API when the frontend is disabled
     templates:
       - templates/istio.yaml
@@ -224,6 +258,47 @@ tests:
       - equal:
           path: spec.to[0].name
           value: rel-nxs-anomaly-frontend
+
+  - it: takes an explicit HTTPRoute name, and the ReferenceGrant follows it
+    templates:
+      - templates/gateway-api.yaml
+    set:
+      gatewayAPI.httpRoute.enabled: true
+      gatewayAPI.httpRoute.name: nxs-anomaly-ee-team-x
+      gatewayAPI.httpRoute.namespace: routes
+      gatewayAPI.httpRoute.parentRefs:
+        - name: public
+      gatewayAPI.httpRoute.hostnames:
+        - alerts.example.com
+    asserts:
+      - documentIndex: 0
+        equal:
+          path: metadata.name
+          value: nxs-anomaly-ee-team-x
+      # The grant exists only for this route: under the old name it would be an
+      # orphan, and the route would have no permission to reach the backend.
+      - documentIndex: 1
+        equal:
+          path: metadata.name
+          value: nxs-anomaly-ee-team-x-httproute
+      - documentIndex: 0
+        equal:
+          path: spec.rules[0].backendRefs[0].name
+          value: rel-nxs-anomaly-frontend
+
+  - it: names the HTTPRoute after the release by default
+    templates:
+      - templates/gateway-api.yaml
+    set:
+      gatewayAPI.httpRoute.enabled: true
+      gatewayAPI.httpRoute.parentRefs:
+        - name: public
+      gatewayAPI.httpRoute.hostnames:
+        - alerts.example.com
+    asserts:
+      - equal:
+          path: metadata.name
+          value: rel-nxs-anomaly
 
   - it: rejects an HTTPRoute without parentRefs or a managed Gateway
     templates:

@@ -28,10 +28,20 @@
 {{-   $serviceName = include "nxs-anomaly.componentName" (dict "ctx" . "component" "frontend") -}}
 {{-   $servicePort = .Values.frontend.service.port -}}
 {{- end -}}
+{{- /*
+  Settable for the same reason as the VirtualService name, and more sharply so:
+  an HTTPRoute is routinely placed in a routing namespace shared with every other
+  route in the cluster, where two releases of this chart would render one object
+  under one name and a GitOps controller would see it owned by two applications.
+
+  Defaults to the release's full name — renaming a route deletes it and creates
+  another, and traffic to the host stops in between.
+*/ -}}
+{{- $routeName := default (include "nxs-anomaly.fullname" .) $route.name -}}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: {{ include "nxs-anomaly.fullname" . }}
+  name: {{ $routeName }}
   namespace: {{ $routeNamespace }}
   labels:
     {{- include "nxs-anomaly.labels" . | nindent 4 }}
@@ -60,7 +70,9 @@ spec:
 apiVersion: gateway.networking.k8s.io/v1beta1
 kind: ReferenceGrant
 metadata:
-  name: {{ include "nxs-anomaly.fullname" . }}-httproute
+  {{- /* Named after the route it exists for, so a renamed route keeps its grant
+      recognisably beside it rather than under the old name. */}}
+  name: {{ printf "%s-httproute" $routeName }}
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "nxs-anomaly.labels" . | nindent 4 }}

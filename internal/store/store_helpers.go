@@ -205,6 +205,15 @@ func buildWhere(collection string, filters map[string]any) (string, []any, error
 			return "", nil, fmt.Errorf("unsupported filter column %q for collection %s", k, collection)
 		}
 		v := filters[k]
+		// A severity filter names a level, not a spelling: the caller asks for
+		// "critical" and means the group its source labelled "P1" too. Expanding
+		// here rather than at the call site keeps every listing — groups, alerts,
+		// whatever comes next — answering the same question.
+		if k == "severity" {
+			if raw, ok := v.(string); ok {
+				v = SeverityFamily(raw)
+			}
+		}
 		switch val := v.(type) {
 		case NotEqualFilter:
 			args = append(args, val.Value)

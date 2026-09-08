@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -19,17 +20,63 @@ func TestBuildWhereEquality(t *testing.T) {
 }
 
 func TestBuildWhereDeterministicOrder(t *testing.T) {
-	filters := map[string]any{"status": "open", "severity": "high", "integration_id": "int1"}
+	filters := map[string]any{"status": "open", "severity": "critical", "integration_id": "int1"}
 	where, args, err := buildWhere("alert_groups", filters)
 	if err != nil {
 		t.Fatalf("buildWhere failed: %v", err)
 	}
-	// Keys are sorted: integration_id, severity, status.
-	if where != "integration_id=$1 AND severity=$2 AND status=$3" {
-		t.Errorf("where = %q", where)
+	// Keys are sorted: integration_id, severity, status. severity expands to its
+	// family, so it occupies as many placeholders as the level has spellings.
+	family := SeverityFamily("critical")
+	wantSeverity := "severity IN ($2"
+	for i := range family[1:] {
+		wantSeverity += fmt.Sprintf(",$%d", i+3)
 	}
-	if len(args) != 3 || args[0] != "int1" || args[1] != "high" || args[2] != "open" {
+	wantSeverity += ")"
+	want := "integration_id=$1 AND " + wantSeverity + fmt.Sprintf(" AND status=$%d", len(family)+2)
+	if where != want {
+		t.Errorf("where = %q, want %q", where, want)
+	}
+	if len(args) != len(family)+2 || args[0] != "int1" || args[len(args)-1] != "open" {
 		t.Errorf("args = %#v", args)
+	}
+}
+
+// The filter names a level, and the level is what the responder means. An alert
+// a source labelled "P1" is critical; before this it was invisible to every
+// filter the UI could offer.
+func TestBuildWhereSeverityMatchesTheWholeLevel(t *testing.T) {
+	where, args, err := buildWhere("alert_groups", map[string]any{"severity": "critical"})
+	if err != nil {
+		t.Fatalf("buildWhere failed: %v", err)
+	}
+	if !strings.HasPrefix(where, "severity IN (") {
+		t.Errorf("where = %q, want an IN over the whole level", where)
+	}
+	var sawP1, sawCritical bool
+	for _, arg := range args {
+		switch arg {
+		case "p1":
+			sawP1 = true
+		case "critical":
+			sawCritical = true
+		}
+	}
+	if !sawCritical || !sawP1 {
+		t.Errorf("args = %#v, want the level's own name and its aliases", args)
+	}
+}
+
+// A spelling nothing here models still filters, and filters exactly. Expanding
+// it to some guessed neighbourhood would answer a different question than the
+// one asked.
+func TestBuildWhereUnknownSeverityMatchesItselfOnly(t *testing.T) {
+	_, args, err := buildWhere("alert_groups", map[string]any{"severity": "wobbly"})
+	if err != nil {
+		t.Fatalf("buildWhere failed: %v", err)
+	}
+	if len(args) != 1 || args[0] != "wobbly" {
+		t.Errorf("args = %#v, want the word as given", args)
 	}
 }
 

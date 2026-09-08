@@ -1,6 +1,6 @@
 import { MantineProvider } from '@mantine/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AlertGroupDetailPage } from './AlertGroupDetailPage';
@@ -109,5 +109,109 @@ describe('AlertGroupDetailPage delivery health', () => {
     ]);
     expect(await screen.findByText(/permanently failed after retries/i)).toBeInTheDocument();
     expect(screen.getByText(/no transport configured here/i)).toBeInTheDocument();
+  });
+});
+
+// ── The timeline ──────────────────────────────────────────────────────────────
+//
+// It used to render every entry as the word "event" followed by the row that
+// stores it — actor as JSON, a log id, a wire type. What a responder needs is
+// the sentence: what happened, who did it, when.
+
+function renderWithLogs(logs: unknown[]) {
+  get.mockImplementation((path: string) => {
+    if (path === '/api/v1/alert-groups/grp_1') return Promise.resolve({ ...group, logs });
+    return Promise.resolve({ items: [], total: 0 });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <MantineProvider>
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={['/alert-groups/grp_1']}>
+          <Routes>
+            <Route path="/alert-groups/:id" element={<AlertGroupDetailPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    </MantineProvider>,
+  );
+}
+
+const systemLog = {
+  id: 'log_1',
+  type: 'group_created',
+  message: 'Created alert group',
+  data: { route_id: 'route_7' },
+  created_at: '2026-06-01T07:58:40Z',
+  actor: { id: '', kind: 'system', name: 'system', role: '' },
+};
+
+const personLog = {
+  id: 'log_2',
+  type: 'acknowledged',
+  message: 'Alert group acknowledged by operator',
+  data: {},
+  created_at: '2026-06-01T08:02:00Z',
+  actor: { id: 'u_a', kind: 'user', name: 'Ada Lovelace', role: 'responder' },
+};
+
+const notifyLog = {
+  id: 'log_3',
+  type: 'notified',
+  message: 'Notified users',
+  data: { users: ['ada', 'ravi'], channels: ['telegram'] },
+  created_at: '2026-06-01T07:58:41Z',
+  actor: { id: '', kind: 'system', name: 'system', role: '' },
+};
+
+describe('AlertGroupDetailPage timeline', () => {
+  it('names the event instead of titling every entry "event"', async () => {
+    renderWithLogs([systemLog]);
+    expect(await screen.findByText('Alert group opened')).toBeInTheDocument();
+    expect(screen.queryByText('event')).toBeNull();
+  });
+
+  it('keeps the raw row out of the story', async () => {
+    renderWithLogs([systemLog]);
+    await screen.findByText('Alert group opened');
+    // The log id and the actor object are still available — in the Raw tab,
+    // which is exactly the point: they leave the story without leaving the page.
+    const story = within(screen.getByRole('tabpanel'));
+    expect(story.queryByText(/log_1/)).toBeNull();
+    expect(story.queryByText(/"kind":"system"/)).toBeNull();
+  });
+
+  it('credits the person behind an operator action and nobody for the system', async () => {
+    renderWithLogs([personLog, systemLog]);
+    await screen.findByText('Alert group opened');
+    const story = within(screen.getByRole('tabpanel'));
+    expect(story.getByText('Acknowledged')).toBeInTheDocument();
+    expect(story.getByText(/Ada Lovelace/)).toBeInTheDocument();
+    // The system is the default author of almost every entry; naming it on each
+    // one is noise that hides the entries a person is behind.
+    expect(story.queryByText(/by system/)).toBeNull();
+  });
+
+  it('shows the few data fields that change what an entry means', async () => {
+    renderWithLogs([notifyLog]);
+    expect(await screen.findByText('Notified')).toBeInTheDocument();
+    const story = within(screen.getByRole('tabpanel'));
+    expect(story.getByText('ada, ravi')).toBeInTheDocument();
+    expect(story.getByText('telegram')).toBeInTheDocument();
+    // route_id is not on the shortlist, so the entry carries no stray keys.
+    expect(story.queryByText(/route_7/)).toBeNull();
+  });
+
+  it('falls back to the server sentence for a type it has no wording for', async () => {
+    renderWithLogs([{ ...systemLog, type: 'brand_new_event', message: 'Something new happened' }]);
+    expect(await screen.findByText('Something new happened')).toBeInTheDocument();
+  });
+
+  it('puts the newest entry first', async () => {
+    renderWithLogs([systemLog, personLog]);
+    await screen.findByText('Alert group opened');
+    const story = within(screen.getByRole('tabpanel'));
+    const items = story.getAllByText(/Alert group opened|Acknowledged/);
+    expect(items[0].textContent).toBe('Acknowledged');
   });
 });

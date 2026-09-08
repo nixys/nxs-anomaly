@@ -7,6 +7,35 @@ semantic versioning once it reaches 1.0.
 ## [Unreleased]
 
 ### Fixed
+- **The frontend test suite no longer exits non-zero with every test passing.** jsdom
+  implements no scrolling, so `Element.scrollIntoView` does not exist; the alert-group
+  list and Mantine's Combobox both call it, and Mantine's call fires on a timer after
+  its test has finished, landing the throw outside any test. Stubbed alongside the
+  `matchMedia` and `ResizeObserver` stubs already there — a gap in the test environment,
+  not in the product.
+
+- **An alert whose source called it `high` is no longer invisible to every filter and
+  sorted below `debug`.** Three places disagreed about what a severity is: the filter
+  offered five words, the badge coloured eight, and the server's ranking knew five, so a
+  group stored as `high`, `medium`, `P1` or `sev2` was painted, could not be selected,
+  and sorted to the bottom of a list ordered by importance — silently, in the one list a
+  responder scans first. There is now a single ladder — critical, error, warning, info,
+  debug — and a table of the spellings that mean each level, defined once in
+  `internal/store` and mirrored for colour in the frontend. Filtering by a level matches
+  every spelling of it, ordering ranks them together, and a word the service does not
+  model keeps its own name, ranks last and is matched exactly rather than guessed into a
+  level it may not belong to.
+
+- **The timeline of a group reads as what happened, not as the rows that store it.**
+  Every entry was titled "event" and followed by its own plumbing — `actor` as JSON, the
+  log id, the wire type — with the one sentence that mattered buried among them. Entries
+  are now named in the reader's language, newest first, with the person credited when a
+  person is behind the action, the few data fields that change an entry's meaning shown
+  as fields, and delivery or configuration failures marked. The raw rows did not go
+  anywhere: they are in the Raw tab, which is where they were always meant to be read
+  from. The `notified` entries also carry their recipients as data rather than only
+  inside a pre-rendered English sentence, so a Russian UI can name them too.
+
 - **A repeat firing no longer executes the escalation step a `WAIT` is still counting
   down to.** Every accepted alert ran the chain from the group's stored position, so an
   alert arriving on a group already parked behind a `WAIT` ran the step the wait was
@@ -48,6 +77,75 @@ semantic versioning once it reaches 1.0.
   the same time.
 
 ### Changed
+- **Every route object the chart renders takes an explicit name: `ingress.name`,
+  `istio.virtualService.name`, `gatewayAPI.httpRoute.name`.** Their names were always the
+  release's full name, which is fine until two releases publish through one controller or
+  put routes in one namespace — a community and an enterprise install side by side, or one
+  release per team. Both then render the same object, and a GitOps controller reports it
+  as belonging to two applications and reconciles it back and forth
+  (`VirtualService/nxs-anomaly is part of applications argocd/nxs-anomaly-ce-team-x and
+  nxs-anomaly-ee-team-x`). The cross-namespace `ReferenceGrant` that an HTTPRoute needs
+  follows the route's name, so the pair stays together. The defaults are unchanged,
+  because renaming a route is not cosmetic: the old object is deleted and the new one
+  created, and traffic to the host stops in between.
+
+- **The sidebar collapses to a rail of icons and remembers that it did.** On a 13" laptop
+  the navigation was 240 px of permanent furniture next to a nine-column table; it now
+  narrows to 64 px — icons in the same left-hand position they occupy when expanded, so
+  the labels slide out from behind them rather than the whole column moving, section
+  headings cross-fading into the rules that keep the grouping visible, and a tooltip on
+  each icon. The toggle sits at the foot of the sidebar, `⌘B` does it from the keyboard,
+  and the choice is remembered per browser and read before the first paint, so a reload
+  opens at the width it was left at instead of animating into place. Width and content
+  edge move on one 260 ms curve that decelerates into its stop; labels leave in 110 ms
+  and arrive over the last 160 ms, so text is never squeezed while still readable, and
+  `prefers-reduced-motion` turns the movement off entirely. Below the navbar breakpoint
+  nothing changes: there the sidebar is a drawer the burger opens, and a 64 px drawer is
+  not a navigation.
+
+- **The alert-group list is a queue you can work from the keyboard, hand over by link,
+  and read on a phone.** Filters, sorting and the page number now live in the address
+  bar, so a filtered list is a link somebody can paste into a handover instead of a state
+  that dies with the tab; four named views (Firing, Critical, Being worked, All) replace
+  three empty dropdowns as the first thing on the page, and a bare `/alert-groups` opens
+  on the firing queue rather than on everything ever recorded. Each row carries a
+  severity stripe and how long the incident has been burning, which is the question a
+  queue is scanned to answer and which "last alert 42 seconds ago" never answered. The
+  bulk actions appear when something is selected instead of standing permanently
+  disabled, `j`/`k`/`x`/`a`/`r`/`Enter` work on the row under the cursor, `⌘K` opens a
+  palette over every page, and below the navbar breakpoint the nine-column table becomes
+  a list of cards rather than a horizontal scroll. Auto-refresh says when it last ran and
+  can be paused while somebody reads.
+
+- **The group page leads with what a responder decides on.** Twelve equally weighted
+  fields became a header — severity, status, title, how long, which integration, which
+  chain, when the next escalation fires — with the rest one click away; the integration
+  and the escalation chain are named and linked instead of shown as `int_8be95880d83d`.
+
+- **The sidebar is grouped into Respond, On call, Routing, Review and Installation.**
+  Seventeen equal-weight links were a list nobody read to the end. The pages did not
+  change, only the claim that they are all the same kind of thing.
+
+- **An empty list says which emptiness it is and what to do about it.** "No alert groups
+  match these filters" was shown to installations that had no integrations at all; the
+  page now separates a filter that matched nothing (offering to clear it) from a product
+  nobody has connected a source to yet (offering to connect one).
+
+- **The Kafka analytics relay writes a batch of outbox events in one request instead of
+  one request per event.** The publish was synchronous per message and `kafka-go` waits
+  out its 10 ms batch timeout on each one, so a drain cost roughly a second per hundred
+  events and a cycle hit its 2-second budget after about 200 — the queue-drain fix of
+  0.1.81 could only go as fast as the transport under it. A batch of 100 now costs one
+  write (~10 ms). What changes with it: a failed write says nothing about which of its
+  messages the broker accepted, so none of that batch is deleted from the outbox and all
+  of it is published again on the next cycle. Consumers may therefore see duplicates
+  where they previously would not have — analytics delivery has always been
+  at-least-once, and nothing is lost. Batches already published earlier in the same cycle
+  stay published. The message type is defined by the engine, next to the interface it
+  hands to a producer, so that the edition split keeps working: `internal/kafka` is
+  removed wholesale from the community tree, and a type living there could not be named
+  by code that stays.
+
 - **The Kafka analytics relay drains the outbox every cycle instead of one batch of
   100.** The queue could only shrink by a hundred events per worker cycle however far
   behind it was, so a burst outran it: measured on a live installation, ingest reached

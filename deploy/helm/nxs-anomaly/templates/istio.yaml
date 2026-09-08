@@ -22,10 +22,23 @@
 {{-   $serviceName = include "nxs-anomaly.componentName" (dict "ctx" . "component" "frontend") -}}
 {{-   $servicePort = .Values.frontend.service.port -}}
 {{- end -}}
+{{- /*
+  The VirtualService is the one object of this chart that routinely lands in a
+  namespace it does not own — a shared routing namespace next to the gateway —
+  where its name has to be unique across everything that puts a route there.
+  Two releases of this chart (a community and an enterprise install of the same
+  service, say) then collide on one name, and a GitOps controller reports the
+  object as owned by two applications and fights itself over it.
+
+  So the name is settable. It defaults to the release's full name, which is what
+  it has always been: an existing install upgrades without its route being
+  renamed — and a rename here is a dropped route, not a cosmetic change.
+*/ -}}
+{{- $vsName := default (include "nxs-anomaly.fullname" .) $vs.name -}}
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
-  name: {{ include "nxs-anomaly.fullname" . }}
+  name: {{ $vsName }}
   namespace: {{ $vsNamespace }}
   labels:
     {{- include "nxs-anomaly.labels" . | nindent 4 }}
