@@ -48,6 +48,21 @@ semantic versioning once it reaches 1.0.
   the same time.
 
 ### Changed
+- **The Kafka analytics relay writes a batch of outbox events in one request instead of
+  one request per event.** The publish was synchronous per message and `kafka-go` waits
+  out its 10 ms batch timeout on each one, so a drain cost roughly a second per hundred
+  events and a cycle hit its 2-second budget after about 200 — the queue-drain fix of
+  0.1.81 could only go as fast as the transport under it. A batch of 100 now costs one
+  write (~10 ms). What changes with it: a failed write says nothing about which of its
+  messages the broker accepted, so none of that batch is deleted from the outbox and all
+  of it is published again on the next cycle. Consumers may therefore see duplicates
+  where they previously would not have — analytics delivery has always been
+  at-least-once, and nothing is lost. Batches already published earlier in the same cycle
+  stay published. The message type is defined by the engine, next to the interface it
+  hands to a producer, so that the edition split keeps working: `internal/kafka` is
+  removed wholesale from the community tree, and a type living there could not be named
+  by code that stays.
+
 - **The Kafka analytics relay drains the outbox every cycle instead of one batch of
   100.** The queue could only shrink by a hundred events per worker cycle however far
   behind it was, so a burst outran it: measured on a live installation, ingest reached
