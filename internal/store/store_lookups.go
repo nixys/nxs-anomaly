@@ -372,7 +372,14 @@ func buildHistoryWhere(filters map[string]any) (string, []any) {
 		}
 	}
 	if v, ok := filters["severity"]; ok && v != nil && v != "" {
-		clauses = append(clauses, "severity="+addArg(v))
+		// Same level-not-spelling rule as buildWhere: history filtered by
+		// "critical" must show the incident its source called "sev1".
+		family := SeverityFamily(fmt.Sprint(v))
+		phs := make([]string, len(family))
+		for i, alias := range family {
+			phs[i] = addArg(alias)
+		}
+		clauses = append(clauses, "severity IN ("+strings.Join(phs, ",")+")")
 	}
 	if v, ok := filters["status"]; ok && v != nil && v != "" {
 		clauses = append(clauses, "status="+addArg(v))

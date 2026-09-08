@@ -1,10 +1,21 @@
 {{- if .Values.ingress.enabled -}}
 {{- $svc := ternary (include "nxs-anomaly.componentName" (dict "ctx" . "component" "frontend")) (include "nxs-anomaly.componentName" (dict "ctx" . "component" "api")) .Values.frontend.enabled -}}
 {{- $port := ternary .Values.frontend.service.port .Values.api.service.port .Values.frontend.enabled -}}
+{{- /*
+  Settable for the same reason as the VirtualService name: two releases that
+  publish through one ingress controller — a community and an enterprise install
+  of this service, or one release per team — otherwise render the same object
+  name, and a GitOps controller reports one object owned by two applications.
+
+  Defaults to the release's full name. A rename deletes the old Ingress and
+  creates a new one, so the host is unrouted in between: it is a maintenance
+  window, not a value tweak.
+*/ -}}
+{{- $ingressName := default (include "nxs-anomaly.fullname" .) .Values.ingress.name -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "nxs-anomaly.fullname" . }}
+  name: {{ $ingressName }}
   labels:
     {{- include "nxs-anomaly.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}

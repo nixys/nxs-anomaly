@@ -122,7 +122,7 @@ type Engine struct {
 	deliveryCfg   DeliveryConfig
 	templateCache sync.Map  // "integrationID:channel" → templateCacheEntry; lazy, TTL-bounded
 	refCache      *refCache // short-TTL cache of reference collections; nil in unit tests
-	kafkaProducer outboxProducer
+	kafkaProducer OutboxProducer
 	kafkaTopic    string
 	// kafkaOutboxCycleBudget overrides outboxCycleBudget when non-zero. Tests
 	// use this to remove the wall-clock race between the drain loop and the
@@ -153,14 +153,31 @@ type Engine struct {
 // several hundred pointless reads an hour.
 const coverageCheckInterval = time.Minute
 
-// outboxProducer is the engine's view of the message bus that drains the
+// OutboxMessage is one outbox event on its way to the bus. It carries its own
+// topic because a single batch mixes topics: an integration may override the
+// default one.
+//
+// It is declared here, next to the port that consumes it, rather than in
+// internal/kafka: that package is enterprise-only and is removed wholesale from
+// the community tree, so a type defined there could not appear in this file.
+type OutboxMessage struct {
+	Topic string
+	Key   string
+	Value []byte
+}
+
+// OutboxProducer is the engine's view of the message bus that drains the
 // transactional outbox. It is declared here rather than imported from
 // internal/kafka so that the engine compiles in a build that ships no producer
-// at all; any kafka.Producer satisfies it, because Go interfaces are
-// structural. In such a build the field simply stays nil, which is the same
-// state a deployment with no broker configured has always been in.
-type outboxProducer interface {
-	Publish(ctx context.Context, topic, key string, value []byte) error
+// at all; kafka.Producer satisfies it, because Go interfaces are structural. In
+// such a build the field simply stays nil, which is the same state a deployment
+// with no broker configured has always been in.
+//
+// It is exported so that NewWithKafka can name it, which is what keeps the
+// dependency pointing one way: the adapter knows the engine, the engine does
+// not know the adapter.
+type OutboxProducer interface {
+	PublishBatch(ctx context.Context, msgs []OutboxMessage) error
 	Close() error
 }
 

@@ -132,22 +132,87 @@ func ResolveSort(collection string, spec SortSpec) (SortSpec, error) {
 	return SortSpec{}, fmt.Errorf("unsupported sort field %q for collection %s", spec.Field, collection)
 }
 
+// SeverityLevels is the ladder this service orders incidents by, most important
+// first. It is the vocabulary the UI offers in a filter, and the only one.
+//
+// Sources do not share it. Prometheus sends critical/warning/info, Zabbix sends
+// high/average, a hand-written webhook sends P1 — and the alert is stored with
+// the word its source used, because that word is what the source said and
+// rewriting it would lose it. severityAliases is how the two are reconciled:
+// every spelling this service recognises maps to one level, and ranking,
+// sorting and filtering all go through that mapping.
+//
+// Before this existed the three disagreed: the UI filter offered five words,
+// the badge coloured eight, and the rank knew five — so an alert stored as
+// "high" was painted red, could not be selected by any filter, and sorted below
+// "debug". Adding a spelling now means adding it here, once.
+var SeverityLevels = []string{"critical", "error", "warning", "info", "debug"}
+
+// severityAliases maps each level to every spelling that means it, the level's
+// own name included. Kept deliberately short: a word lands here when a real
+// source sends it, not because it could plausibly mean something. A spelling
+// this table does not know keeps its own name, ranks below "debug" and is
+// matched exactly — which is honest, and visible in the UI as a grey badge
+// carrying the raw word.
+//
+// The frontend mirrors this table in src/domain/severity.ts, where it needs the
+// same mapping to colour a badge without asking the server. Change one, change
+// both.
+var severityAliases = map[string][]string{
+	"critical": {"critical", "crit", "fatal", "emergency", "disaster", "sev1", "p1"},
+	"error":    {"error", "err", "high", "major", "sev2", "p2"},
+	"warning":  {"warning", "warn", "medium", "average", "minor", "sev3", "p3"},
+	"info":     {"info", "informational", "notice", "low", "sev4", "p4"},
+	"debug":    {"debug", "trace", "sev5", "p5"},
+}
+
 // severityRank orders a severity by how much it matters rather than by how it
 // spells: alphabetically, "critical" sorts between "alert" and "debug", so a
 // list sorted by severity would put the page-somebody-now alerts in the middle.
 // Unknown values rank lowest — a severity this service does not model is not a
 // reason to push something to the top of an on-call queue.
-var severityRank = map[string]int{
-	"critical": 5,
-	"error":    4,
-	"warning":  3,
-	"info":     2,
-	"debug":    1,
-}
+var severityRank = func() map[string]int {
+	ranks := map[string]int{}
+	for i, level := range SeverityLevels {
+		rank := len(SeverityLevels) - i
+		for _, alias := range severityAliases[level] {
+			ranks[alias] = rank
+		}
+	}
+	return ranks
+}()
+
+// severityLevelOf maps any known spelling to its level.
+var severityLevelOf = func() map[string]string {
+	levels := map[string]string{}
+	for level, aliases := range severityAliases {
+		for _, alias := range aliases {
+			levels[alias] = level
+		}
+	}
+	return levels
+}()
 
 // SeverityRank is severityRank for callers outside this package (the in-memory
 // test doubles, which have to order the same way the SQL does).
 func SeverityRank(severity string) int { return severityRank[strings.ToLower(severity)] }
+
+// SeverityFamily returns every spelling that ranks the same as severity —
+// filtering by "critical" has to return the group a source labelled "P1", or
+// the filter answers a question nobody asked. An unknown spelling is its own
+// family of one, so a filter on it still matches exactly what it names.
+func SeverityFamily(severity string) []any {
+	level, ok := severityLevelOf[strings.ToLower(strings.TrimSpace(severity))]
+	if !ok {
+		return []any{severity}
+	}
+	aliases := severityAliases[level]
+	family := make([]any, len(aliases))
+	for i, alias := range aliases {
+		family[i] = alias
+	}
+	return family
+}
 
 // severityRankSQL is the same table as a SQL expression. It is built from the
 // map so the two cannot drift, and it takes no arguments because it is spliced

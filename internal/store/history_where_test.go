@@ -47,11 +47,13 @@ func TestBuildHistoryWhereCombinesScopeWithFilters(t *testing.T) {
 		"severity":        "critical",
 	})
 
-	if !strings.Contains(where, "integration_id IN (") || !strings.Contains(where, "severity=") {
+	if !strings.Contains(where, "integration_id IN (") || !strings.Contains(where, "severity IN (") {
 		t.Errorf("where = %q, want both the scope and the filter", where)
 	}
-	if len(args) != 2 {
-		t.Errorf("args = %v, want the integration and the severity", args)
+	// The severity is one level, which is several spellings: the integration
+	// plus every alias of "critical".
+	if len(args) != 1+len(SeverityFamily("critical")) {
+		t.Errorf("args = %v, want the integration and the whole severity level", args)
 	}
 }
 

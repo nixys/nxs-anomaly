@@ -341,6 +341,10 @@ externalPostgres:
 
 ingress:
   enabled: false
+  # Name of the Ingress. Empty means the release's full name. Set it when two
+  # releases publish through one controller and would otherwise render the same
+  # object name (see istio.virtualService.name).
+  name: ""
   className: ""
   annotations: {}
   # host the frontend (and, via it, the API) is served on.
@@ -355,6 +359,13 @@ ingress:
 istio:
   virtualService:
     enabled: false
+    # Name of the VirtualService. Empty means the release's full name.
+    #
+    # Set it when two releases route through the same namespace — a community
+    # and an enterprise install of this service, or one per team — because the
+    # default name is identical for both and a GitOps controller then sees one
+    # object claimed by two applications.
+    name: ""
     namespace: ""
     annotations: {}
     gateways: []
@@ -380,6 +391,11 @@ istio:
 gatewayAPI:
   httpRoute:
     enabled: false
+    # Name of the HTTPRoute. Empty means the release's full name. Set it when the
+    # route lands in a shared routing namespace where two releases would collide
+    # (see istio.virtualService.name). The cross-namespace ReferenceGrant follows
+    # this name.
+    name: ""
     namespace: ""
     annotations: {}
     parentRefs: []

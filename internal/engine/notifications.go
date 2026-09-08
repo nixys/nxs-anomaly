@@ -60,9 +60,13 @@ func (e *Engine) notifyUsersPolicy(state *store.State, g model.AlertGroup, userI
 		notified = append(notified, utils.StrVal(user, "username"))
 	}
 	if len(notified) > 0 {
+		// Who was told belongs in the data, not only inside the sentence. The
+		// message is one pre-rendered English string; a reader in another
+		// language, or any consumer that is not a person, has to be able to get
+		// the names without parsing prose.
 		g.AppendLog("notified",
 			fmt.Sprintf("Notified users: %s", joinStrings(notified, ", ")),
-			map[string]any{"reason": reason})
+			map[string]any{"reason": reason, "users": toAnySlice(notified)})
 	}
 	if len(unknown) > 0 {
 		slog.Warn("notify_unknown_users",
@@ -464,7 +468,8 @@ func (e *Engine) notifyGroupResolved(state *store.State, g model.AlertGroup, tim
 	}
 	if len(notified) > 0 {
 		g.AppendLog("resolve_notified",
-			fmt.Sprintf("Notified of resolution: %s", joinStrings(notified, ", ")), nil)
+			fmt.Sprintf("Notified of resolution: %s", joinStrings(notified, ", ")),
+			map[string]any{"users": toAnySlice(notified)})
 	}
 }
 

@@ -1,0 +1,62 @@
+suite: Ingress routing
+release:
+  name: rel
+  namespace: nxs
+set:
+  existingSecret.enabled: true
+  existingSecret.name: app-secret
+
+tests:
+  - it: renders nothing by default
+    templates:
+      - templates/ingress.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: names the Ingress after the release by default
+    templates:
+      - templates/ingress.yaml
+    set:
+      ingress.enabled: true
+      ingress.host: alerts.example.com
+    asserts:
+      - isKind:
+          of: Ingress
+      # Load-bearing: renaming an Ingress deletes one object and creates
+      # another, and the host is unrouted in between.
+      - equal:
+          path: metadata.name
+          value: rel-nxs-anomaly
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: rel-nxs-anomaly-frontend
+
+  - it: takes an explicit Ingress name so two releases can share a controller
+    templates:
+      - templates/ingress.yaml
+    set:
+      ingress.enabled: true
+      ingress.host: alerts.example.com
+      ingress.name: nxs-anomaly-ee-team-x
+    asserts:
+      - equal:
+          path: metadata.name
+          value: nxs-anomaly-ee-team-x
+      # Only the object's name moves; the backend is still this release's own
+      # service.
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: rel-nxs-anomaly-frontend
+
+  - it: routes straight to the API when the frontend is disabled
+    templates:
+      - templates/ingress.yaml
+    set:
+      ingress.enabled: true
+      ingress.host: api.example.com
+      frontend.enabled: false
+    asserts:
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: rel-nxs-anomaly-api

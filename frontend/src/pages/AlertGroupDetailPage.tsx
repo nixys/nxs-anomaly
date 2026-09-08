@@ -3,17 +3,19 @@ import {
   Anchor,
   Button,
   Card,
-  Grid,
+  Collapse,
   Group,
   Menu,
   Paper,
   SimpleGrid,
+  Skeleton,
   Stack,
   Table,
   Tabs,
   Text,
   Timeline,
 } from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
 import {
   IconAlertTriangle,
   IconArrowLeft,
@@ -21,11 +23,12 @@ import {
   IconChevronDown,
 } from '@tabler/icons-react';
 import { Link, useParams } from 'react-router-dom';
-import { useGroupAction, useItem, useList, useSilenceGroup } from '../api/hooks';
+import { useAllOf, useGroupAction, useItem, useList, useSilenceGroup } from '../api/hooks';
 import type { ReactNode } from 'react';
 import type { AlertGroup, Notification } from '../api/types';
 import {
   AbsoluteTime,
+  IncidentAge,
   JsonBlock,
   Labels,
   MonoId,
@@ -37,6 +40,7 @@ import {
 } from '../components/common';
 import { SILENCE_OPTIONS } from './AlertGroupsPage';
 import { useI18n } from '../i18n/I18nProvider';
+import type { StringKey } from '../i18n/I18nProvider';
 import { useChannelLabel } from '../i18n/domain';
 import { EMPTY_VALUE } from '../i18n/format';
 
@@ -241,47 +245,131 @@ export function AlertGroupDetailPage() {
 
 function Summary({ group }: { group: AlertGroup }) {
   const { t } = useI18n();
-  const fields: Array<[string, ReactNode]> = [
-    [t('common.status'), <StatusBadge status={group.status} />],
-    [t('common.severity'), <SeverityBadge severity={group.severity} />],
+  const [showAll, details] = useDisclosure(false);
+  // Both are small reference collections the app already caches, so naming the
+  // integration and the chain costs no extra round trip on this page.
+  const integrations = useAllOf('integrations');
+  const chains = useAllOf('escalation-chains');
+  const integration = (integrations.data ?? []).find((item) => item.id === group.integration_id);
+  const chain = (chains.data ?? []).find((item) => item.id === group.escalation_chain_id);
+  // While the reference list is still loading, show nothing rather than the id:
+  // an identifier that turns into a name a moment later reads as a glitch, and
+  // it is the id this page exists to stop showing.
+  const naming = integrations.isPending || chains.isPending;
+
+  // What a responder needs before deciding anything: how bad, how long, who is
+  // being called and when the next call goes out. Everything else is evidence
+  // for later and lives behind "all fields".
+  const secondary: Array<[string, ReactNode]> = [
     [t('groups.alerts'), <Text size="sm">{group.alert_count ?? group.alert_ids?.length ?? 0}</Text>],
-    [t('common.integration'), <MonoId id={group.integration_id} />],
-    [t('group.escalationChain'), <MonoId id={group.escalation_chain_id} />],
     [t('group.dedupeKey'), <MonoId id={group.dedupe_key} />],
     [t('group.currentStep'), <Text size="sm">{group.current_step ?? 0}</Text>],
-    [t('group.nextEscalation'), <RelativeTime value={group.next_run_at} />],
     [t('groups.lastAlert'), <AbsoluteTime value={group.last_received_at} />],
     [t('group.acknowledgedAt'), <AbsoluteTime value={group.acknowledged_at} />],
     [t('group.resolvedAt'), <AbsoluteTime value={group.resolved_at} />],
     [t('group.silencedUntil'), <AbsoluteTime value={group.silenced_until ?? null} />],
+    [t('group.groupId'), <MonoId id={group.id} />],
   ];
 
   return (
     <Card withBorder p="lg">
       <Stack gap="md">
         <div>
-          <Text fw={600} size="lg">
-            {group.title || group.dedupe_key || group.id}
-          </Text>
+          <Group gap="sm" align="center" wrap="wrap">
+            <SeverityBadge severity={group.severity} />
+            <StatusBadge status={group.status} />
+            <Text fw={600} size="lg">
+              {group.title || group.dedupe_key || group.id}
+            </Text>
+          </Group>
           <Group mt="xs">
             <Labels labels={group.labels} />
           </Group>
         </div>
-        <SimpleGrid cols={{ base: 2, sm: 3, lg: 4 }} spacing="md">
-          {fields.map(([label, value]) => (
-            <div key={label}>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-                {label}
+
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
+          <Field label={t('groups.age')}>
+            <IncidentAge createdAt={group.created_at} resolvedAt={group.resolved_at} />
+          </Field>
+          <Field label={t('common.integration')}>
+            {integration ? (
+              <Anchor component={Link} to={`/integrations/${integration.id}`} size="sm">
+                {integration.name}
+              </Anchor>
+            ) : naming ? (
+              <Skeleton height={16} width={120} />
+            ) : (
+              <MonoId id={group.integration_id} />
+            )}
+          </Field>
+          <Field label={t('group.escalationChain')}>
+            {chain ? (
+              <Anchor component={Link} to="/escalation-chains" size="sm">
+                {chain.name}
+              </Anchor>
+            ) : naming ? (
+              <Skeleton height={16} width={120} />
+            ) : (
+              <MonoId id={group.escalation_chain_id} />
+            )}
+          </Field>
+          <Field label={t('group.nextEscalation')}>
+            {group.next_run_at ? (
+              <Text size="sm">
+                {t('group.nextEscalationAt', {
+                  step: String((group.current_step ?? 0) + 1),
+                })}{' '}
+                <RelativeTime value={group.next_run_at} />
               </Text>
-              <Group mt={4}>{value}</Group>
-            </div>
-          ))}
+            ) : (
+              <Text size="sm" c="dimmed">
+                {t('group.noNextEscalation')}
+              </Text>
+            )}
+          </Field>
         </SimpleGrid>
+
+        <div>
+          <Button variant="subtle" size="compact-sm" onClick={details.toggle} px={0}>
+            {showAll ? t('group.hideAllFields') : t('group.showAllFields')}
+          </Button>
+          <Collapse in={showAll}>
+            <SimpleGrid cols={{ base: 2, sm: 3, lg: 4 }} spacing="md" mt="sm">
+              {secondary.map(([label, value]) => (
+                <Field key={label} label={label}>
+                  {value}
+                </Field>
+              ))}
+            </SimpleGrid>
+          </Collapse>
+        </div>
       </Stack>
     </Card>
   );
 }
 
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
+        {label}
+      </Text>
+      <Group mt={4}>{children}</Group>
+    </div>
+  );
+}
+
+/**
+ * The timeline as a story, not as the rows that store it.
+ *
+ * Every entry carries a type, an actor and a data bag; rendering them raw put
+ * `actor: {"id":"","kind":"system"}` and a log id on screen next to the one
+ * sentence that mattered, and titled every entry "event". The type is what
+ * names the event — in the reader's language — the actor is shown only when a
+ * person is behind it, and the data bag contributes the few keys that change
+ * the meaning. Whatever is left is not lost: the Raw tab still holds the group
+ * exactly as the API returned it.
+ */
 function GroupTimeline({ group }: { group: AlertGroup }) {
   const { t } = useI18n();
   const logs = group.logs ?? [];
@@ -292,35 +380,124 @@ function GroupTimeline({ group }: { group: AlertGroup }) {
       </Text>
     );
   }
+  // Newest first: during an incident the last thing that happened is the thing
+  // being asked about.
+  const entries = [...logs].reverse();
   return (
-    <Timeline active={logs.length} bulletSize={14} lineWidth={2}>
-      {logs.map((entry, index) => {
-        const { at, event, ...rest } = entry;
-        const details = Object.entries(rest).filter(([, value]) => value !== null && value !== '');
-        return (
-          <Timeline.Item key={index} title={String(event ?? t('group.event'))}>
-            <Text size="xs" c="dimmed">
-              <AbsoluteTime value={typeof at === 'string' ? at : null} />
-            </Text>
-            {details.length > 0 && (
-              <Grid gutter={4} mt={6}>
-                {details.map(([key, value]) => (
-                  <Grid.Col span={{ base: 12, sm: 6 }} key={key}>
-                    <Text size="xs">
-                      <Text span c="dimmed">
-                        {key}:{' '}
-                      </Text>
-                      {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                    </Text>
-                  </Grid.Col>
-                ))}
-              </Grid>
-            )}
-          </Timeline.Item>
-        );
-      })}
+    <Timeline active={entries.length} bulletSize={16} lineWidth={2}>
+      {entries.map((raw, index) => (
+        <TimelineEntry key={entryId(raw, index)} entry={raw as Record<string, unknown>} />
+      ))}
     </Timeline>
   );
+}
+
+function entryId(raw: unknown, index: number): string {
+  const id = (raw as Record<string, unknown> | null)?.id;
+  return typeof id === 'string' ? id : String(index);
+}
+
+/** Event types that mean something went wrong with delivery or configuration. */
+const PROBLEM_EVENTS = new Set([
+  'missing_chain',
+  'no_duty_users',
+  'schedule_gap',
+  'team_empty',
+  'emergency_missing',
+  'policy_step_no_target',
+  'notify_skipped_unknown_users',
+  'escalation_repeat_exhausted',
+]);
+
+/** Data keys worth showing next to an event, in the order they read best. */
+const DETAIL_KEYS = [
+  'users',
+  'user_names',
+  'channels',
+  'targets',
+  'step',
+  'step_kind',
+  'duration_minutes',
+  'until',
+  'reason',
+  'window',
+  'url',
+  'status',
+];
+
+function TimelineEntry({ entry }: { entry: Record<string, unknown> }) {
+  const { t } = useI18n();
+  const type = typeof entry.type === 'string' ? entry.type : '';
+  const actor = (entry.actor ?? {}) as Record<string, unknown>;
+  const actorKind = typeof actor.kind === 'string' ? actor.kind : 'system';
+  const actorName = typeof actor.name === 'string' ? actor.name : '';
+  const data = (entry.data ?? {}) as Record<string, unknown>;
+  const at = typeof entry.created_at === 'string' ? entry.created_at : null;
+
+  // A type this UI has no wording for falls back to the message the server
+  // wrote, and only then to the wire name: an unnamed event is still readable,
+  // and the odd-looking name is the prompt to add it to the catalog.
+  const title = translateEvent(t, type) ?? asString(entry.message) ?? type ?? t('group.event');
+
+  const details = DETAIL_KEYS.filter((key) => data[key] !== undefined && data[key] !== null && data[key] !== '')
+    .map((key) => [key, formatValue(data[key])] as const);
+
+  return (
+    <Timeline.Item
+      // A plain string, not markup: Mantine renders the title inside a <p>, and
+      // nesting block elements there is invalid HTML that React warns about.
+      title={title}
+      c={PROBLEM_EVENTS.has(type) ? 'orange' : undefined}
+      color={PROBLEM_EVENTS.has(type) ? 'orange' : undefined}
+    >
+      <Group gap={6} wrap="wrap">
+        <Text size="xs" c="dimmed" component="span">
+          <AbsoluteTime value={at} />
+        </Text>
+        {actorKind !== 'system' && actorName && (
+          <Text size="xs" c="dimmed" component="span">
+            {t('group.byActor', { actor: actorName })}
+          </Text>
+        )}
+      </Group>
+      {details.length > 0 && (
+        <Group gap="xs" mt={6} wrap="wrap">
+          {details.map(([key, value]) => (
+            <Text size="xs" key={key}>
+              <Text span c="dimmed">
+                {t(`timelineData.${key}` as StringKey) || key}:{' '}
+              </Text>
+              {value}
+            </Text>
+          ))}
+        </Group>
+      )}
+    </Timeline.Item>
+  );
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value !== '' ? value : undefined;
+}
+
+function formatValue(value: unknown): string {
+  if (Array.isArray(value)) return value.map((item) => formatValue(item)).join(', ');
+  if (value !== null && typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+/**
+ * Wording for an event type, or `undefined` when the catalog has no entry.
+ *
+ * The catalog is keyed `timeline.<type>`, so a type the backend adds shows the
+ * server's own English sentence until somebody writes the translation — visibly
+ * unlocalised rather than silently missing.
+ */
+function translateEvent(t: (key: StringKey) => string, type: string): string | undefined {
+  if (!type) return undefined;
+  const key = `timeline.${type}` as StringKey;
+  const translated = (t as (k: StringKey) => string | undefined)(key);
+  return translated ?? undefined;
 }
 
 /**

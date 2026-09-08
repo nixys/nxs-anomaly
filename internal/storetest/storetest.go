@@ -127,6 +127,14 @@ func deepCopyValue(v any) any {
 func match(row, filters map[string]any) bool {
 	for k, want := range filters {
 		got := row[k]
+		// Mirrors buildWhere: a severity filter names a level, so it matches
+		// every spelling of that level. A double that matched only the exact
+		// word would let a filter regression pass here and fail in production.
+		if k == "severity" {
+			if raw, ok := want.(string); ok {
+				want = store.SeverityFamily(raw)
+			}
+		}
 		switch w := want.(type) {
 		case []any:
 			found := false

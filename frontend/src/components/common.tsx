@@ -28,8 +28,9 @@ import type { ReactNode } from 'react';
 import { useI18n } from '../i18n/I18nProvider';
 import type { StringKey } from '../i18n/I18nProvider';
 import { describeError } from '../i18n/errors';
-import { EMPTY_VALUE } from '../i18n/format';
+import { EMPTY_VALUE, parseDate } from '../i18n/format';
 import { useStatusLabel, useSeverityLabel } from '../i18n/domain';
+import { SEVERITY_COLOR, SEVERITY_GLYPH, severityLevel } from '../domain/severity';
 
 export function PageHeader({
   title,
@@ -78,7 +79,23 @@ export function ErrorState({ error }: { error: unknown }) {
   );
 }
 
-export function EmptyState({ label, hint }: { label: string; hint?: string }) {
+/**
+ * Nothing here — and what to do about it.
+ *
+ * "No alert groups match these filters" is true and useless on its own: the
+ * reader's next move is either to widen the filter or to create the thing that
+ * would fill this list, and the page knows which. `action` is that move, so an
+ * empty screen stops being a dead end.
+ */
+export function EmptyState({
+  label,
+  hint,
+  action,
+}: {
+  label: string;
+  hint?: string;
+  action?: ReactNode;
+}) {
   return (
     <Center py="xl">
       <Stack align="center" gap={6}>
@@ -91,6 +108,7 @@ export function EmptyState({ label, hint }: { label: string; hint?: string }) {
             {hint}
           </Text>
         )}
+        {action && <Box mt="xs">{action}</Box>}
       </Stack>
     </Center>
   );
@@ -104,18 +122,23 @@ export function QueryState<T>({
   query,
   isEmpty,
   emptyLabel,
+  emptyAction,
   children,
 }: {
   query: { isPending: boolean; isError: boolean; error: unknown; data: T | undefined };
   isEmpty?: (data: T) => boolean;
   emptyLabel?: string;
+  /** What the reader can do about the emptiness, when the page knows. */
+  emptyAction?: ReactNode;
   children: (data: T) => ReactNode;
 }) {
   const { t } = useI18n();
   if (query.isPending) return <LoadingState />;
   if (query.isError) return <ErrorState error={query.error} />;
   if (query.data === undefined) return <EmptyState label={emptyLabel ?? t('common.noData')} />;
-  if (isEmpty?.(query.data)) return <EmptyState label={emptyLabel ?? t('common.nothingYet')} />;
+  if (isEmpty?.(query.data)) {
+    return <EmptyState label={emptyLabel ?? t('common.nothingYet')} action={emptyAction} />;
+  }
   return <>{children(query.data)}</>;
 }
 
@@ -148,24 +171,37 @@ export function StatusBadge({ status }: { status: string | undefined }) {
   );
 }
 
-const SEVERITY_COLORS: Record<string, MantineColor> = {
-  critical: 'red',
-  high: 'red',
-  error: 'orange',
-  warning: 'yellow',
-  medium: 'yellow',
-  info: 'blue',
-  low: 'gray',
-  debug: 'gray',
-};
-
+/**
+ * Severity as one badge: colour and shape from the level, text from the word the
+ * source actually sent.
+ *
+ * Both halves matter. The level is what ranks and filters, so `high` and
+ * `error` have to look identical; the spelling is what the source said, so
+ * showing `error` where the payload said `high` would quietly rewrite the
+ * evidence somebody is about to quote in a chat.
+ */
 export function SeverityBadge({ severity }: { severity: string | undefined }) {
   const label = useSeverityLabel();
+  const { t } = useI18n();
   if (!severity) return <Text c="dimmed">{EMPTY_VALUE}</Text>;
-  const key = severity.toLowerCase();
+  const level = severityLevel(severity);
+  if (level === null) {
+    return (
+      <Tooltip label={t('severity.unmodelled')} withArrow>
+        <Badge color="gray" variant="outline" tt="none" styles={{ label: { fontVariant: 'normal' } }}>
+          {severity}
+        </Badge>
+      </Tooltip>
+    );
+  }
   return (
-    <Badge color={SEVERITY_COLORS[key] ?? 'gray'} variant="outline" tt="none">
-      {label(key)}
+    <Badge
+      color={SEVERITY_COLOR[level]}
+      variant="outline"
+      tt="none"
+      leftSection={<span aria-hidden>{SEVERITY_GLYPH[level]}</span>}
+    >
+      {label(severity.toLowerCase())}
     </Badge>
   );
 }
@@ -197,6 +233,40 @@ export function RelativeTime({ value }: { value: string | null | undefined }) {
  * timezone, and an unlabelled `31.12.2025, 23:45` looks identical whether it is
  * Moscow time or Novosibirsk time.
  */
+/**
+ * How long an incident has been running, or how long it ran.
+ *
+ * "Last alert 42 seconds ago" answers when the source last spoke; it does not
+ * answer the question a responder scanning a queue is actually asking, which is
+ * how long this has been burning. An hour-old open incident and a minute-old
+ * one look identical without it.
+ */
+export function IncidentAge({
+  createdAt,
+  resolvedAt,
+}: {
+  createdAt: string | null | undefined;
+  resolvedAt?: string | null;
+}) {
+  const { t, fmt } = useI18n();
+  const started = parseDate(createdAt);
+  if (!started) return <Text c="dimmed">{EMPTY_VALUE}</Text>;
+  const ended = parseDate(resolvedAt) ?? new Date();
+  const elapsed = fmt.duration(ended.getTime() - started.getTime());
+  if (resolvedAt) {
+    return (
+      <Text size="sm" c="dimmed">
+        {t('groups.ranFor', { duration: elapsed })}
+      </Text>
+    );
+  }
+  return (
+    <Text size="sm" fw={500}>
+      {t('groups.burningFor', { duration: elapsed })}
+    </Text>
+  );
+}
+
 export function AbsoluteTime({
   value,
   withZone = true,
