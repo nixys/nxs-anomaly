@@ -5,6 +5,7 @@ import {
   Badge,
   Button,
   Group,
+  Menu,
   Modal,
   NumberInput,
   Paper,
@@ -53,7 +54,7 @@ import {
   type Role,
   type User,
 } from '../api/types';
-import { ConfirmDeleteButton, PageHeader, ProvisionedBadge, QueryState } from '../components/common';
+import { ConfirmDeleteButton, PageHeader, ProvisionedBadge, QueryState, RowActions} from '../components/common';
 import {
   EMPTY_STEP,
   cleanPolicies,
@@ -189,16 +190,34 @@ export function UsersPage() {
                         />
                       </Table.Td>
                       <Table.Td>
-                        <Group gap={4} wrap="nowrap">
-                          {identity?.permissions.admin && (
-                            <ActionIcon
-                              variant="subtle"
-                              onClick={() => setPasswordFor(user)}
-                              aria-label={t('users.setPasswordFor', { name: user.name })}
-                            >
-                              <IconKey size={16} />
-                            </ActionIcon>
-                          )}
+                        {/* Editing is the everyday action and stays an icon;
+                            setting a password and deleting live behind the menu,
+                            where a slip of the pointer cannot reach them. */}
+                        <RowActions
+                          label={t('common.actionsFor', { name: user.name })}
+                          menu={
+                            <>
+                              {identity?.permissions.admin && (
+                                <Menu.Item
+                                  leftSection={<IconKey size={14} />}
+                                  onClick={() => setPasswordFor(user)}
+                                >
+                                  {t('users.setPassword')}
+                                </Menu.Item>
+                              )}
+                              <ConfirmDeleteButton
+                                asMenuItem
+                                label={user.name}
+                                loading={remove.isPending}
+                                disabled={Boolean(user.provisioned_by)}
+                                disabledReason={t('common.provisionedHint', {
+                                  tool: user.provisioned_by ?? '',
+                                })}
+                                onConfirm={() => remove.mutate(user.id)}
+                              />
+                            </>
+                          }
+                        >
                           <ActionIcon
                             variant="subtle"
                             onClick={() => setEditing(user)}
@@ -207,14 +226,7 @@ export function UsersPage() {
                           >
                             <IconPencil size={16} />
                           </ActionIcon>
-                          <ConfirmDeleteButton
-                            label={user.name}
-                            loading={remove.isPending}
-                            disabled={Boolean(user.provisioned_by)}
-                            disabledReason={t('common.provisionedHint', { tool: user.provisioned_by ?? '' })}
-                            onConfirm={() => remove.mutate(user.id)}
-                          />
-                        </Group>
+                        </RowActions>
                       </Table.Td>
                     </Table.Tr>
                   ))}

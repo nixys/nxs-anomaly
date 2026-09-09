@@ -446,6 +446,14 @@ func (srv *Server) routeAPI(w http.ResponseWriter, r *http.Request) {
 		v, err := eng.ListAuditEvents(ctx, filters,
 			parseIntParam(q2.Get("limit"), 100), parseIntParam(q2.Get("offset"), 0))
 		writeResult(w, http.StatusOK, v, err)
+	case method == http.MethodGet && path == "/api/v1/insights/summary":
+		q := r.URL.Query()
+		v, err := eng.GetInsightsSummary(ctx, map[string]any{
+			"from":           q.Get("from"),
+			"to":             q.Get("to"),
+			"integration_id": q.Get("integration_id"),
+		})
+		writeResult(w, http.StatusOK, v, err)
 	case method == http.MethodGet && path == "/api/v1/history":
 		q := r.URL.Query()
 		filters := map[string]any{

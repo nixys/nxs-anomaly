@@ -4,6 +4,8 @@ services:
     environment:
       POSTGRES_DB: nxs_anomaly
       POSTGRES_USER: nxs_anomaly
+      # ${VAR:?msg} — compose refuses to start the container rather than fall
+      # back to a guessable password. Set it in .env (cp .env.example .env).
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env — see .env.example}
     volumes:
       # Named, not anonymous: an anonymous volume is not guaranteed to be the
@@ -19,16 +21,23 @@ services:
       timeout: 5s
       retries: 10
 
+
   app:
-    image: ghcr.io/nixys/nxs-anomaly:${NXS_ANOMALY_VERSION:?set NXS_ANOMALY_VERSION in .env to a release tag, e.g. v0.1.88}
+    build: .
     depends_on:
       postgres:
         condition: service_healthy
     environment:
       NXS_ANOMALY_DB_DSN: postgres://nxs_anomaly:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env — see .env.example}@postgres:5432/nxs_anomaly?sslmode=disable
       NXS_ANOMALY_START_SCHEDULER: "false"
+      # Local dev stack only. The Grafana plugin performs its install handshake
+      # on its own schedule and with the Grafana service-account token, which
+      # this compose file generates at runtime and cannot pre-share. In a real
+      # deployment set NXS_ANOMALY_GRAFANA_INSTALL_TOKEN instead and leave this
+      # unset — see docs/API.md.
+      NXS_ANOMALY_GRAFANA_COMPAT_ALLOW_ANONYMOUS: "true"
       # The management API refuses every request without a credential, so the
-      # quickstart needs a way in. Bootstrap admin rather than
+      # dev stack needs a way in. Bootstrap admin rather than
       # NXS_ANOMALY_ALLOW_ANONYMOUS on purpose: it exercises the same sign-in
       # path a real deployment uses.
       NXS_ANOMALY_BOOTSTRAP_ADMIN_USERNAME: ${NXS_ANOMALY_BOOTSTRAP_ADMIN_USERNAME:?set in .env — see .env.example}
@@ -41,7 +50,7 @@ services:
       - "127.0.0.1:8080:8080"
 
   frontend:
-    image: ghcr.io/nixys/nxs-anomaly-frontend:${NXS_ANOMALY_VERSION:?set NXS_ANOMALY_VERSION in .env to a release tag, e.g. v0.1.88}
+    build: ./frontend
     depends_on:
       - app
     environment:
@@ -50,7 +59,7 @@ services:
       - "127.0.0.1:3100:8080"
 
   worker:
-    image: ghcr.io/nixys/nxs-anomaly:${NXS_ANOMALY_VERSION:?set NXS_ANOMALY_VERSION in .env to a release tag, e.g. v0.1.88}
+    build: .
     command: ["/usr/local/bin/nxs-anomaly", "run-worker", "--poll-interval", "5", "--worker-addr", ":8081"]
     depends_on:
       postgres:

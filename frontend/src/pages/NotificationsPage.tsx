@@ -22,8 +22,11 @@ import {
   JsonBlock,
   PageHeader,
   QueryState,
+  RelativeTime,
   StatusBadge,
 } from '../components/common';
+import { useListParams } from '../ui/useListParams';
+import { useVisibleInterval } from '../ui/useVisibleInterval';
 import { useI18n } from '../i18n/I18nProvider';
 import { useChannelLabel, useStatusLabel } from '../i18n/domain';
 import { EMPTY_VALUE } from '../i18n/format';
@@ -43,10 +46,13 @@ export function NotificationsPage() {
   const { t, plural } = useI18n();
   const statusLabel = useStatusLabel();
   const channelLabel = useChannelLabel();
-  const [status, setStatus] = useState<string | null>(null);
-  const [channel, setChannel] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
+  // Filters live in the address, like the incident queue: "look at the failed
+  // Telegram deliveries" is a link somebody can send, not a description of which
+  // three dropdowns to set.
+  const { get, patch, page, filtered } = useListParams();
+  const status = get('status');
+  const channel = get('channel');
+  const userId = get('user');
   const [inspecting, setInspecting] = useState<Notification | null>(null);
 
   const users = useAllOf('users');
@@ -60,11 +66,37 @@ export function NotificationsPage() {
       channel: channel ?? undefined,
       user_id: userId ?? undefined,
     },
-    { refetchInterval: 15_000 },
+    { refetchInterval: useVisibleInterval(15_000) },
   );
 
   const userName = new Map((users.data ?? []).map((user) => [user.id, user.name]));
   const total = notifications.data?.total ?? 0;
+  const items = notifications.data?.items ?? [];
+
+  // Names for the incidents on this page, fetched in one request rather than one
+  // per row. The column used to read "Open" — a link with no subject, which is
+  // the one thing a delivery log must never hide: what the delivery was about.
+  const groupIds = Array.from(
+    new Set(items.map((item) => item.alert_group_id).filter((id): id is string => Boolean(id))),
+  );
+  const groups = useList(
+    'alert-groups',
+    { limit: 200, ids: groupIds.join(',') },
+    { enabled: groupIds.length > 0 },
+  );
+  const groupTitle = new Map(
+    (groups.data?.items ?? []).map((group) => [
+      group.id,
+      group.title || group.dedupe_key || group.id,
+    ]),
+  );
+
+  // Columns whose every value on this page is the same (or empty) carry no
+  // information and are hidden: a "Target" column of dashes and a "Retries"
+  // column of zeros are three centimetres of screen saying nothing.
+  const showTarget = items.some((item) => Boolean(item.target));
+  const showRetries = items.some((item) => (item.retry_count ?? 0) > 0);
+  const showUser = items.some((item) => Boolean(item.user_id));
 
   return (
     <>
@@ -91,10 +123,7 @@ export function NotificationsPage() {
             clearable
             data={STATUSES.map((value) => ({ value, label: statusLabel(value) }))}
             value={status}
-            onChange={(value) => {
-              setStatus(value);
-              setPage(1);
-            }}
+            onChange={(value) => patch({ status: value })}
             w={190}
           />
           <Select
@@ -106,10 +135,7 @@ export function NotificationsPage() {
               label: channelLabel(value),
             }))}
             value={channel}
-            onChange={(value) => {
-              setChannel(value);
-              setPage(1);
-            }}
+            onChange={(value) => patch({ channel: value })}
             w={160}
           />
           <Select
@@ -119,10 +145,7 @@ export function NotificationsPage() {
             searchable
             data={(users.data ?? []).map((user) => ({ value: user.id, label: user.name }))}
             value={userId}
-            onChange={(value) => {
-              setUserId(value);
-              setPage(1);
-            }}
+            onChange={(value) => patch({ user: value })}
             w={220}
           />
           <Text size="sm" c="dimmed" ml="auto">
@@ -135,20 +158,21 @@ export function NotificationsPage() {
         <QueryState
           query={notifications}
           isEmpty={(data) => data.items.length === 0}
-          emptyLabel={t('notifications.empty')}
+          emptyLabel={filtered ? t('notifications.empty') : t('notifications.emptyUnfiltered')}
+          skeleton={{ rows: 8 }}
         >
           {(data) => (
-            <Table.ScrollContainer minWidth={1000}>
+            <Table.ScrollContainer minWidth={900}>
               <Table highlightOnHover verticalSpacing="sm">
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th w={160}>{t('common.status')}</Table.Th>
+                    <Table.Th>{t('notifications.aboutColumn')}</Table.Th>
                     <Table.Th w={130}>{t('common.channel')}</Table.Th>
-                    <Table.Th>{t('common.target')}</Table.Th>
-                    <Table.Th w={160}>{t('common.user')}</Table.Th>
-                    <Table.Th w={120}>{t('alerts.group')}</Table.Th>
-                    <Table.Th w={90}>{t('notifications.retriesColumn')}</Table.Th>
-                    <Table.Th w={180}>{t('common.created')}</Table.Th>
+                    {showUser && <Table.Th w={170}>{t('common.user')}</Table.Th>}
+                    {showTarget && <Table.Th w={200}>{t('common.target')}</Table.Th>}
+                    {showRetries && <Table.Th w={90}>{t('notifications.retriesColumn')}</Table.Th>}
+                    <Table.Th w={150}>{t('common.created')}</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -161,48 +185,64 @@ export function NotificationsPage() {
                       <Table.Td>
                         <StatusBadge status={notification.status} />
                       </Table.Td>
-                      <Table.Td>
-                        <Badge variant="default" tt="none" style={{ fontWeight: 400 }}>
-                          {channelLabel(notification.channel)}
-                        </Badge>
-                      </Table.Td>
-                      <Table.Td>
-                        <Stack gap={2}>
-                          <Text size="sm" style={{ wordBreak: 'break-all' }}>
-                            {notification.target || EMPTY_VALUE}
-                          </Text>
-                          {notification.last_error && (
-                            <Text size="xs" c="red" lineClamp={1}>
-                              {notification.last_error}
-                            </Text>
-                          )}
-                        </Stack>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text size="sm">
-                          {notification.user_id
-                            ? (userName.get(notification.user_id) ?? notification.user_id)
-                            : EMPTY_VALUE}
-                        </Text>
-                      </Table.Td>
                       <Table.Td onClick={(event) => event.stopPropagation()}>
                         {notification.alert_group_id ? (
-                          <Anchor
-                            component={Link}
-                            to={`/alert-groups/${notification.alert_group_id}`}
-                            size="sm"
-                          >
-                            {t('common.open')}
-                          </Anchor>
+                          <Stack gap={2}>
+                            <Anchor
+                              component={Link}
+                              to={`/alert-groups/${notification.alert_group_id}`}
+                              size="sm"
+                              fw={500}
+                            >
+                              {groupTitle.get(notification.alert_group_id) ??
+                                notification.alert_group_id}
+                            </Anchor>
+                            {notification.reason && (
+                              <Text size="xs" c="dimmed">
+                                {notification.reason}
+                              </Text>
+                            )}
+                            {notification.last_error && (
+                              <Text size="xs" c="red" lineClamp={1}>
+                                {notification.last_error}
+                              </Text>
+                            )}
+                          </Stack>
                         ) : (
                           <Text c="dimmed">{EMPTY_VALUE}</Text>
                         )}
                       </Table.Td>
                       <Table.Td>
-                        <Text size="sm">{notification.retry_count ?? 0}</Text>
+                        <Badge variant="default" tt="none" style={{ fontWeight: 400 }}>
+                          {channelLabel(notification.channel)}
+                        </Badge>
                       </Table.Td>
+                      {showUser && (
+                        <Table.Td>
+                          <Text size="sm">
+                            {notification.user_id
+                              ? (userName.get(notification.user_id) ?? notification.user_id)
+                              : EMPTY_VALUE}
+                          </Text>
+                        </Table.Td>
+                      )}
+                      {showTarget && (
+                        <Table.Td>
+                          <Text size="sm" style={{ wordBreak: 'break-all' }}>
+                            {notification.target || EMPTY_VALUE}
+                          </Text>
+                        </Table.Td>
+                      )}
+                      {showRetries && (
+                        <Table.Td>
+                          <Text size="sm">{notification.retry_count ?? 0}</Text>
+                        </Table.Td>
+                      )}
                       <Table.Td>
-                        <AbsoluteTime value={notification.created_at} />
+                        {/* Relative first, exact on hover: a delivery log is read
+                            as "how long ago", and twenty identical absolute
+                            timestamps to the second read as noise. */}
+                        <RelativeTime value={notification.created_at} />
                       </Table.Td>
                     </Table.Tr>
                   ))}
@@ -215,7 +255,11 @@ export function NotificationsPage() {
 
       {total > PAGE_SIZE && (
         <Group justify="center" mt="md">
-          <Pagination value={page} onChange={setPage} total={Math.ceil(total / PAGE_SIZE)} />
+          <Pagination
+            value={page}
+            onChange={(next) => patch({ page: String(next) }, { keepPage: true })}
+            total={Math.ceil(total / PAGE_SIZE)}
+          />
         </Group>
       )}
 

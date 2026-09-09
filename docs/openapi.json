@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "nxs-anomaly native API",
-    "version": "0.1.86",
+    "version": "0.1.91",
     "description": "The native /api/v1 contract for nxs-anomaly (API, worker, frontend). This is the authoritative contract; the Grafana-compatibility surface under /api/internal/v1 is a compatibility shim and is NOT part of this contract. The core payloads — user, team, schedule, escalation chain, integration, alert group, alert, notification, delivery attempt — are modelled field by field, with `required` reflecting exactly the keys the engine writes unconditionally; every one still allows additional properties because the underlying storage is JSONB. Remaining resources use the open `Entity` schema. Drift between this document and the router is gated by internal/server/openapi_contract_test.go, and the frontend compiles against types generated from this file (frontend/src/api/schema.d.ts).",
     "license": {
       "name": "Apache-2.0"
@@ -67,16 +67,312 @@
     }
   ],
   "paths": {
-    "/api/v1/auth/methods": {
+    "/api/v1/alert-groups": {
       "get": {
         "tags": [
-          "auth"
+          "alert-groups"
         ],
-        "summary": "Available sign-in methods",
-        "security": [],
+        "summary": "List alert groups",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          },
+          {
+            "$ref": "#/components/parameters/Ids"
+          }
+        ],
         "responses": {
           "200": {
-            "$ref": "#/components/responses/AuthMethods"
+            "$ref": "#/components/responses/AlertGroupList"
+          }
+        }
+      }
+    },
+    "/api/v1/alert-groups/bulk-acknowledge": {
+      "post": {
+        "tags": [
+          "alert-groups"
+        ],
+        "summary": "Acknowledge many alert groups",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/BulkAcknowledge"
+          }
+        }
+      }
+    },
+    "/api/v1/alert-groups/bulk-resolve": {
+      "post": {
+        "tags": [
+          "alert-groups"
+        ],
+        "summary": "Resolve many alert groups",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/BulkResolve"
+          }
+        }
+      }
+    },
+    "/api/v1/alert-groups/bulk-silence": {
+      "post": {
+        "tags": [
+          "alert-groups"
+        ],
+        "summary": "Silence many alert groups",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/DurationMinutes"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/BulkSilence"
+          }
+        }
+      }
+    },
+    "/api/v1/alert-groups/{id}": {
+      "get": {
+        "tags": [
+          "alert-groups"
+        ],
+        "summary": "Get an alert group",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AlertGroup"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/alert-groups/{id}/acknowledge": {
+      "post": {
+        "tags": [
+          "alert-groups"
+        ],
+        "summary": "Acknowledge an alert group",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AlertGroup"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/alert-groups/{id}/resolve": {
+      "post": {
+        "tags": [
+          "alert-groups"
+        ],
+        "summary": "Resolve an alert group",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AlertGroup"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/alert-groups/{id}/silence": {
+      "post": {
+        "tags": [
+          "alert-groups"
+        ],
+        "summary": "Silence an alert group",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/DurationMinutes"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AlertGroup"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/alert-groups/{id}/timeline": {
+      "get": {
+        "tags": [
+          "alert-groups"
+        ],
+        "summary": "An alert group's timeline",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/alert-groups/{id}/unacknowledge": {
+      "post": {
+        "tags": [
+          "alert-groups"
+        ],
+        "summary": "Un-acknowledge an alert group",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AlertGroup"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/alert-groups/{id}/unresolve": {
+      "post": {
+        "tags": [
+          "alert-groups"
+        ],
+        "summary": "Un-resolve an alert group",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AlertGroup"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/alerts": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "List raw alerts",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AlertList"
+          }
+        }
+      }
+    },
+    "/api/v1/audit": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Query the audit trail (admin)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ActorId"
+          },
+          {
+            "$ref": "#/components/parameters/EntityType"
+          },
+          {
+            "$ref": "#/components/parameters/EntityId"
+          },
+          {
+            "$ref": "#/components/parameters/Action"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/TraceId"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/List"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -120,30 +416,32 @@
         }
       }
     },
-    "/api/v1/auth/oidc/login": {
+    "/api/v1/auth/me": {
       "get": {
         "tags": [
           "auth"
         ],
-        "summary": "Begin the OIDC authorization-code flow",
-        "x-edition": "enterprise",
+        "summary": "The current principal",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Identity"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/methods": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Available sign-in methods",
         "security": [],
         "responses": {
-          "302": {
-            "description": "Redirect to the identity provider"
-          },
-          "404": {
-            "$ref": "#/components/responses/Error"
-          },
-          "501": {
-            "description": "This edition does not implement single sign-on. Distinct from 404, which means the deployment has not configured it.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+          "200": {
+            "$ref": "#/components/responses/AuthMethods"
           }
         }
       }
@@ -179,15 +477,49 @@
         }
       }
     },
-    "/api/v1/auth/me": {
+    "/api/v1/auth/oidc/login": {
       "get": {
         "tags": [
           "auth"
         ],
-        "summary": "The current principal",
+        "summary": "Begin the OIDC authorization-code flow",
+        "x-edition": "enterprise",
+        "security": [],
+        "responses": {
+          "302": {
+            "description": "Redirect to the identity provider"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "501": {
+            "description": "This edition does not implement single sign-on. Distinct from 404, which means the deployment has not configured it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/password": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Change your own password",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
         "responses": {
           "200": {
-            "$ref": "#/components/responses/Identity"
+            "$ref": "#/components/responses/Object"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error"
@@ -215,28 +547,6 @@
             "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/auth/password": {
-      "post": {
-        "tags": [
-          "auth"
-        ],
-        "summary": "Change your own password",
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Object"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          },
-          "401": {
             "$ref": "#/components/responses/Error"
           }
         }
@@ -275,6 +585,1150 @@
           },
           "401": {
             "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/backups/report": {
+      "post": {
+        "tags": [
+          "readiness"
+        ],
+        "summary": "Record that a backup completed, for the readiness check (admin; called by the backup job)",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/BackupReport"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/capabilities": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Report which features are usable here, and why not when they are not",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Capabilities"
+          }
+        }
+      }
+    },
+    "/api/v1/chatops/channels": {
+      "get": {
+        "tags": [
+          "chatops"
+        ],
+        "summary": "List ChatOps channels",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ChatOpsChannelList"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "chatops"
+        ],
+        "summary": "Create a ChatOps channel",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/ChatOpsChannel"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/chatops/channels/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "chatops"
+        ],
+        "summary": "Get a ChatOps channel",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ChatOpsChannel"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "chatops"
+        ],
+        "summary": "Update a ChatOps channel",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ChatOpsChannel"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "chatops"
+        ],
+        "summary": "Delete a ChatOps channel",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          }
+        }
+      }
+    },
+    "/api/v1/chatops/commands": {
+      "post": {
+        "tags": [
+          "chatops"
+        ],
+        "summary": "Post a ChatOps command",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ChatOpsMessage"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/chatops/messages": {
+      "get": {
+        "tags": [
+          "chatops"
+        ],
+        "summary": "List ChatOps messages",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ChatOpsMessageList"
+          }
+        }
+      }
+    },
+    "/api/v1/delivery-attempts": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Delivery attempts for a notification",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/NotificationId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/DeliveryAttemptList"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/escalation-chains": {
+      "get": {
+        "tags": [
+          "escalation-chains"
+        ],
+        "summary": "List escalation chains",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EscalationChainList"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "escalation-chains"
+        ],
+        "summary": "Create an escalation chain",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/EscalationChain"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/escalation-chains/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "escalation-chains"
+        ],
+        "summary": "Get an escalation chain",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EscalationChain"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "escalation-chains"
+        ],
+        "summary": "Update an escalation chain",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EscalationChain"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "escalation-chains"
+        ],
+        "summary": "Delete an escalation chain",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          }
+        }
+      }
+    },
+    "/api/v1/escalations/run": {
+      "post": {
+        "tags": [
+          "debug"
+        ],
+        "summary": "Force one escalation-processing pass (admin)",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ObjectList"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/history": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Incident/notification history",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/From"
+          },
+          {
+            "$ref": "#/components/parameters/To"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/History"
+          }
+        }
+      }
+    },
+    "/api/v1/insights/summary": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Insights summary and daily trend",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/From"
+          },
+          {
+            "$ref": "#/components/parameters/To"
+          },
+          {
+            "name": "integration_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Ограничить все числа и тренд одной интеграцией."
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/InsightsSummary"
+          }
+        }
+      }
+    },
+    "/api/v1/integrations": {
+      "get": {
+        "tags": [
+          "integrations"
+        ],
+        "summary": "List integrations",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/IntegrationList"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "integrations"
+        ],
+        "summary": "Create an integration",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Integration"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "integrations"
+        ],
+        "summary": "Get an integration",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Integration"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "integrations"
+        ],
+        "summary": "Update an integration",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Integration"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "integrations"
+        ],
+        "summary": "Delete an integration",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/{id}/rotate-key": {
+      "post": {
+        "tags": [
+          "integrations"
+        ],
+        "summary": "Rotate an integration's ingest key",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Integration"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/maintenance-windows": {
+      "get": {
+        "tags": [
+          "maintenance-windows"
+        ],
+        "summary": "List maintenance windows",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MaintenanceWindowList"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "maintenance-windows"
+        ],
+        "summary": "Plan a maintenance window",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/MaintenanceWindow"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/maintenance-windows/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "maintenance-windows"
+        ],
+        "summary": "Get a maintenance window",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MaintenanceWindow"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "maintenance-windows"
+        ],
+        "summary": "Update a maintenance window",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MaintenanceWindow"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "maintenance-windows"
+        ],
+        "summary": "Delete a maintenance window",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/alert-groups/{id}/acknowledge": {
+      "post": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Acknowledge an alert group from mobile",
+        "security": [
+          {
+            "mobileSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/MobileSession"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/alert-groups/{id}/resolve": {
+      "post": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Resolve an alert group from mobile",
+        "security": [
+          {
+            "mobileSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/MobileSession"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/dashboard": {
+      "get": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Mobile dashboard for the session",
+        "security": [
+          {
+            "mobileSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MobileSession"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/devices": {
+      "get": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "List registered mobile devices",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/List"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Register a mobile device",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Object"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/sessions": {
+      "post": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Create a mobile session",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Object"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/notifications": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "List notifications",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/NotificationList"
+          }
+        }
+      }
+    },
+    "/api/v1/on-call": {
+      "get": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Who is on call right now across all schedules (Schedule v2)",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/CurrentOnCall"
+          }
+        }
+      }
+    },
+    "/api/v1/readiness": {
+      "get": {
+        "tags": [
+          "readiness"
+        ],
+        "summary": "Can this installation actually page someone? (BETA-051)",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Readiness"
+          }
+        }
+      }
+    },
+    "/api/v1/readiness/acknowledge": {
+      "post": {
+        "tags": [
+          "readiness"
+        ],
+        "summary": "Accept the readiness blockers that exist right now (admin)",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/ReadinessAcknowledgement"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Readiness"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/routes/debug/{key}": {
+      "post": {
+        "tags": [
+          "debug"
+        ],
+        "summary": "Dump route resolution for an integration key (admin)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Key"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/RouteDebug"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/schedules": {
+      "get": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "List schedules",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ScheduleList"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Create a schedule",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Schedule"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/schedules/coverage": {
+      "get": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Standing coverage report across all schedules",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ScheduleCoverage"
+          }
+        }
+      }
+    },
+    "/api/v1/schedules/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Get a schedule",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Schedule"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Update a schedule",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Schedule"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Delete a schedule",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          }
+        }
+      }
+    },
+    "/api/v1/schedules/{id}/on-call": {
+      "get": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Who is on call for a schedule at a time",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/At"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ScheduleOnCall"
+          }
+        }
+      }
+    },
+    "/api/v1/schedules/{id}/override": {
+      "post": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Create a schedule override",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/schedules/{id}/overrides": {
+      "post": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Create a schedule override",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/schedules/{id}/overrides/{overrideId}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        },
+        {
+          "$ref": "#/components/parameters/OverrideId"
+        }
+      ],
+      "put": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Update a schedule override",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Delete a schedule override",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          }
+        }
+      }
+    },
+    "/api/v1/schedules/{id}/preview": {
+      "get": {
+        "tags": [
+          "schedules"
+        ],
+        "summary": "Preview a schedule's coverage over a window",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/From"
+          },
+          {
+            "$ref": "#/components/parameters/To"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/SchedulePreview"
+          }
+        }
+      }
+    },
+    "/api/v1/teams": {
+      "get": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "List teams",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/TeamList"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "Create a team",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/Team"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/teams/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "Get a team",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Team"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "Update a team",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Object"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Team"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "Delete a team",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
           }
         }
       }
@@ -422,27 +1876,6 @@
         }
       }
     },
-    "/api/v1/users/{id}/duty-on": {
-      "post": {
-        "tags": [
-          "users"
-        ],
-        "summary": "Set a user on duty",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Id"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Object"
-          },
-          "403": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
     "/api/v1/users/{id}/duty-off": {
       "post": {
         "tags": [
@@ -464,12 +1897,12 @@
         }
       }
     },
-    "/api/v1/users/{id}/test-push": {
+    "/api/v1/users/{id}/duty-on": {
       "post": {
         "tags": [
           "users"
         ],
-        "summary": "Send a test mobile push, report the per-device verdict",
+        "summary": "Set a user on duty",
         "parameters": [
           {
             "$ref": "#/components/parameters/Id"
@@ -485,25 +1918,51 @@
         }
       }
     },
-    "/api/v1/users/{id}/test-notification": {
+    "/api/v1/users/{id}/erase": {
       "post": {
         "tags": [
           "users"
         ],
-        "summary": "Send one test notification through a real provider",
+        "summary": "Erase a person's data and verify it is gone (admin)",
+        "description": "Credentials, sessions, devices and ChatOps bindings are deleted; the user record, the delivery addresses on their notifications and the actor name/IP on their audit events are pseudonymised. The events themselves are untouched — the record of what happened, including what this person did to other people's data, is what an audit trail exists to keep. The response is a verification rather than a claim: the data is read back and searched for the original identifiers, and the copies outside this database (backups, logs, analytics, traces) are named as out of scope instead of being implied. Idempotent — a second call re-verifies and reports already_erased.",
         "parameters": [
           {
             "$ref": "#/components/parameters/Id"
           }
         ],
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
         "responses": {
           "200": {
             "$ref": "#/components/responses/Object"
           },
           "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/users/{id}/export": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Export everything held about one person (admin)",
+        "description": "Assembled by reading the records themselves rather than summarising them. Credentials are reported as present/absent and never included: a password hash is not information about the person, only one more place for it to leak. The two audit sections are bounded by audit_export_limit, which the response states, so a truncated section is visible as truncated. Admin-only despite being a GET.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
             "$ref": "#/components/responses/Error"
           }
         }
@@ -573,319 +2032,12 @@
         }
       }
     },
-    "/api/v1/users/{id}/export": {
-      "get": {
-        "tags": [
-          "users"
-        ],
-        "summary": "Export everything held about one person (admin)",
-        "description": "Assembled by reading the records themselves rather than summarising them. Credentials are reported as present/absent and never included: a password hash is not information about the person, only one more place for it to leak. The two audit sections are bounded by audit_export_limit, which the response states, so a truncated section is visible as truncated. Admin-only despite being a GET.",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Id"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Object"
-          },
-          "403": {
-            "$ref": "#/components/responses/Error"
-          },
-          "404": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/users/{id}/erase": {
+    "/api/v1/users/{id}/test-notification": {
       "post": {
         "tags": [
           "users"
         ],
-        "summary": "Erase a person's data and verify it is gone (admin)",
-        "description": "Credentials, sessions, devices and ChatOps bindings are deleted; the user record, the delivery addresses on their notifications and the actor name/IP on their audit events are pseudonymised. The events themselves are untouched — the record of what happened, including what this person did to other people's data, is what an audit trail exists to keep. The response is a verification rather than a claim: the data is read back and searched for the original identifiers, and the copies outside this database (backups, logs, analytics, traces) are named as out of scope instead of being implied. Idempotent — a second call re-verifies and reports already_erased.",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Id"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Object"
-          },
-          "403": {
-            "$ref": "#/components/responses/Error"
-          },
-          "404": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/teams": {
-      "get": {
-        "tags": [
-          "teams"
-        ],
-        "summary": "List teams",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Limit"
-          },
-          {
-            "$ref": "#/components/parameters/Offset"
-          },
-          {
-            "$ref": "#/components/parameters/Sort"
-          },
-          {
-            "$ref": "#/components/parameters/Order"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/TeamList"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "teams"
-        ],
-        "summary": "Create a team",
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
-        "responses": {
-          "201": {
-            "$ref": "#/components/responses/Team"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/teams/{id}": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/Id"
-        }
-      ],
-      "get": {
-        "tags": [
-          "teams"
-        ],
-        "summary": "Get a team",
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Team"
-          },
-          "404": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "teams"
-        ],
-        "summary": "Update a team",
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Team"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "teams"
-        ],
-        "summary": "Delete a team",
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Object"
-          }
-        }
-      }
-    },
-    "/api/v1/schedules": {
-      "get": {
-        "tags": [
-          "schedules"
-        ],
-        "summary": "List schedules",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Limit"
-          },
-          {
-            "$ref": "#/components/parameters/Offset"
-          },
-          {
-            "$ref": "#/components/parameters/Sort"
-          },
-          {
-            "$ref": "#/components/parameters/Order"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/ScheduleList"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "schedules"
-        ],
-        "summary": "Create a schedule",
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
-        "responses": {
-          "201": {
-            "$ref": "#/components/responses/Schedule"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/on-call": {
-      "get": {
-        "tags": [
-          "schedules"
-        ],
-        "summary": "Who is on call right now across all schedules (Schedule v2)",
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/CurrentOnCall"
-          }
-        }
-      }
-    },
-    "/api/v1/schedules/coverage": {
-      "get": {
-        "tags": [
-          "schedules"
-        ],
-        "summary": "Standing coverage report across all schedules",
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/ScheduleCoverage"
-          }
-        }
-      }
-    },
-    "/api/v1/schedules/{id}": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/Id"
-        }
-      ],
-      "get": {
-        "tags": [
-          "schedules"
-        ],
-        "summary": "Get a schedule",
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Schedule"
-          },
-          "404": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "schedules"
-        ],
-        "summary": "Update a schedule",
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Schedule"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "schedules"
-        ],
-        "summary": "Delete a schedule",
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Object"
-          }
-        }
-      }
-    },
-    "/api/v1/schedules/{id}/on-call": {
-      "get": {
-        "tags": [
-          "schedules"
-        ],
-        "summary": "Who is on call for a schedule at a time",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Id"
-          },
-          {
-            "$ref": "#/components/parameters/At"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/ScheduleOnCall"
-          }
-        }
-      }
-    },
-    "/api/v1/schedules/{id}/preview": {
-      "get": {
-        "tags": [
-          "schedules"
-        ],
-        "summary": "Preview a schedule's coverage over a window",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Id"
-          },
-          {
-            "$ref": "#/components/parameters/From"
-          },
-          {
-            "$ref": "#/components/parameters/To"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/SchedulePreview"
-          }
-        }
-      }
-    },
-    "/api/v1/schedules/{id}/override": {
-      "post": {
-        "tags": [
-          "schedules"
-        ],
-        "summary": "Create a schedule override",
+        "summary": "Send one test notification through a real provider",
         "parameters": [
           {
             "$ref": "#/components/parameters/Id"
@@ -897,368 +2049,6 @@
         "responses": {
           "200": {
             "$ref": "#/components/responses/Object"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/schedules/{id}/overrides": {
-      "post": {
-        "tags": [
-          "schedules"
-        ],
-        "summary": "Create a schedule override",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Id"
-          }
-        ],
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Object"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/schedules/{id}/overrides/{overrideId}": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/Id"
-        },
-        {
-          "$ref": "#/components/parameters/OverrideId"
-        }
-      ],
-      "put": {
-        "tags": [
-          "schedules"
-        ],
-        "summary": "Update a schedule override",
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Object"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "schedules"
-        ],
-        "summary": "Delete a schedule override",
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Object"
-          }
-        }
-      }
-    },
-    "/api/v1/escalation-chains": {
-      "get": {
-        "tags": [
-          "escalation-chains"
-        ],
-        "summary": "List escalation chains",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Limit"
-          },
-          {
-            "$ref": "#/components/parameters/Offset"
-          },
-          {
-            "$ref": "#/components/parameters/Sort"
-          },
-          {
-            "$ref": "#/components/parameters/Order"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/EscalationChainList"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "escalation-chains"
-        ],
-        "summary": "Create an escalation chain",
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
-        "responses": {
-          "201": {
-            "$ref": "#/components/responses/EscalationChain"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/escalation-chains/{id}": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/Id"
-        }
-      ],
-      "get": {
-        "tags": [
-          "escalation-chains"
-        ],
-        "summary": "Get an escalation chain",
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/EscalationChain"
-          },
-          "404": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "escalation-chains"
-        ],
-        "summary": "Update an escalation chain",
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/EscalationChain"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "escalation-chains"
-        ],
-        "summary": "Delete an escalation chain",
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Object"
-          }
-        }
-      }
-    },
-    "/api/v1/maintenance-windows": {
-      "get": {
-        "tags": [
-          "maintenance-windows"
-        ],
-        "summary": "List maintenance windows",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Limit"
-          },
-          {
-            "$ref": "#/components/parameters/Offset"
-          },
-          {
-            "$ref": "#/components/parameters/Sort"
-          },
-          {
-            "$ref": "#/components/parameters/Order"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/MaintenanceWindowList"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "maintenance-windows"
-        ],
-        "summary": "Plan a maintenance window",
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
-        "responses": {
-          "201": {
-            "$ref": "#/components/responses/MaintenanceWindow"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/maintenance-windows/{id}": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/Id"
-        }
-      ],
-      "get": {
-        "tags": [
-          "maintenance-windows"
-        ],
-        "summary": "Get a maintenance window",
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/MaintenanceWindow"
-          },
-          "404": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "maintenance-windows"
-        ],
-        "summary": "Update a maintenance window",
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/MaintenanceWindow"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "maintenance-windows"
-        ],
-        "summary": "Delete a maintenance window",
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Object"
-          }
-        }
-      }
-    },
-    "/api/v1/integrations": {
-      "get": {
-        "tags": [
-          "integrations"
-        ],
-        "summary": "List integrations",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Limit"
-          },
-          {
-            "$ref": "#/components/parameters/Offset"
-          },
-          {
-            "$ref": "#/components/parameters/Sort"
-          },
-          {
-            "$ref": "#/components/parameters/Order"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/IntegrationList"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "integrations"
-        ],
-        "summary": "Create an integration",
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
-        "responses": {
-          "201": {
-            "$ref": "#/components/responses/Integration"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/integrations/{id}": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/Id"
-        }
-      ],
-      "get": {
-        "tags": [
-          "integrations"
-        ],
-        "summary": "Get an integration",
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Integration"
-          },
-          "404": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "integrations"
-        ],
-        "summary": "Update an integration",
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Integration"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "integrations"
-        ],
-        "summary": "Delete an integration",
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Object"
-          }
-        }
-      }
-    },
-    "/api/v1/integrations/{id}/rotate-key": {
-      "post": {
-        "tags": [
-          "integrations"
-        ],
-        "summary": "Rotate an integration's ingest key",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Id"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Integration"
           },
           "403": {
             "$ref": "#/components/responses/Error"
@@ -1266,399 +2056,12 @@
         }
       }
     },
-    "/api/v1/chatops/channels": {
-      "get": {
-        "tags": [
-          "chatops"
-        ],
-        "summary": "List ChatOps channels",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Limit"
-          },
-          {
-            "$ref": "#/components/parameters/Offset"
-          },
-          {
-            "$ref": "#/components/parameters/Sort"
-          },
-          {
-            "$ref": "#/components/parameters/Order"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/ChatOpsChannelList"
-          }
-        }
-      },
+    "/api/v1/users/{id}/test-push": {
       "post": {
         "tags": [
-          "chatops"
+          "users"
         ],
-        "summary": "Create a ChatOps channel",
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
-        "responses": {
-          "201": {
-            "$ref": "#/components/responses/ChatOpsChannel"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/chatops/channels/{id}": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/Id"
-        }
-      ],
-      "get": {
-        "tags": [
-          "chatops"
-        ],
-        "summary": "Get a ChatOps channel",
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/ChatOpsChannel"
-          },
-          "404": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "chatops"
-        ],
-        "summary": "Update a ChatOps channel",
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/ChatOpsChannel"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "chatops"
-        ],
-        "summary": "Delete a ChatOps channel",
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Object"
-          }
-        }
-      }
-    },
-    "/api/v1/chatops/messages": {
-      "get": {
-        "tags": [
-          "chatops"
-        ],
-        "summary": "List ChatOps messages",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Limit"
-          },
-          {
-            "$ref": "#/components/parameters/Offset"
-          },
-          {
-            "$ref": "#/components/parameters/Sort"
-          },
-          {
-            "$ref": "#/components/parameters/Order"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/ChatOpsMessageList"
-          }
-        }
-      }
-    },
-    "/api/v1/chatops/commands": {
-      "post": {
-        "tags": [
-          "chatops"
-        ],
-        "summary": "Post a ChatOps command",
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/ChatOpsMessage"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/mobile/devices": {
-      "get": {
-        "tags": [
-          "mobile"
-        ],
-        "summary": "List registered mobile devices",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Limit"
-          },
-          {
-            "$ref": "#/components/parameters/Offset"
-          },
-          {
-            "$ref": "#/components/parameters/Sort"
-          },
-          {
-            "$ref": "#/components/parameters/Order"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/List"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "mobile"
-        ],
-        "summary": "Register a mobile device",
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
-        "responses": {
-          "201": {
-            "$ref": "#/components/responses/Object"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/mobile/sessions": {
-      "post": {
-        "tags": [
-          "mobile"
-        ],
-        "summary": "Create a mobile session",
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
-        "responses": {
-          "201": {
-            "$ref": "#/components/responses/Object"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/mobile/dashboard": {
-      "get": {
-        "tags": [
-          "mobile"
-        ],
-        "summary": "Mobile dashboard for the session",
-        "security": [
-          {
-            "mobileSession": []
-          }
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/MobileSession"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Object"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/mobile/alert-groups/{id}/acknowledge": {
-      "post": {
-        "tags": [
-          "mobile"
-        ],
-        "summary": "Acknowledge an alert group from mobile",
-        "security": [
-          {
-            "mobileSession": []
-          }
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Id"
-          },
-          {
-            "$ref": "#/components/parameters/MobileSession"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Object"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/mobile/alert-groups/{id}/resolve": {
-      "post": {
-        "tags": [
-          "mobile"
-        ],
-        "summary": "Resolve an alert group from mobile",
-        "security": [
-          {
-            "mobileSession": []
-          }
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Id"
-          },
-          {
-            "$ref": "#/components/parameters/MobileSession"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Object"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/alert-groups": {
-      "get": {
-        "tags": [
-          "alert-groups"
-        ],
-        "summary": "List alert groups",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Limit"
-          },
-          {
-            "$ref": "#/components/parameters/Offset"
-          },
-          {
-            "$ref": "#/components/parameters/Sort"
-          },
-          {
-            "$ref": "#/components/parameters/Order"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/AlertGroupList"
-          }
-        }
-      }
-    },
-    "/api/v1/alert-groups/bulk-resolve": {
-      "post": {
-        "tags": [
-          "alert-groups"
-        ],
-        "summary": "Resolve many alert groups",
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/BulkResolve"
-          }
-        }
-      }
-    },
-    "/api/v1/alert-groups/bulk-acknowledge": {
-      "post": {
-        "tags": [
-          "alert-groups"
-        ],
-        "summary": "Acknowledge many alert groups",
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/BulkAcknowledge"
-          }
-        }
-      }
-    },
-    "/api/v1/alert-groups/bulk-silence": {
-      "post": {
-        "tags": [
-          "alert-groups"
-        ],
-        "summary": "Silence many alert groups",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/DurationMinutes"
-          }
-        ],
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/BulkSilence"
-          }
-        }
-      }
-    },
-    "/api/v1/alert-groups/{id}": {
-      "get": {
-        "tags": [
-          "alert-groups"
-        ],
-        "summary": "Get an alert group",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Id"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/AlertGroup"
-          },
-          "404": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/alert-groups/{id}/timeline": {
-      "get": {
-        "tags": [
-          "alert-groups"
-        ],
-        "summary": "An alert group's timeline",
+        "summary": "Send a test mobile push, report the per-device verdict",
         "parameters": [
           {
             "$ref": "#/components/parameters/Id"
@@ -1667,376 +2070,6 @@
         "responses": {
           "200": {
             "$ref": "#/components/responses/Object"
-          },
-          "404": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/alert-groups/{id}/acknowledge": {
-      "post": {
-        "tags": [
-          "alert-groups"
-        ],
-        "summary": "Acknowledge an alert group",
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Id"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/AlertGroup"
-          },
-          "403": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/alert-groups/{id}/unacknowledge": {
-      "post": {
-        "tags": [
-          "alert-groups"
-        ],
-        "summary": "Un-acknowledge an alert group",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Id"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/AlertGroup"
-          },
-          "403": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/alert-groups/{id}/resolve": {
-      "post": {
-        "tags": [
-          "alert-groups"
-        ],
-        "summary": "Resolve an alert group",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Id"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/AlertGroup"
-          },
-          "403": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/alert-groups/{id}/unresolve": {
-      "post": {
-        "tags": [
-          "alert-groups"
-        ],
-        "summary": "Un-resolve an alert group",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Id"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/AlertGroup"
-          },
-          "403": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/alert-groups/{id}/silence": {
-      "post": {
-        "tags": [
-          "alert-groups"
-        ],
-        "summary": "Silence an alert group",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Id"
-          },
-          {
-            "$ref": "#/components/parameters/DurationMinutes"
-          }
-        ],
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/AlertGroup"
-          },
-          "403": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/alerts": {
-      "get": {
-        "tags": [
-          "observability"
-        ],
-        "summary": "List raw alerts",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Limit"
-          },
-          {
-            "$ref": "#/components/parameters/Offset"
-          },
-          {
-            "$ref": "#/components/parameters/Sort"
-          },
-          {
-            "$ref": "#/components/parameters/Order"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/AlertList"
-          }
-        }
-      }
-    },
-    "/api/v1/notifications": {
-      "get": {
-        "tags": [
-          "observability"
-        ],
-        "summary": "List notifications",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Limit"
-          },
-          {
-            "$ref": "#/components/parameters/Offset"
-          },
-          {
-            "$ref": "#/components/parameters/Sort"
-          },
-          {
-            "$ref": "#/components/parameters/Order"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/NotificationList"
-          }
-        }
-      }
-    },
-    "/api/v1/delivery-attempts": {
-      "get": {
-        "tags": [
-          "observability"
-        ],
-        "summary": "Delivery attempts for a notification",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/NotificationId"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/DeliveryAttemptList"
-          },
-          "403": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/audit": {
-      "get": {
-        "tags": [
-          "observability"
-        ],
-        "summary": "Query the audit trail (admin)",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/ActorId"
-          },
-          {
-            "$ref": "#/components/parameters/EntityType"
-          },
-          {
-            "$ref": "#/components/parameters/EntityId"
-          },
-          {
-            "$ref": "#/components/parameters/Action"
-          },
-          {
-            "$ref": "#/components/parameters/RequestId"
-          },
-          {
-            "$ref": "#/components/parameters/TraceId"
-          },
-          {
-            "$ref": "#/components/parameters/Limit"
-          },
-          {
-            "$ref": "#/components/parameters/Offset"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/List"
-          },
-          "403": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/history": {
-      "get": {
-        "tags": [
-          "observability"
-        ],
-        "summary": "Incident/notification history",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/From"
-          },
-          {
-            "$ref": "#/components/parameters/To"
-          },
-          {
-            "$ref": "#/components/parameters/Limit"
-          },
-          {
-            "$ref": "#/components/parameters/Offset"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/History"
-          }
-        }
-      }
-    },
-    "/api/v1/routes/debug/{key}": {
-      "post": {
-        "tags": [
-          "debug"
-        ],
-        "summary": "Dump route resolution for an integration key (admin)",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Key"
-          }
-        ],
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Object"
-        },
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/RouteDebug"
-          },
-          "403": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/capabilities": {
-      "get": {
-        "tags": [
-          "observability"
-        ],
-        "summary": "Report which features are usable here, and why not when they are not",
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Capabilities"
-          }
-        }
-      }
-    },
-    "/api/v1/readiness": {
-      "get": {
-        "tags": [
-          "readiness"
-        ],
-        "summary": "Can this installation actually page someone? (BETA-051)",
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Readiness"
-          }
-        }
-      }
-    },
-    "/api/v1/readiness/acknowledge": {
-      "post": {
-        "tags": [
-          "readiness"
-        ],
-        "summary": "Accept the readiness blockers that exist right now (admin)",
-        "requestBody": {
-          "$ref": "#/components/requestBodies/ReadinessAcknowledgement"
-        },
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Readiness"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          },
-          "403": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/backups/report": {
-      "post": {
-        "tags": [
-          "readiness"
-        ],
-        "summary": "Record that a backup completed, for the readiness check (admin; called by the backup job)",
-        "requestBody": {
-          "$ref": "#/components/requestBodies/BackupReport"
-        },
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Object"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          },
-          "403": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/v1/escalations/run": {
-      "post": {
-        "tags": [
-          "debug"
-        ],
-        "summary": "Force one escalation-processing pass (admin)",
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/ObjectList"
           },
           "403": {
             "$ref": "#/components/responses/Error"
@@ -4891,6 +4924,82 @@
           }
         },
         "additionalProperties": false
+      },
+      "InsightsTrendBucket": {
+        "type": "object",
+        "required": [
+          "day",
+          "opened",
+          "resolved",
+          "delivered",
+          "failed"
+        ],
+        "properties": {
+          "day": {
+            "type": "string",
+            "description": "День в UTC, YYYY-MM-DD."
+          },
+          "opened": {
+            "type": "integer"
+          },
+          "resolved": {
+            "type": "integer"
+          },
+          "delivered": {
+            "type": "integer"
+          },
+          "failed": {
+            "type": "integer"
+          }
+        }
+      },
+      "InsightsSummary": {
+        "type": "object",
+        "required": [
+          "from",
+          "to",
+          "groups_by_status",
+          "groups_by_level",
+          "notifications_by_state",
+          "trend"
+        ],
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "groups_by_status": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Число групп по статусу — состояние на сейчас, в пределах окна хранения."
+          },
+          "groups_by_level": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Число групп по уровню важности, а не по написанию: high и error попадают в один ключ error."
+          },
+          "notifications_by_state": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "trend": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InsightsTrendBucket"
+            },
+            "description": "По дню на каждый день диапазона, включая дни без событий."
+          }
+        }
       }
     },
     "parameters": {
@@ -5054,6 +5163,15 @@
         "schema": {
           "type": "string"
         }
+      },
+      "Ids": {
+        "name": "ids",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Список id через запятую: вернуть только эти элементы. Пустой список возвращает пусто."
       }
     },
     "requestBodies": {
@@ -5522,6 +5640,16 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/Capabilities"
+            }
+          }
+        }
+      },
+      "InsightsSummary": {
+        "description": "Сводка экрана «Инсайты»: текущие счётчики и дневной тренд",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/InsightsSummary"
             }
           }
         }

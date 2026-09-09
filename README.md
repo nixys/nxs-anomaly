@@ -10,14 +10,25 @@ Kubernetes operator — a `docker compose up` away from a working installation.
 ```bash
 git clone https://github.com/nixys/nxs-anomaly.git
 cd nxs-anomaly
-cp .env.example .env          # set a database password and an admin password
+cp .env.example .env          # set NXS_ANOMALY_VERSION (a release tag, e.g.
+                               # v0.1.88), a database password and an admin
+                               # password — docker compose refuses to start
+                               # with any of them left blank
 docker compose up -d
 ```
 
+This pulls the published, signed images for that release — no local Go or npm
+build. To build from source instead, use `docker-compose.dev.yml` and
+`.env.dev.example` in its place; see [SETUP.md](docs/community/en/SETUP.md).
+
 The interface is on <http://127.0.0.1:3100>, the API on
-<http://127.0.0.1:8080>. Point Alertmanager at
-`/integrations/v1/alertmanager/<integration key>` and the first alert will open a
-group, page whoever the schedule says is on call, and appear on the alert page.
+<http://127.0.0.1:8080>. Sign in with the admin account from your `.env`.
+Point Alertmanager at `/integrations/v1/alertmanager/<integration key>` and the
+first alert will open a group, page whoever the schedule says is on call, and
+appear on the alert page.
+
+PostgreSQL data lives on a named volume and survives an ordinary `down`/`up`;
+`docker compose down -v` is the deliberate way to discard it.
 
 ## What it does
 
@@ -62,16 +73,16 @@ maintainers for access to the enterprise build.
 |---|---|
 | [SETUP.md](docs/community/en/SETUP.md) | Local installation, environment variables, first alert |
 | [openapi.json](docs/openapi.json) | The machine-readable API contract |
-
 | [SECURITY_PROFILE.md](docs/community/en/SECURITY_PROFILE.md) | The hardened defaults and what each one refuses |
 | [TRACING.md](docs/community/en/TRACING.md) | OpenTelemetry: what is instrumented and why |
 | [MIGRATIONS.md](docs/community/en/MIGRATIONS.md) | The schema, how it changes, and how to add to it |
 
 The rest — configuration, deployment, the domain model, the API reference — is
-written first in Russian and translated as it is finished. Every page is in
-[docs/community/ru](docs/community/ru), and each document links to its
-counterpart in the other language at the top. A page not yet in English is
-absent here rather than machine-translated.
+written first in Russian and translated from there. Every page in
+[docs/community/en](docs/community/en) has a counterpart in
+[docs/community/ru](docs/community/ru), and each links to the other at the
+top; a newly added Russian page may lag behind by a release until it is
+translated, and is absent here rather than machine-translated in the meantime.
 
 ## Deployment
 

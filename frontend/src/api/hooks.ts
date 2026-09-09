@@ -71,6 +71,8 @@ export type ListParams = {
   user_id?: string;
   alert_group_id?: string;
   route_id?: string;
+  /** Comma-separated ids: fetch a named set in one request rather than one per row. */
+  ids?: string;
   /** Column to order by; the server validates it against the collection. */
   sort?: string;
   order?: 'asc' | 'desc';
@@ -347,6 +349,38 @@ export type HistoryParams = {
   limit?: number;
   offset?: number;
 };
+
+export interface InsightsBucket {
+  day: string;
+  opened: number;
+  resolved: number;
+  delivered: number;
+  failed: number;
+}
+
+export interface InsightsSummary {
+  from: string;
+  to: string;
+  groups_by_status: Record<string, number>;
+  /** Keyed by severity level, so `high` and `error` are one number. */
+  groups_by_level: Record<string, number>;
+  notifications_by_state: Record<string, number>;
+  trend: InsightsBucket[];
+}
+
+/**
+ * The whole insights screen in one request.
+ *
+ * It replaces twelve separate list queries whose only purpose was their `total`
+ * — twelve round trips to draw six numbers — and it carries the daily buckets
+ * those queries could not produce at all.
+ */
+export function useInsightsSummary(params: { from?: string; to?: string; integration_id?: string }) {
+  return useQuery<InsightsSummary>({
+    queryKey: ['insights-summary', params],
+    queryFn: () => api.get('/api/v1/insights/summary', params),
+  });
+}
 
 export function useHistory(params: HistoryParams) {
   return useQuery<HistoryResponse>({

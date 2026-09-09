@@ -197,6 +197,15 @@ var severityLevelOf = func() map[string]string {
 // test doubles, which have to order the same way the SQL does).
 func SeverityRank(severity string) int { return severityRank[strings.ToLower(severity)] }
 
+// SeverityLevel maps a stored spelling to the level it belongs to, or "unknown"
+// for a word this service does not model.
+func SeverityLevel(severity string) string {
+	if level, ok := severityLevelOf[strings.ToLower(strings.TrimSpace(severity))]; ok {
+		return level
+	}
+	return "unknown"
+}
+
 // SeverityFamily returns every spelling that ranks the same as severity —
 // filtering by "critical" has to return the group a source labelled "P1", or
 // the filter answers a question nobody asked. An unknown spelling is its own
@@ -488,6 +497,9 @@ type PostgreSQLStore interface {
 	ListItemsIn(ctx context.Context, collection, field string, values []any) ([]map[string]any, error)
 	ListItemsByIDs(ctx context.Context, collection string, ids []string) ([]map[string]any, error)
 	QueryHistoryGroups(ctx context.Context, filters map[string]any, limit, offset int) ([]map[string]any, int, error)
+	// InsightsSummaryQuery answers the whole insights screen at once — the
+	// counts it shows and the daily trend behind them.
+	InsightsSummaryQuery(ctx context.Context, integrationID string, integrationIDs []string, from, to time.Time) (InsightsSummary, error)
 	DeleteOldResolvedGroups(ctx context.Context, cutoffISO string) (int, error)
 	// SetAlertStatusForGroups carries a group's resolution down to its alerts.
 	// See store_alerts.go for why it is one statement outside the group's

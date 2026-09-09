@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Please report security vulnerabilities privately, **not** through public GitLab/GitHub
+Please report security vulnerabilities privately, **not** through public GitHub
 issues.
 
 - Email: **security@nixys.io** (PGP key on request).
@@ -21,7 +21,7 @@ nxs-anomaly is pre-1.0. Security fixes are applied to the latest tagged release 
 ## Hardening — the production profile
 
 Run with `NXS_ANOMALY_PROFILE=production` to enable the hardened defaults in one place
-(see [docs/community/en/SECURITY_PROFILE.md](docs/community/en/SECURITY_PROFILE.md)):
+(see [SECURITY_PROFILE.md](docs/community/en/SECURITY_PROFILE.md)):
 
 - SSRF guard on (outbound delivery refuses private/loopback/link-local hosts);
 - request rate limits on (ingest and API);
@@ -44,20 +44,27 @@ Any single default can be overridden with its explicit env var.
 
 ### Verifying a release
 
-Tagged release images and the OCI Helm chart are published with a CycloneDX SBOM and a
-**key-based** cosign signature. Verify with the project's public key:
+Tagged release images and the OCI Helm chart are published from `.github/workflows/release.yml`
+with a CycloneDX SBOM and a **keyless** cosign signature — there is no key to obtain or pin.
+The signature carries the workflow that produced it, tied to this repository and the tag:
 
 ```bash
-cosign verify --key cosign.pub <image>
-cosign verify --key cosign.pub <oci-chart-ref>:<version>
+cosign verify \
+  --certificate-identity-regexp '^https://github.com/nixys/nxs-anomaly/\.github/workflows/release\.yml@refs/tags/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/nixys/nxs-anomaly:<tag>
+
+cosign verify \
+  --certificate-identity-regexp '^https://github.com/nixys/nxs-anomaly/\.github/workflows/release\.yml@refs/tags/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/nixys/nxs-anomaly:<chart-version>
 ```
 
-Signing is deliberately key-based rather than keyless. Keyless mints a Fulcio certificate
-from the CI's OIDC issuer, and the public Sigstore trust root covers `gitlab.com`, not a
-self-hosted instance like `github.com` — a keyless signature from here would be one
-nobody could verify. The `release:verify` stage re-runs both commands above against the
-just-published artifacts **with no registry credentials**, so a release cannot go green
-with a signature that does not check out.
+Add `verify-attestation --type cyclonedx` in place of `verify` for the SBOM attestation.
+Keyless works here — and would not for a self-hosted CI system — because public Sigstore's
+trust root covers `github.com`'s OIDC issuer. The `verify` job in `release.yml` re-runs both
+commands above against the just-published artifacts **with no registry credentials**, so a
+release cannot go green with a signature that does not check out.
 
 ### Dependency policy
 
@@ -68,7 +75,7 @@ Two gates, one per ecosystem, built the same way:
 | Scanner | `govulncheck` | `npm audit` |
 | Gate | `scripts/vuln-gate.sh` | `frontend/scripts/audit-gate.mjs` |
 | Allowlist | `.vuln-allowlist.json` | `frontend/.audit-allowlist.json` |
-| CI job | `test:govulncheck` | `test:frontend:audit` |
+| Workflow job | `ci.yml` → `govulncheck` | `ci.yml` → `frontend` |
 
 Both fail on any unaccepted finding, and both fail when an accepted one is past its
 `reviewBy` date — an exception that nobody re-reads is a silence, not a decision. Every
@@ -81,13 +88,12 @@ dependency tree, never reached) as informational. Gating on the wider set would 
 failing the build over code that provably cannot execute here, which is how a security
 gate gets muted.
 
-Both scanners also run on the nightly schedule, alongside `deps:outdated`. Advisories are
-published on their own timetable, and a repository that goes three quiet weeks would
-otherwise go three weeks unscanned.
+Both scanners also run on a nightly schedule (`.github/workflows/security-nightly.yml`),
+independently of any push to the repository — new advisories are published on their own
+timetable, and a nightly failure opens or updates a tracking issue rather than paging
+anyone.
 
 ### Vendored third-party code
 
 Go dependencies are vendored (`vendor/`) so a build is reproducible without the module
-proxy. The dev stack also carries a Grafana-signed plugin under `dev/grafana/plugins/`;
-its `MANIFEST.txt` is a signed file list and must stay intact — see the README there
-before deleting anything from it.
+proxy.

@@ -42,7 +42,7 @@ function notification(id: string, overrides: Record<string, unknown> = {}) {
   };
 }
 
-function renderPage(items: ReturnType<typeof notification>[]) {
+function renderPage(items: ReturnType<typeof notification>[], entries: string[] = ['/notifications']) {
   get.mockImplementation((path: string) => {
     if (path.startsWith('/api/v1/notifications')) {
       return Promise.resolve({ items, total: items.length });
@@ -59,7 +59,7 @@ function renderPage(items: ReturnType<typeof notification>[]) {
   return render(
     <MantineProvider>
       <QueryClientProvider client={client}>
-        <MemoryRouter>
+        <MemoryRouter initialEntries={entries}>
           <NotificationsPage />
         </MemoryRouter>
       </QueryClientProvider>
@@ -128,17 +128,38 @@ describe('NotificationsPage', () => {
     expect(row?.textContent).not.toContain('usr-alice');
   });
 
-  it('says a target is absent instead of leaving the cell blank', async () => {
+  it('drops the target column when nothing on the page has a target', async () => {
     renderPage([notification('n1', { status: 'skipped', channel: 'mobile', target: '' })]);
+    await screen.findByText('skipped');
 
-    // An empty cell reads as a rendering bug; the dash says the notification
-    // genuinely had nowhere to go, which is the point of a skip.
-    expect(await screen.findByText('—')).toBeInTheDocument();
+    // A column of dashes is three centimetres of screen saying nothing. When
+    // some rows do have a target the column comes back — and the ones without
+    // still show a dash rather than a blank, because there an empty cell would
+    // read as a rendering fault.
+    expect(screen.queryByRole('columnheader', { name: 'Target' })).toBeNull();
   });
 
-  it('shows an empty state when the filters match nothing', async () => {
-    renderPage([]);
+  it('keeps the target column, and the dash, once any row has one', async () => {
+    renderPage([
+      notification('n1', { status: 'skipped', channel: 'mobile', target: '' }),
+      notification('n2', { status: 'delivered', channel: 'telegram', target: '@ada' }),
+    ]);
 
+    expect(await screen.findByRole('columnheader', { name: 'Target' })).toBeInTheDocument();
+    expect(screen.getByText('@ada')).toBeInTheDocument();
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+  });
+
+  it('separates "nothing sent yet" from "nothing matched"', async () => {
+    renderPage([]);
+    // Telling somebody whose installation has never sent anything that "no
+    // notifications match these filters" sends them looking for a filter they
+    // never set.
+    expect(await screen.findByText(/nothing has been sent yet/i)).toBeInTheDocument();
+  });
+
+  it('says the filters matched nothing when filters are set', async () => {
+    renderPage([], ['/notifications?status=failed']);
     expect(await screen.findByText(/no notifications match/i)).toBeInTheDocument();
   });
 

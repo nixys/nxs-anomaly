@@ -338,8 +338,6 @@ scrape_configs:
 - [ALERTING_RULES.md](./ALERTING_RULES.md) — правила и SLI/SLO с PromQL;
 - [prometheus-rules.yaml](../../prometheus-rules.yaml) — готовый `PrometheusRule` CRD;
 - [grafana-dashboard.json](../../grafana-dashboard.json) — импортируемый дашборд;
-- [grafana-analytics-dashboard.json](../../grafana-analytics-dashboard.json) — дашборд
-  операционного, потому что источник у него другой и жизненный цикл тоже, см.
 - [CAPACITY.md](./CAPACITY.md) — профили нагрузки, сценарии сбоев, capacity envelope.
 
 ## Аутентификация API

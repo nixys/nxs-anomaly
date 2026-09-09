@@ -1,10 +1,55 @@
+import { useEffect, useRef, useState } from 'react';
 import { Group, Paper, Skeleton, Stack, Text } from '@mantine/core';
+import { useReducedMotion } from '@mantine/hooks';
+import { DURATION } from '../ui/motion';
 import type { MantineColor } from '@mantine/core';
 
 /**
  * Headline number. The accent dot carries the status hue; the number itself stays
  * in text ink so identity never rests on color alone.
  */
+/**
+ * Counts to a new value instead of replacing it.
+ *
+ * "7 open" becoming "6 open" while nobody watches is indistinguishable from a
+ * different number having been there all along. A short count makes the change
+ * itself the thing that is visible — which, on a screen whose whole job is "what
+ * needs attention right now", is the information.
+ *
+ * Only whole steps, and only for real numbers: a value that is a word is set
+ * directly, and a viewer who asked for less motion gets the final number at once.
+ */
+function useCountUp(value: number | string | undefined): number | string | undefined {
+  const reduce = useReducedMotion();
+  const [shown, setShown] = useState(value);
+  const frame = useRef<number>();
+
+  useEffect(() => {
+    if (typeof value !== 'number' || reduce) {
+      setShown(value);
+      return;
+    }
+    const from = typeof shown === 'number' ? shown : value;
+    if (from === value) return;
+    const started = performance.now();
+    const step = (now: number) => {
+      const progress = Math.min(1, (now - started) / DURATION.count);
+      // Same decelerating shape as everything else that moves here.
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setShown(Math.round(from + (value - from) * eased));
+      if (progress < 1) frame.current = requestAnimationFrame(step);
+    };
+    frame.current = requestAnimationFrame(step);
+    return () => {
+      if (frame.current) cancelAnimationFrame(frame.current);
+    };
+    // `shown` is deliberately not a dependency: it changes on every frame.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, reduce]);
+
+  return shown;
+}
+
 export function StatTile({
   label,
   value,
@@ -18,6 +63,7 @@ export function StatTile({
   color?: MantineColor;
   loading?: boolean;
 }) {
+  const shown = useCountUp(value);
   return (
     <Paper withBorder p="md">
       <Stack gap={6}>
@@ -41,8 +87,8 @@ export function StatTile({
         {loading ? (
           <Skeleton height={30} width={70} />
         ) : (
-          <Text fz={30} fw={600} lh={1}>
-            {value ?? '—'}
+          <Text fz={30} fw={600} lh={1} style={{ fontVariantNumeric: 'tabular-nums' }}>
+            {shown ?? '—'}
           </Text>
         )}
         {hint && (

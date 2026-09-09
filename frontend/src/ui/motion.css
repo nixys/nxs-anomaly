@@ -1,0 +1,77 @@
+/*
+ * The two keyframes the product uses, and the global rule that turns every one
+ * of them off.
+ *
+ * They live in CSS rather than in a component because both animate an element
+ * that already exists — a table row, a panel — and because the reduced-motion
+ * switch has to be able to reach all of it from one place. Inline styles cannot
+ * carry a media query.
+ */
+
+/* A row that arrived since the last refresh: it drops in and its background
+   fades back to normal over two and a half seconds — long enough to be noticed
+   by someone reading another part of the screen. */
+@keyframes nxsArrive {
+  0% {
+    background-color: var(--mantine-color-yellow-light);
+    transform: translateY(-6px);
+    opacity: 0;
+  }
+  12% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  35% {
+    background-color: var(--mantine-color-yellow-light);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+/* A panel that appears because something was selected. */
+@keyframes nxsSlideDown {
+  from {
+    transform: translateY(-8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* The live-refresh dot, while a request is in flight. */
+@keyframes nxsPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* Rows, cards and links get their hover and focus colours over 120ms: an
+   instant colour change reads as a rendering fault rather than as feedback. */
+.mantine-Table-tr,
+.mantine-NavLink-root,
+.mantine-Button-root,
+.mantine-ActionIcon-root {
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+/*
+ * Reduced motion is an accessibility setting and for some people a medical one,
+ * so it removes the movement rather than shortening it. Colour transitions stay:
+ * they do not move anything.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-property: background-color, border-color, color, opacity !important;
+    transition-duration: 120ms !important;
+    scroll-behavior: auto !important;
+  }
+}

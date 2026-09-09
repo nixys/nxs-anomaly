@@ -300,6 +300,23 @@ func (e *Engine) ListCollectionPage(ctx context.Context, collection string, para
 			filters[k] = v
 		}
 	}
+	// `ids` fetches a named set in one request. Without it a page that shows
+	// something about each of fifty rows — the incident a delivery was about,
+	// say — either asks fifty times or shows the id it already had, and showing
+	// the id is the thing such a page exists to stop doing.
+	if raw := utils.StrVal(params, "ids"); raw != "" {
+		wanted := make([]any, 0, 8)
+		for _, id := range strings.Split(raw, ",") {
+			if id = strings.TrimSpace(id); id != "" {
+				wanted = append(wanted, id)
+			}
+		}
+		// An explicit but empty list asks for nothing, and gets nothing: the
+		// alternative — silently listing everything — is how a scoped page turns
+		// into a leak.
+		filters["id"] = wanted
+		limit = clampInt(limit, 1, 500)
+	}
 	// Narrow to what the actor's teams may see. A scope that cannot match
 	// anything returns an empty page rather than an error: "no alert groups
 	// reachable from your teams" is a legitimate answer, not a failure.

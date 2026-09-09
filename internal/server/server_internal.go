@@ -348,6 +348,9 @@ func pageParams(r *http.Request) map[string]any {
 		"offset": parseIntParam(q.Get("offset"), 0),
 	}
 	for _, key := range []string{"status", "severity", "integration_id", "channel", "user_id", "alert_group_id", "route_id",
+		// A comma-separated set of ids, for a page that needs one fact about
+		// each of several rows and would otherwise ask once per row.
+		"ids",
 		// Ordering, not filtering: the engine validates the column against the
 		// collection before it reaches SQL.
 		"sort", "order"} {

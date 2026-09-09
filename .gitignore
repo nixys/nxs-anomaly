@@ -3,6 +3,9 @@ data/
 tmp/
 *.log
 
+# Local secrets for docker compose — copy .env.example instead of committing this.
+.env
+
 # Build outputs
 bin/
 dist/

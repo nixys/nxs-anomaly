@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS nxs_anomaly_schema_migrations (
 | `0009_alerts_archival_idx` | Индекс `alert_group_id` на alerts для каскадной очистки при архивации. |
 | `0010_validate_constraints` | `VALIDATE CONSTRAINT` для всех constraints, созданных с `NOT VALID` в более ранних миграциях. |
 | `0011_grafana_compat` | Таблицы `nxs_anomaly_grafana_notification_policies`, `nxs_anomaly_grafana_channel_filters`, `nxs_anomaly_grafana_heartbeats` — хранение данных слоя совместимости с плагином Grafana OnCall. **Слой удалён**; таблицы остались и не используются, см. «Снятые таблицы» ниже. |
+| `0012_kafka_outbox` | Таблица `nxs_anomaly_kafka_outbox` + индекс по `created_at` для transactional outbox (асинхронная отправка алертов в Kafka, FIFO-публикация worker-циклом). Схема одинакова в обеих редакциях — движение между ними должно быть заменой образа, — но заполняющий её продюсер входит только в enterprise-сборку; в community-сборке таблица существует и остаётся пустой. |
 | `0013_soft_delete_integrations` | Колонка `deleted_at` на integrations + частичный индекс. Soft-delete: удалённые интеграции исключаются из list/ingest, но остаются в БД. |
 | `0014_mobile_verification_tokens` | Таблица `nxs_anomaly_mobile_verification_tokens` + индекс по `expires_at`. Токены QR-верификации удалённого слоя совместимости; таблица не используется, см. «Снятые таблицы» ниже. |
 | `0015_chatops_messages_created_at_idx` | Expression-индекс `((data->>'created_at'))` на chatops_messages — ускоряет TTL-архивацию старых сообщений. |

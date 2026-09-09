@@ -77,6 +77,50 @@ semantic versioning once it reaches 1.0.
   the same time.
 
 ### Changed
+- **The delivery log is about incidents again.** "Notifications" showed twenty-one rows
+  differing only in the recipient, with the incident behind each one reduced to a link
+  labelled "Open", a target column of dashes, a retries column of zeros and the same
+  absolute timestamp repeated to the second. Rows now carry the incident's title and the
+  reason it was sent, time is relative with the exact moment on hover, and a column whose
+  every value on the page is empty is not drawn at all. Filters live in the address bar,
+  so a filtered delivery log can be handed to somebody.
+
+- **An escalation chain reads as a sentence, and can say who it would page right now.**
+  The card printed the wire names of the step kinds — `1. NOTIFY_USER  2. NOTIFY_USER` —
+  which is the configuration that decides whether anybody is woken, displayed as constants
+  from the source, with the one fact that matters missing: who. It now reads "page Ada
+  Okonkwo → wait 5 min → page the Platform team", marks any step that names nobody, says
+  outright when a whole chain reaches nobody, and offers a dry-run that resolves the
+  notifying steps against the current rotas without sending anything.
+
+- **Insights answer whether things are getting better or worse.** The screen fired twelve
+  list queries for their `total` — twelve round trips to draw six numbers — and could not
+  show direction at all. One request now returns the counts and a daily trend, drawn as
+  two charts (incidents opened and closed; deliveries delivered and failed) rather than one
+  chart with two scales. The severity distribution counts by level, so it agrees with the
+  badges below it.
+
+- **A rota is a grid before it is a table.** Four weeks of shifts are drawn as bands per
+  day — holes are gaps, an override is the same band with a different surface, a double
+  shift is one colour across two rows — with the exact intervals still tabulated below,
+  because that is what somebody quotes in a handover.
+
+- **Movement where it explains something.** A row that arrived since the last refresh is
+  highlighted for 2.4 s; a status badge acknowledges its own change; tiles count to their
+  new value instead of swapping it; the bulk bar slides in with the selection; hover and
+  focus colours take 120 ms instead of none. The severity stripe, the level badge and the
+  numbers in tables never animate — those are what the eye compares. `prefers-reduced-motion`
+  removes all of it rather than shortening it, and toasts moved to the bottom right, where
+  somebody working a table is actually looking.
+
+- **Waiting looks like the thing that is coming.** Lists wait behind a skeleton shaped like
+  their rows rather than a centred spinner, and the skeleton only appears after 200 ms so a
+  fast answer does not flash. Polling stops while a tab is hidden.
+
+- **Destructive row actions moved behind the overflow menu**, so a red trash icon no longer
+  sits a few pixels from "edit" with no label, and the notification-priority labels no
+  longer share the word "medium" with a severity spelling.
+
 - **Every route object the chart renders takes an explicit name: `ingress.name`,
   `istio.virtualService.name`, `gatewayAPI.httpRoute.name`.** Their names were always the
   release's full name, which is fine until two releases publish through one controller or
@@ -483,7 +527,7 @@ semantic versioning once it reaches 1.0.
   widely than the service.
 
 - **Helm: an RF closed-beta preset, a values schema, and post-install acceptance.**
-  [`values-beta-rf.yaml`](deploy/helm/nxs-anomaly/values-beta-rf.yaml) layers the
+  `values-beta-rf.yaml` (an enterprise-edition values overlay) layers the
   compliance decisions on the production profile: explicit retention per category, the
   channel policy above, external PostgreSQL at `sslmode: verify-full`, two replicas of
   API/worker/frontend with PDBs and topology spread, NetworkPolicy + ServiceMonitor +

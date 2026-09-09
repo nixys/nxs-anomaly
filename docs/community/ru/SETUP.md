@@ -30,35 +30,44 @@ docker run --rm --name nxs-anomaly-postgres \
 
 ```bash
 export NXS_ANOMALY_DB_DSN='postgres://nxs_anomaly:nxs_anomaly@127.0.0.1:5432/nxs_anomaly?sslmode=disable'
+export NXS_ANOMALY_BOOTSTRAP_ADMIN_USERNAME=admin
+export NXS_ANOMALY_BOOTSTRAP_ADMIN_PASSWORD='pick a password'
 
-# Применить миграции и создать демо-данные
-go run ./cmd/nxs-anomaly seed-demo --force
-
-# Запустить API сервер
+# Запустить API сервер — миграции применятся автоматически
 go run ./cmd/nxs-anomaly serve
 ```
 
-Миграции применяются автоматически при инициализации store.
+На пустой базе `seed-demo` (без `--force`) добавит демо-пользователей,
+расписание и интеграцию — см. CLI-справочник ниже; для первого запуска это не
+обязательный шаг, а способ посмотреть форму продукта.
 
 ## Docker Compose
 
 ```bash
+cp .env.example .env   # обязательные POSTGRES_PASSWORD и bootstrap admin — см. .env.example
 docker compose up --build
 ```
+
+`.env` не коммитится (`.gitignore`); без него `docker compose up` откажет
+сразу, назвав отсутствующую переменную, а не подставит пароль по умолчанию.
 
 Сервисы:
 
 | Сервис | Описание |
 |---|---|
-| `postgres` | PostgreSQL 17 |
+| `postgres` | PostgreSQL 17, данные на именованном volume `pgdata` |
 | `app` | API сервер (`NXS_ANOMALY_START_SCHEDULER=false`) |
-| `worker` | Background-worker (цикл каждые 5 сек) |
+| `worker` | Background-worker (цикл каждые 5 сек), проба `/ready` на `:8081` |
 | `frontend` | nginx со SPA и same-origin proxy, <http://localhost:3100> |
+
+`pgdata` переживает обычный `down`/`up`; `down -v` удаляет volume — это
+осознанный способ начать с чистого листа, а не побочный эффект перезапуска.
 
 Проверить работоспособность:
 
 ```bash
 curl http://127.0.0.1:8080/health
+curl http://127.0.0.1:8081/ready   # проба самого worker — см. «Диагностика» ниже
 curl http://127.0.0.1:8080/metrics
 ```
 
@@ -265,6 +274,12 @@ go run ./cmd/nxs-anomaly healthcheck
 ```
 
 При статусе `degraded`, `db_ok: false` и наличии поля `db_error` — проблема в подключении к PostgreSQL.
+
+`worker_cycles_completed` в этом ответе — счётчик **процесса `app`**, а не
+факт, что worker жив: при `NXS_ANOMALY_START_SCHEDULER=false` планировщик
+крутится на `worker`, и здесь это поле навсегда останется нулём. Проверяйте
+сам worker — `run-worker --worker-addr :8081` и `curl :8081/ready`: то же
+поле там плюс `worker_stalled`, если цикл завис.
 
 Если Docker-сборка падает из-за зависимостей — убедиться, что `vendor/` актуален:
 

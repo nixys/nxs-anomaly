@@ -46,7 +46,7 @@ test.describe('setup and readiness', () => {
     await page.getByRole('link', { name: 'Setup', exact: true }).click();
 
     await expect(page.getByRole('heading', { name: 'Setup', exact: true })).toBeVisible();
-    await expect(page.getByText('of 6 steps done', { exact: false })).toBeVisible();
+    await expect(page.getByText('of 5 steps done', { exact: false })).toBeVisible();
 
     // The steps are the wizard's own labels, in order.
     await expect(page.getByText('1. Add your team')).toBeVisible();

@@ -36,6 +36,14 @@ test('a viewer is denied the admin-only Audit section', async ({ page }) => {
   await expect(page.getByRole('navigation').getByRole('link', { name: 'Audit' })).toHaveCount(0);
 });
 
+// NXS_ANOMALY_TEAM_SCOPING enforcement (internal/engine/scope.go,
+// internal/server/auth.go's applyTeamScope) is not gated by edition — only its
+// *advertisement* is (editionHasTeamScoping, read by /health and
+// /api/v1/capabilities, says the feature is not officially supported in the
+// community build, not that the code refuses to run it). So this scenario
+// holds in both editions as long as the harness sets the env var, which
+// frontend/e2e/start-api.sh does unconditionally — verified by reading
+// scope.go and auth.go rather than assumed from the README's edition table.
 test('a team-scoped user sees only their own team\'s schedules', async ({ page }) => {
   const s = uniqueSuffix();
   const password = 'editor-pass-1234';

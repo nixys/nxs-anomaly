@@ -2,8 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { buildSetupSteps, firstOpenStep, setupProgress, type SetupCounts } from './setup-steps';
 import type { Readiness, ReadinessCheck } from '../api/types';
 
-const EMPTY_COUNTS: SetupCounts = { teams: 0, users: 0, schedules: 0, chains: 0, integrations: 0 };
-const FULL_COUNTS: SetupCounts = { teams: 1, users: 2, schedules: 1, chains: 1, integrations: 1 };
+const EMPTY_COUNTS: SetupCounts = {
+  teams: 0,
+  users: 0,
+  schedules: 0,
+  hasNonEmptyChain: false,
+  integrations: 0,
+};
+const FULL_COUNTS: SetupCounts = {
+  teams: 1,
+  users: 2,
+  schedules: 1,
+  hasNonEmptyChain: true,
+  integrations: 1,
+};
 
 function check(
   key: ReadinessCheck['key'],
@@ -62,6 +74,15 @@ describe('buildSetupSteps', () => {
     expect(byKey.integration).toBe('todo');
   });
 
+  it('does not mark the chain step done for an empty draft chain', () => {
+    // The server accepts a chain with zero steps; counting its existence alone
+    // would tick "who gets paged, and when" while nobody is actually named.
+    const step = buildSetupSteps(HEALTHY, { ...FULL_COUNTS, hasNonEmptyChain: false }).find(
+      (s) => s.key === 'chain',
+    );
+    expect(step?.status).toBe('todo');
+  });
+
   it('reports a blocking check as blocked and carries its detail and items', () => {
     const report = readiness([
       check('notification_targets', 'blocker', {
@@ -100,9 +121,9 @@ describe('buildSetupSteps', () => {
 });
 
 describe('setupProgress', () => {
-  it('counts only finished steps', () => {
+  it('counts only finished, scored steps — the test step never caps it under 100%', () => {
     const progress = setupProgress(buildSetupSteps(HEALTHY, FULL_COUNTS));
-    expect(progress).toEqual({ done: 5, total: 6, percent: 83 });
+    expect(progress).toEqual({ done: 5, total: 5, percent: 100 });
   });
 
   it('is zero for a fresh installation', () => {
