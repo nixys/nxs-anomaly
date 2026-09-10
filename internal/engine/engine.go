@@ -123,12 +123,17 @@ type Engine struct {
 	templateCache sync.Map  // "integrationID:channel" → templateCacheEntry; lazy, TTL-bounded
 	refCache      *refCache // short-TTL cache of reference collections; nil in unit tests
 	kafkaProducer OutboxProducer
-	kafkaTopic    string
+	// kafkaTopic and kafkaOutboxCycleBudget are set here and read only by files
+	// tagged !community — the analytics emitters and the outbox drain. The cut
+	// deletes every one of those readers, so in that edition the fields really
+	// are unused, and `unused` says so. A struct cannot be split across build
+	// tags, so the exemption is stated at the field rather than the field moved.
+	kafkaTopic string //nolint:unused // read only by the enterprise build
 	// kafkaOutboxCycleBudget overrides outboxCycleBudget when non-zero. Tests
 	// use this to remove the wall-clock race between the drain loop and the
 	// count-based outboxCycleLimit (the default budget is real time, and a
 	// slow test run — e.g. under -race — can hit it before the count does).
-	kafkaOutboxCycleBudget time.Duration
+	kafkaOutboxCycleBudget time.Duration   //nolint:unused // read only by the enterprise build
 	metrics                MetricsSink     // engine-level metric sink; noopMetrics until SetMetricsSink
 	breaker                *circuitBreaker // per-channel/target delivery breaker; nil when disabled
 	workerID               string          // identifies this process when claiming notifications

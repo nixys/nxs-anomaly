@@ -36,3 +36,8 @@ __pycache__/
 # cosign release keys must never be committed; they live in CI variables.
 cosign.key
 cosign.pub
+
+# Windows writes an alternate-data-stream sidecar next to anything downloaded
+# through a browser, and WSL surfaces it as a real file. It carries the download
+# URL, which is neither ours to publish nor anything the build reads.
+*:Zone.Identifier

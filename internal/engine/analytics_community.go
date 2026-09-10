@@ -23,7 +23,13 @@ import (
 // community to enterprise an image swap rather than a migration.
 
 // analyticsEnabled is always false here: this build ships no producer.
-func (e *Engine) analyticsEnabled() bool { return false }
+//
+// Nothing in the community tree calls it: both callers — analytics_emit.go and
+// analytics_coverage.go — are tagged !community and the cut deletes them. It is
+// kept anyway, because a seam that is complete on one side only is the thing
+// this file exists to prevent: the next entry point added to the enterprise half
+// should find its counterpart already here.
+func (e *Engine) analyticsEnabled() bool { return false } //nolint:unused // the enterprise half is the caller
 
 // withAnalyticsOutbox returns the save list unchanged, so no mutator widens its
 // write set to a table nothing writes to.

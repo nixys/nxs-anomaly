@@ -20,8 +20,8 @@ type: application
 # to it and the published image tags are the git tag verbatim (v0.1.29); the chart
 # version cannot, because chart versions must be SemVer. The release job
 # (release:helm-chart) repackages with the same pair.
-version: 0.1.93
-appVersion: "v0.1.93"
+version: 0.1.94
+appVersion: "v0.1.94"
 home: https://github.com/nixys/nxs-anomaly/nxs-anomaly
 sources:
   - https://github.com/nixys/nxs-anomaly/nxs-anomaly
