@@ -7,6 +7,11 @@ semantic versioning once it reaches 1.0.
 ## [Unreleased]
 
 ### Added
+- **Both READMEs open with the product lockup.** `frontend/logo/horizontal.png` is
+  the mark beside the name — the shape a document header wants, and the one the app
+  chrome must not have, since the header and the sign-in screen set the name as real
+  text that can be selected and read aloud.
+
 - **The product has its mark, and the browser tab has an icon.** The logo was a
   placeholder drawn in code — a blue rounded square with a white zigzag — and there
   was no favicon at all, so the tab a responder is meant to pick out among twenty
