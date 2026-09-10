@@ -5,6 +5,7 @@ import {
   Badge,
   Button,
   Group,
+  Menu,
   Modal,
   NumberInput,
   Paper,
@@ -53,7 +54,7 @@ import {
   type Role,
   type User,
 } from '../api/types';
-import { ConfirmDeleteButton, PageHeader, ProvisionedBadge, QueryState } from '../components/common';
+import { ConfirmDeleteButton, PageHeader, ProvisionedBadge, QueryState, RowActions} from '../components/common';
 import {
   EMPTY_STEP,
   cleanPolicies,
@@ -189,16 +190,34 @@ export function UsersPage() {
                         />
                       </Table.Td>
                       <Table.Td>
-                        <Group gap={4} wrap="nowrap">
-                          {identity?.permissions.admin && (
-                            <ActionIcon
-                              variant="subtle"
-                              onClick={() => setPasswordFor(user)}
-                              aria-label={t('users.setPasswordFor', { name: user.name })}
-                            >
-                              <IconKey size={16} />
-                            </ActionIcon>
-                          )}
+                        {/* Editing is the everyday action and stays an icon;
+                            setting a password and deleting live behind the menu,
+                            where a slip of the pointer cannot reach them. */}
+                        <RowActions
+                          label={t('common.actionsFor', { name: user.name })}
+                          menu={
+                            <>
+                              {identity?.permissions.admin && (
+                                <Menu.Item
+                                  leftSection={<IconKey size={14} />}
+                                  onClick={() => setPasswordFor(user)}
+                                >
+                                  {t('users.setPassword')}
+                                </Menu.Item>
+                              )}
+                              <ConfirmDeleteButton
+                                asMenuItem
+                                label={user.name}
+                                loading={remove.isPending}
+                                disabled={Boolean(user.provisioned_by)}
+                                disabledReason={t('common.provisionedHint', {
+                                  tool: user.provisioned_by ?? '',
+                                })}
+                                onConfirm={() => remove.mutate(user.id)}
+                              />
+                            </>
+                          }
+                        >
                           <ActionIcon
                             variant="subtle"
                             onClick={() => setEditing(user)}
@@ -207,14 +226,7 @@ export function UsersPage() {
                           >
                             <IconPencil size={16} />
                           </ActionIcon>
-                          <ConfirmDeleteButton
-                            label={user.name}
-                            loading={remove.isPending}
-                            disabled={Boolean(user.provisioned_by)}
-                            disabledReason={t('common.provisionedHint', { tool: user.provisioned_by ?? '' })}
-                            onConfirm={() => remove.mutate(user.id)}
-                          />
-                        </Group>
+                        </RowActions>
                       </Table.Td>
                     </Table.Tr>
                   ))}
@@ -405,12 +417,28 @@ function UserModal({
             onChange={(event) => setForm({ ...form, phone: event.currentTarget.value })}
           />
         </Group>
+        {/* The chat account ids are what attribute an acknowledge from a chat to
+            this person rather than to the bot, and what let duty and priority be
+            run from that chat at all. */}
         <Group grow>
           <TextInput
             label={t('users.telegramId')}
+            description={t('users.chatIdHint')}
             value={form.telegram_id}
             onChange={(event) => setForm({ ...form, telegram_id: event.currentTarget.value })}
           />
+          <TextInput
+            label={t('users.slackId')}
+            value={form.slack_id}
+            onChange={(event) => setForm({ ...form, slack_id: event.currentTarget.value })}
+          />
+          <TextInput
+            label={t('users.mattermostId')}
+            value={form.mattermost_id}
+            onChange={(event) => setForm({ ...form, mattermost_id: event.currentTarget.value })}
+          />
+        </Group>
+        <Group grow>
           <TextInput
             label={t('common.timezone')}
             value={form.timezone}
@@ -699,6 +727,8 @@ function initialForm(user?: User | null) {
     email: user?.email ?? '',
     phone: user?.phone ?? '',
     telegram_id: user?.telegram_id ?? '',
+    slack_id: user?.slack_id ?? '',
+    mattermost_id: user?.mattermost_id ?? '',
     timezone: user?.timezone ?? 'UTC',
     priority: user?.priority ?? 'medium',
     role: user?.role ?? ('' as Role),

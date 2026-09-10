@@ -68,20 +68,34 @@ describe('EscalationChainsPage', () => {
     expect(screen.getByText('2 steps')).toBeInTheDocument();
   });
 
-  it('renders the steps in order, because the order is the escalation', async () => {
+  it('reads the chain as a sentence, in order, because the order is the escalation', async () => {
     renderPage([
       chain('a', [
-        { id: 's1', kind: 'NOTIFY_SCHEDULE' },
+        { id: 's1', kind: 'NOTIFY_SCHEDULE', schedule_ids: ['sch-1'] },
         { id: 's2', kind: 'WAIT', delay_minutes: 5 },
-        { id: 's3', kind: 'NOTIFY_TEAM' },
+        { id: 's3', kind: 'NOTIFY_TEAM', team_ids: ['team-1'] },
       ]),
     ]);
 
-    // Numbered on screen: a chain read out of order is a different chain, and
-    // the numbers are the only thing saying which is which.
-    expect(await screen.findByText('1. NOTIFY_SCHEDULE')).toBeInTheDocument();
-    expect(screen.getByText('2. WAIT 5m')).toBeInTheDocument();
-    expect(screen.getByText('3. NOTIFY_TEAM')).toBeInTheDocument();
+    // The card used to print the wire names of the step kinds — the constants
+    // from the source — with the one fact that matters missing: who. A chain
+    // read out of order is a different chain, so the order still has to be
+    // visible, now as the order of the phrases.
+    const card = (await screen.findByText('Chain a')).closest('.mantine-Paper-root');
+    const text = card?.textContent ?? '';
+    expect(text).toContain('page whoever is on call in');
+    expect(text).toContain('wait 5 min');
+    expect(text).toContain('page the');
+    expect(text.indexOf('wait 5 min')).toBeGreaterThan(text.indexOf('page whoever is on call in'));
+    expect(text).not.toContain('NOTIFY_SCHEDULE');
+  });
+
+  it('says outright when a chain reaches nobody', async () => {
+    renderPage([chain('a', [{ id: 's1', kind: 'NOTIFY_USER', user_ids: [] }])]);
+
+    // A chain whose notifying steps name nobody looks exactly like a working one
+    // until an incident proves otherwise.
+    expect(await screen.findByText(/reaches nobody/i)).toBeInTheDocument();
   });
 
   it('says a chain with no steps is a draft', async () => {

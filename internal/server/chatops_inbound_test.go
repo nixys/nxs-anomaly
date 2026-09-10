@@ -125,7 +125,7 @@ func TestChatopsReplyShape(t *testing.T) {
 
 	// Slack renders a slash-command answer from a top-level "text"; returning
 	// the raw engine object left the responder with nothing on screen.
-	slack := chatopsReply("slack", "C123", engineResult)
+	slack := chatopsReply("slack", "C123", engineResult, "")
 	if slack["text"] != "Acknowledged grp_1" {
 		t.Errorf("slack text = %v", slack["text"])
 	}
@@ -136,7 +136,7 @@ func TestChatopsReplyShape(t *testing.T) {
 	// Telegram ignores a webhook response that is not a method call, so the
 	// answer has to be the call itself — otherwise a typed command replies
 	// nothing at all, which is what it used to do.
-	telegram := chatopsReply("telegram", "-100500", engineResult)
+	telegram := chatopsReply("telegram", "-100500", engineResult, "")
 	if telegram["method"] != "sendMessage" {
 		t.Errorf("telegram method = %v, want sendMessage", telegram["method"])
 	}
@@ -146,13 +146,13 @@ func TestChatopsReplyShape(t *testing.T) {
 
 	// Without a chat to answer in there is no method call to make, and the body
 	// stays readable for whoever is testing the endpoint by hand.
-	noChat := chatopsReply("telegram", "", engineResult)
+	noChat := chatopsReply("telegram", "", engineResult, "")
 	if noChat["ok"] != true || noChat["text"] != "Acknowledged grp_1" {
 		t.Errorf("telegram reply without a chat = %#v", noChat)
 	}
 
 	// A result without a text still yields something a human can read.
-	fallback := chatopsReply("slack", "C123", map[string]any{"id": "chatmsg_2"})
+	fallback := chatopsReply("slack", "C123", map[string]any{"id": "chatmsg_2"}, "")
 	if fallback["text"] == "" {
 		t.Error("empty reply text")
 	}

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import {
   Anchor,
   Group,
@@ -11,7 +11,7 @@ import {
   Title,
 } from '@mantine/core';
 import { Link } from 'react-router-dom';
-import { useAllOf, useHistory, useList } from '../api/hooks';
+import { useAllOf, useHistory, useInsightsSummary } from '../api/hooks';
 import {
   AbsoluteTime,
   PageHeader,
@@ -20,13 +20,11 @@ import {
   StatusBadge,
 } from '../components/common';
 import { DistributionBars, StatTile, type DistributionRow } from '../components/StatTile';
+import { TrendChart } from '../components/TrendChart';
+import { SEVERITY_COLOR, SEVERITY_LEVELS } from '../domain/severity';
+import { useListParams } from '../ui/useListParams';
 import { useI18n } from '../i18n/I18nProvider';
 import { useSeverityLabel, useStatusLabel } from '../i18n/domain';
-
-/** Counts come from the `total` of a filtered list query — one COUNT per bucket. */
-function useCount(resource: 'alert-groups' | 'notifications', filter: Record<string, string>) {
-  return useList(resource, { limit: 1, ...filter });
-}
 
 /** Drop empty values so an unset integration doesn't send integration_id=. */
 function compact(filter: Record<string, string | undefined>): Record<string, string> {
@@ -45,17 +43,17 @@ export function InsightsPage() {
   const { t } = useI18n();
   const severityLabel = useSeverityLabel();
   const statusLabel = useStatusLabel();
-  const [range, setRange] = useState('7d');
-  const [integration, setIntegration] = useState<string | null>(null);
+  // The scope of this screen lives in the address, like every other list: a
+  // colleague asking "why do you say deliveries got worse" should be able to
+  // open the same numbers, not rebuild the filters from a description.
+  const { get, patch } = useListParams({ range: '7d' });
+  const range = get('range') ?? '7d';
+  const integration = get('integration');
 
   const hours = RANGES.find((item) => item.value === range)?.hours ?? 168;
   // Memoised on the range, not recomputed per render: `from` goes into the
-  // history query key, so a fresh timestamp on every render makes every render
-  // a new query. Each response then re-rendered the page, which produced
-  // another timestamp — a refetch loop against /api/v1/history, which is the
-  // widest read in the service (alert groups with their notifications and
-  // delivery attempts inlined). It settled only because nothing forced a
-  // render; under React Query's own updates it did not settle at all.
+  // query key, so a fresh timestamp on every render makes every render a new
+  // query — and every response another render.
   const from = useMemo(
     () => new Date(Date.now() - hours * 3600 * 1000).toISOString(),
     [hours],
@@ -63,29 +61,10 @@ export function InsightsPage() {
 
   const integrations = useAllOf('integrations');
 
-  // The integration selector scopes every count on the page — the tiles and both
-  // distributions — not just the history table below. Passing it to each count is
-  // what keeps the page honest: a number under an integration is that
-  // integration's number.
-  const scope = (filter: Record<string, string>) => compact({ ...filter, integration_id: integration ?? undefined });
-
-  const open = useCount('alert-groups', scope({ status: 'open' }));
-  const acknowledged = useCount('alert-groups', scope({ status: 'acknowledged' }));
-  const resolved = useCount('alert-groups', scope({ status: 'resolved' }));
-
-  const critical = useCount('alert-groups', scope({ severity: 'critical' }));
-  const error = useCount('alert-groups', scope({ severity: 'error' }));
-  const warning = useCount('alert-groups', scope({ severity: 'warning' }));
-  const info = useCount('alert-groups', scope({ severity: 'info' }));
-
-  const delivered = useCount('notifications', scope({ status: 'delivered' }));
-  const scheduled = useCount('notifications', scope({ status: 'delivery_scheduled' }));
-  const retrying = useCount('notifications', scope({ status: 'retry_scheduled' }));
-  const failed = useCount('notifications', scope({ status: 'failed' }));
-  // Skipped is its own outcome, not a rounding error: leaving it out of the
-  // distribution made a deployment where nothing could be delivered look calm.
-  const skipped = useCount('notifications', scope({ status: 'skipped' }));
-  const batched = useCount('notifications', scope({ status: 'batched' }));
+  // One request for the whole screen. It used to be twelve — one COUNT per tile
+  // and per distribution row — none of which could say whether the numbers are
+  // going up or down.
+  const summary = useInsightsSummary(compact({ from, integration_id: integration ?? undefined }));
 
   const history = useHistory({
     from,
@@ -93,20 +72,29 @@ export function InsightsPage() {
     limit: 50,
   });
 
-  const severityRows: DistributionRow[] = [
-    { label: severityLabel('critical'), value: critical.data?.total ?? 0, color: 'red' },
-    { label: severityLabel('error'), value: error.data?.total ?? 0, color: 'orange' },
-    { label: severityLabel('warning'), value: warning.data?.total ?? 0, color: 'yellow' },
-    { label: severityLabel('info'), value: info.data?.total ?? 0, color: 'blue' },
-  ];
+  const groups = summary.data?.groups_by_status ?? {};
+  const levels = summary.data?.groups_by_level ?? {};
+  const states = summary.data?.notifications_by_state ?? {};
+  const trend = summary.data?.trend ?? [];
+  const days = trend.map((bucket) => bucket.day);
+
+  // Levels, not spellings: a group a source labelled "high" is counted under
+  // "error" here, exactly as the filter and the ordering count it. The label
+  // says so, otherwise a reader comparing this bar with the badges in the table
+  // below sees two different vocabularies for one fact.
+  const severityRows: DistributionRow[] = SEVERITY_LEVELS.map((level) => ({
+    label: severityLabel(level),
+    value: levels[level] ?? 0,
+    color: SEVERITY_COLOR[level],
+  }));
 
   const deliveryRows: DistributionRow[] = [
-    { label: statusLabel('delivered'), value: delivered.data?.total ?? 0, color: 'teal' },
-    { label: t('insights.scheduled'), value: scheduled.data?.total ?? 0, color: 'blue' },
-    { label: statusLabel('retrying'), value: retrying.data?.total ?? 0, color: 'orange' },
-    { label: statusLabel('failed'), value: failed.data?.total ?? 0, color: 'red' },
-    { label: t('insights.skippedNoTransport'), value: skipped.data?.total ?? 0, color: 'gray' },
-    { label: statusLabel('batched'), value: batched.data?.total ?? 0, color: 'grape' },
+    { label: statusLabel('delivered'), value: states.delivered ?? 0, color: 'teal' },
+    { label: t('insights.scheduled'), value: states.delivery_scheduled ?? 0, color: 'blue' },
+    { label: statusLabel('retrying'), value: states.retry_scheduled ?? 0, color: 'orange' },
+    { label: statusLabel('failed'), value: states.failed ?? 0, color: 'red' },
+    { label: t('insights.skippedNoTransport'), value: states.skipped ?? 0, color: 'gray' },
+    { label: statusLabel('batched'), value: states.batched ?? 0, color: 'grape' },
   ];
 
   return (
@@ -126,7 +114,7 @@ export function InsightsPage() {
             searchable
             data={(integrations.data ?? []).map((item) => ({ value: item.id, label: item.name }))}
             value={integration}
-            onChange={setIntegration}
+            onChange={(value) => patch({ integration: value })}
             w={260}
           />
           <Select
@@ -134,7 +122,7 @@ export function InsightsPage() {
             description={t('insights.rangeDescription')}
             data={RANGES.map(({ value, labelKey }) => ({ value, label: t(labelKey) }))}
             value={range}
-            onChange={(value) => setRange(value ?? '7d')}
+            onChange={(value) => patch({ range: value ?? '7d' })}
             allowDeselect={false}
             w={200}
           />
@@ -150,33 +138,56 @@ export function InsightsPage() {
       <SimpleGrid cols={{ base: 2, sm: 4 }} mb="lg">
         <StatTile
           label={t('insights.open')}
-          value={open.data?.total}
+          value={groups.open ?? 0}
           color="red"
-          loading={open.isPending}
+          loading={summary.isPending}
           hint={t('insights.awaitingAck')}
         />
         <StatTile
           label={t('insights.acknowledged')}
-          value={acknowledged.data?.total}
+          value={groups.acknowledged ?? 0}
           color="yellow"
-          loading={acknowledged.isPending}
+          loading={summary.isPending}
           hint={t('insights.beingWorked')}
         />
         <StatTile
           label={t('insights.resolved')}
-          value={resolved.data?.total}
+          value={groups.resolved ?? 0}
           color="teal"
-          loading={resolved.isPending}
+          loading={summary.isPending}
           hint={t('insights.withinRetention')}
         />
         <StatTile
           label={t('insights.failedNotifications')}
-          value={failed.data?.total}
+          value={states.failed ?? 0}
           color="red"
-          loading={failed.isPending}
+          loading={summary.isPending}
           hint={t('insights.retriesExhausted')}
         />
       </SimpleGrid>
+
+      {days.length > 0 && (
+        <SimpleGrid cols={{ base: 1, md: 2 }} mb="lg">
+          <TrendChart
+            title={t('insights.trendIncidents')}
+            days={days}
+            series={[
+              { key: 'opened', label: t('insights.opened'), color: 'blue', values: trend.map((b) => b.opened) },
+              { key: 'resolved', label: t('insights.closed'), color: 'teal', values: trend.map((b) => b.resolved) },
+            ]}
+            emptyLabel={t('insights.trendEmpty')}
+          />
+          <TrendChart
+            title={t('insights.trendDelivery')}
+            days={days}
+            series={[
+              { key: 'delivered', label: t('status.delivered'), color: 'teal', values: trend.map((b) => b.delivered) },
+              { key: 'failed', label: t('status.failed'), color: 'red', values: trend.map((b) => b.failed) },
+            ]}
+            emptyLabel={t('insights.trendEmpty')}
+          />
+        </SimpleGrid>
+      )}
 
       <SimpleGrid cols={{ base: 1, md: 2 }} mb="lg">
         <Paper withBorder p="lg">
@@ -204,6 +215,7 @@ export function InsightsPage() {
           query={history}
           isEmpty={(data) => data.items.length === 0}
           emptyLabel={t('insights.empty')}
+          skeleton={{ rows: 6 }}
         >
           {(data) => (
             <Table.ScrollContainer minWidth={900}>

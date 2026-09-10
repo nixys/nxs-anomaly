@@ -154,6 +154,11 @@ func (cfg DeliveryConfig) blockPrivateFor(channel string) bool {
 // report lists what still points at one).
 func (e *Engine) ChannelPolicy() ChannelPolicy { return e.deliveryCfg.Channels }
 
+// PublicURL is where this deployment answers from the outside, for callers that
+// build a link or a callback out of it. Empty when it was never configured, and
+// every caller treats that as "offer no link" rather than guessing one.
+func (e *Engine) PublicURL() string { return e.deliveryCfg.PublicURL }
+
 // RetentionPolicy exposes the configured retention horizons.
 func (e *Engine) RetentionPolicy() RetentionPolicy { return e.deliveryCfg.Retention }
 

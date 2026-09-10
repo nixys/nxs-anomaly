@@ -131,8 +131,15 @@ func TestTelegramAlertsListsOneButtonPerGroup(t *testing.T) {
 
 	rows := keyboardRows(t, sendCommand(t, srv, 4242, "/alerts"))
 
-	if len(rows) != 3 {
-		t.Fatalf("keyboard has %d row(s), want one per open group", len(rows))
+	// One row per open group, plus the bulk row the storm case needs.
+	if len(rows) != 4 {
+		t.Fatalf("keyboard has %d row(s), want one per open group plus bulk", len(rows))
+	}
+	for i, raw := range rows[:3] {
+		row, _ := raw.([]any)
+		if len(row) != 2 {
+			t.Fatalf("group row %d has %d button(s), want the label and the acknowledge", i, len(row))
+		}
 	}
 }
 

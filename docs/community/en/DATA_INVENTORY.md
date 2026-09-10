@@ -20,7 +20,7 @@ Three things worth understanding before the table:
 2. **The default retention is "forever".** That is deliberate — an upgrade must
    not quietly start deleting incident history — but for an installation holding
    personal data, the absence of a horizon is not a default, it is a decision not
-   yet made. The `values-beta-rf.yaml` preset sets horizons explicitly, and the
+   yet made. An explicit values overlay sets horizons, and the
    `data_retention` readiness check warns until they exist.
 3. **Copies outside the database live by their own rules.** Backups, logs and
    traces are independent stores with their own retention, access and geography.
@@ -97,9 +97,9 @@ enabled. No request path leads there. The reasoning is in the comments of
 Logs carry object identifiers, integration keys and — at `debug` level —
 notification text. Traces carry integration keys, group ids and timings. Both
 systems are part of the personal-data perimeter, and the decision about where
-they live is taken together with the decision about the database. That is why the
-`values-beta-rf.yaml` preset offers exactly two states for tracing: off, or
-exporting to a collector inside the same perimeter.
+they live is taken together with the decision about the database. That is why an
+installation's values overlay typically offers exactly two states for tracing:
+off, or exporting to a collector inside the same perimeter.
 
 ### 7. Backups
 
@@ -207,8 +207,7 @@ looks like a way to reach a person and is not one.
 
 - Legal bases, notifications, and the contractual division of roles.
 - Localisation: where the database, the backups, the log store and the trace
-  collector physically stand. The
-  [values-beta-rf.yaml](../../../deploy/helm/nxs-anomaly/values-beta-rf.yaml)
-  preset fixes the shape — external PostgreSQL with TLS and PITR, tracing either
-  off or inside the perimeter — but geography cannot be verified from a chart.
+  collector physically stand. An installation's values overlay fixes the
+  shape — external PostgreSQL with TLS and PITR, tracing either off or inside
+  the perimeter — but geography cannot be verified from a chart.
 - The procedure for responding to a data incident.

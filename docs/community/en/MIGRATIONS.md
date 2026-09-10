@@ -75,6 +75,7 @@ A version is the file name without its `.sql` extension:
 | `0009_alerts_archival_idx` | An `alert_group_id` index on alerts, for the cascading cleanup during archival. |
 | `0010_validate_constraints` | `VALIDATE CONSTRAINT` for everything added `NOT VALID` earlier. |
 | `0011_grafana_compat` | Tables for a Grafana plugin compatibility layer. **The layer has been removed**; the tables remain unused — see "Retired tables" below. |
+| `0012_kafka_outbox` | Table `nxs_anomaly_kafka_outbox` plus a `created_at` index, for a transactional outbox (asynchronous alert export to Kafka, published FIFO by the worker cycle). The schema is identical in both editions — moving between them is meant to be an image swap — but the producer that fills this table is an enterprise feature; in this build the table exists and stays empty. |
 | `0013_soft_delete_integrations` | A `deleted_at` column on integrations plus a partial index. Soft delete: a removed integration disappears from listing and ingest but stays in the database. |
 | `0015_chatops_messages_created_at_idx` | An expression index on `((data->>'created_at'))` for chatops messages, which speeds up the TTL archival of old messages. |
 | `0016_due_groups_idx_predicate` | Rebuilds `nxs_anomaly_alert_groups_due_idx` with the predicate `status NOT IN ('resolved','silenced')`, matching what the worker actually queries — the old `status='open'` predicate did not cover acknowledged groups. |

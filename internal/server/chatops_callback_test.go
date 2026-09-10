@@ -179,8 +179,19 @@ func TestTelegramCallbackSettlesTheAlertMessage(t *testing.T) {
 	if !ok {
 		t.Fatal("no reply_markup: the old buttons would stay on the message")
 	}
-	if rows, _ := markup["inline_keyboard"].([]any); len(rows) != 0 {
-		t.Errorf("keyboard still has %d row(s), want it emptied", len(rows))
+	// The alert's own buttons go, and exactly one is left: the way back. A
+	// mis-tapped verdict from a phone was otherwise unfixable without opening
+	// the web UI.
+	rows, _ := markup["inline_keyboard"].([]any)
+	if len(rows) != 1 {
+		t.Fatalf("keyboard has %d row(s), want just the undo", len(rows))
+	}
+	undo, _ := rows[0].([]any)
+	if len(undo) != 1 {
+		t.Fatalf("undo row has %d button(s), want one", len(undo))
+	}
+	if got := undo[0].(map[string]any)["callback_data"]; got != "unack:grp-1" {
+		t.Errorf("undo button runs %v, want unack:grp-1", got)
 	}
 }
 

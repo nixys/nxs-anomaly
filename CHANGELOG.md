@@ -6,7 +6,74 @@ semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Added
+- **The product has its mark, and the browser tab has an icon.** The logo was a
+  placeholder drawn in code — a blue rounded square with a white zigzag — and there
+  was no favicon at all, so the tab a responder is meant to pick out among twenty
+  others at three in the morning carried the browser's blank glyph. The mark is a
+  bell whose frame draws an A; `frontend/logo/` holds the sources and
+  `frontend/public/` what ships. Only the mark is rendered: the shell header and
+  the sign-in screen already set the product name in text beside it, and a lockup
+  with its own wordmark would print the name twice.
+
+- **A responder can now silence an alert from the chat, and take a mis-tap back.**
+  Acknowledge and resolve were the only two buttons, and neither is the answer to
+  noise at three in the morning: one claims the incident is being worked, the other
+  claims it is over. Every alert now also carries `Silence 1h / 4h / 8h`, and a
+  settled message keeps exactly one button — the way back (`Undo acknowledge`,
+  `Reopen`). `SilenceGroup`, `UnacknowledgeGroup` and `UnresolveGroup` already
+  existed in the engine and in the web UI; only the chat had no way to reach them,
+  so a mis-tapped Resolve from a phone could only be fixed by opening the browser.
+
+- **The Mattermost bot answers commands.** It had one endpoint — the button
+  callback — so `status`, `alerts`, `duty`, `oncall` and `priority` were reachable
+  from Telegram and Slack and from nowhere else. `POST
+  /integrations/v1/chatops/mattermost/command` accepts a slash command,
+  authenticated by the token Mattermost issues
+  (`NXS_ANOMALY_MATTERMOST_COMMAND_TOKEN`). One registration serves every command:
+  the trigger word is dropped and the arguments are the command, so `/nxs ack grp_1`
+  runs `ack grp_1`.
+
+- **A Slack or Mattermost action is attributed to the person who took it.** Identity
+  was resolved by `telegram_id` alone, so every tap on those two platforms ran as the
+  service principal and the group's log named a bot. Users carry `slack_id` and
+  `mattermost_id` next to `telegram_id` (both editable in the UI, both erased by a
+  data-erasure request), and the commands that need a person — `duty`, `priority` —
+  work in those chats instead of refusing with a message about Telegram.
+
+- **`/alerts` separates opening a group from acting on it, and offers the storm case.**
+  A row used to be one button labelled with the group's title whose action was
+  acknowledge — a label promising navigation and a tap changing state, with no
+  confirmation. Each row is now the label, which opens a card, and a narrow `✓`.
+  Below the rows, `Acknowledge all open` and `Silence all 1h` act on every open group
+  the caller can see, for the forty-groups-from-one-cluster-failure case that acting
+  one at a time cannot serve.
+
+- **`/start`, a link to the group's page, and shift buttons that know their schedule.**
+  The bot answered `/start` with "unsupported chatops command"; it now greets, offers
+  the three things a responder opens it for, and says plainly when the chat account is
+  not linked to a user. Alerts carry an `Open in nxs-anomaly` link when
+  `NXS_ANOMALY_PUBLIC_URL` is set, and a shift notice now offers `Take this shift` and
+  `Who is on call` alongside the check-in — all three needed a schedule id nobody
+  remembers at 09:00 on a Monday, and the notice knows it.
+
 ### Fixed
+- **Acting on an alert from Slack or Mattermost no longer deletes it from the channel.**
+  Both replaced the message with the verdict alone — "Acknowledged grp_a1b2c3d4e5f6" —
+  so the incident a channel had been reading became an identifier, which nobody reads.
+  They now do what Telegram already did: keep the text, append the verdict, drop the
+  buttons. On Mattermost the update deliberately names no message at all, which is what
+  leaves the post as it stands.
+
+- **A Mattermost alert with buttons no longer shows its text twice.** The payload put
+  the same text in the post and in its attachment, and Mattermost renders both.
+
+- **A refused or unknown command in a chat gets an answer.** The webhook replied with a
+  JSON error object and a 4xx. Telegram ignores any body that is not a method call, so
+  the person saw nothing — and read the non-2xx as a delivery to retry, so the refused
+  command was redelivered. Refusals are now answered with 200 in the platform's own
+  shape, which is the invariant the button path already held.
+
 - **The frontend test suite no longer exits non-zero with every test passing.** jsdom
   implements no scrolling, so `Element.scrollIntoView` does not exist; the alert-group
   list and Mantine's Combobox both call it, and Mantine's call fires on a timer after
@@ -77,6 +144,50 @@ semantic versioning once it reaches 1.0.
   the same time.
 
 ### Changed
+- **The delivery log is about incidents again.** "Notifications" showed twenty-one rows
+  differing only in the recipient, with the incident behind each one reduced to a link
+  labelled "Open", a target column of dashes, a retries column of zeros and the same
+  absolute timestamp repeated to the second. Rows now carry the incident's title and the
+  reason it was sent, time is relative with the exact moment on hover, and a column whose
+  every value on the page is empty is not drawn at all. Filters live in the address bar,
+  so a filtered delivery log can be handed to somebody.
+
+- **An escalation chain reads as a sentence, and can say who it would page right now.**
+  The card printed the wire names of the step kinds — `1. NOTIFY_USER  2. NOTIFY_USER` —
+  which is the configuration that decides whether anybody is woken, displayed as constants
+  from the source, with the one fact that matters missing: who. It now reads "page Ada
+  Okonkwo → wait 5 min → page the Platform team", marks any step that names nobody, says
+  outright when a whole chain reaches nobody, and offers a dry-run that resolves the
+  notifying steps against the current rotas without sending anything.
+
+- **Insights answer whether things are getting better or worse.** The screen fired twelve
+  list queries for their `total` — twelve round trips to draw six numbers — and could not
+  show direction at all. One request now returns the counts and a daily trend, drawn as
+  two charts (incidents opened and closed; deliveries delivered and failed) rather than one
+  chart with two scales. The severity distribution counts by level, so it agrees with the
+  badges below it.
+
+- **A rota is a grid before it is a table.** Four weeks of shifts are drawn as bands per
+  day — holes are gaps, an override is the same band with a different surface, a double
+  shift is one colour across two rows — with the exact intervals still tabulated below,
+  because that is what somebody quotes in a handover.
+
+- **Movement where it explains something.** A row that arrived since the last refresh is
+  highlighted for 2.4 s; a status badge acknowledges its own change; tiles count to their
+  new value instead of swapping it; the bulk bar slides in with the selection; hover and
+  focus colours take 120 ms instead of none. The severity stripe, the level badge and the
+  numbers in tables never animate — those are what the eye compares. `prefers-reduced-motion`
+  removes all of it rather than shortening it, and toasts moved to the bottom right, where
+  somebody working a table is actually looking.
+
+- **Waiting looks like the thing that is coming.** Lists wait behind a skeleton shaped like
+  their rows rather than a centred spinner, and the skeleton only appears after 200 ms so a
+  fast answer does not flash. Polling stops while a tab is hidden.
+
+- **Destructive row actions moved behind the overflow menu**, so a red trash icon no longer
+  sits a few pixels from "edit" with no label, and the notification-priority labels no
+  longer share the word "medium" with a severity spelling.
+
 - **Every route object the chart renders takes an explicit name: `ingress.name`,
   `istio.virtualService.name`, `gatewayAPI.httpRoute.name`.** Their names were always the
   release's full name, which is fine until two releases publish through one controller or
@@ -483,7 +594,7 @@ semantic versioning once it reaches 1.0.
   widely than the service.
 
 - **Helm: an RF closed-beta preset, a values schema, and post-install acceptance.**
-  [`values-beta-rf.yaml`](deploy/helm/nxs-anomaly/values-beta-rf.yaml) layers the
+  `values-beta-rf.yaml` (an enterprise-edition values overlay) layers the
   compliance decisions on the production profile: explicit retention per category, the
   channel policy above, external PostgreSQL at `sslmode: verify-full`, two replicas of
   API/worker/frontend with PDBs and topology spread, NetworkPolicy + ServiceMonitor +

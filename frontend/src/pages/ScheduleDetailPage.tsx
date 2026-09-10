@@ -51,6 +51,7 @@ import {
   type ShiftRecurrence,
 } from '../api/types';
 import { PageHeader, ProvisionedNotice, QueryState } from '../components/common';
+import { ScheduleCalendar } from '../components/ScheduleCalendar';
 import { formatInZone, toIso, toLocalInput } from './schedule-utils';
 import { useI18n } from '../i18n/I18nProvider';
 import { EMPTY_VALUE } from '../i18n/format';
@@ -364,9 +365,19 @@ export function ScheduleDetailPage() {
                   {t('schedule.timesIn', { timezone: schedule.data?.timezone ?? 'UTC' })}
                 </Text>
               </Group>
-              <QueryState query={preview}>
+              <QueryState query={preview} skeleton={{ rows: 6 }}>
                 {(data) => (
-                  <Table>
+                  <>
+                    {/* The grid first: holes and back-to-back shifts are shapes,
+                        and a table of start/end pairs is the one instrument that
+                        cannot show a shape. The table stays below it, because the
+                        exact minute is what somebody quotes in a handover. */}
+                    <ScheduleCalendar
+                      segments={data.segments}
+                      timezone={data.timezone}
+                      names={names}
+                    />
+                    <Table mt="md">
                     <Table.Thead>
                       <Table.Tr>
                         <Table.Th w={220}>{t('maintenance.from')}</Table.Th>
@@ -407,7 +418,8 @@ export function ScheduleDetailPage() {
                         </Table.Tr>
                       ))}
                     </Table.Tbody>
-                  </Table>
+                    </Table>
+                  </>
                 )}
               </QueryState>
             </Paper>

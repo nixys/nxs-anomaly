@@ -49,7 +49,12 @@ func (e *Engine) CreateUser(ctx context.Context, payload map[string]any) (map[st
 		"email":       utils.StrVal(payload, "email"),
 		"phone":       utils.StrVal(payload, "phone"),
 		"telegram_id": utils.StrVal(payload, "telegram_id"),
-		"timezone":    strDefault(utils.StrVal(payload, "timezone"), "UTC"),
+		// The chat account ids are what attribute an acknowledge from a chat to
+		// this person rather than to the bot; without one, a tap in Slack or
+		// Mattermost runs as the platform service principal.
+		"slack_id":      utils.StrVal(payload, "slack_id"),
+		"mattermost_id": utils.StrVal(payload, "mattermost_id"),
+		"timezone":      strDefault(utils.StrVal(payload, "timezone"), "UTC"),
 		// Empty means "no choice recorded": the UI then follows the browser
 		// rather than inventing a language for somebody who never picked one.
 		// A default of ru-RU here would be a claim about a person, not about
@@ -87,7 +92,8 @@ func (e *Engine) UpdateUser(ctx context.Context, userID string, payload map[stri
 	// written by the SSO callback, never by a person: the API accepts it here
 	// only because that callback goes through UpdateUser like everything else.
 	updatable := map[string]bool{"name": true, "username": true, "email": true, "phone": true, "timezone": true,
-		"telegram_id": true, "role": true, "oidc_subject": true, "locale": true}
+		"telegram_id": true, "slack_id": true, "mattermost_id": true,
+		"role": true, "oidc_subject": true, "locale": true}
 
 	if _, ok := payload["role"]; ok {
 		if _, err := sanitizeRole(payload["role"]); err != nil {

@@ -9,6 +9,11 @@ RUN npm ci
 
 COPY tsconfig.json vite.config.ts index.html ./
 COPY src ./src
+# public/ carries the brand assets index.html and the Logo component reference by
+# absolute path. Left out, the build still succeeds and the image still starts —
+# it just serves a tab with no icon and a broken image where the mark should be,
+# and only in the container, never locally.
+COPY public ./public
 RUN npm run build
 
 FROM nginx:1.27-alpine

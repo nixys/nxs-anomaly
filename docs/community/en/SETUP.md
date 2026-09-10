@@ -11,30 +11,63 @@ Getting `nxs-anomaly` running locally, and the settings you meet on the way.
 
 ## Docker Compose
 
-The fastest path. It brings up PostgreSQL, the API, the worker and the web
-interface:
+The fastest path. It pulls the published, signed images for a release — no
+local Go or npm build, no registry other than GHCR — and brings up PostgreSQL,
+the API, the worker and the web interface:
 
 ```bash
-cp .env.example .env      # set POSTGRES_PASSWORD and the bootstrap admin password
+cp .env.example .env
+# edit .env: NXS_ANOMALY_VERSION (a tag from the Releases page, e.g. v0.1.88),
+# POSTGRES_PASSWORD, and the bootstrap admin username/password. Compose refuses
+# to start a container whose required variable is still empty, rather than
+# fall back to a guessable default.
 docker compose up -d
 ```
 
+`.env` is yours to keep local — it is already covered by `.gitignore` — and it
+is never optional: `docker compose up -d` without it fails immediately, naming
+the missing variable, instead of starting the stack with a blank password.
+
 | Service | What it is |
 |---|---|
-| `postgres` | PostgreSQL 17, with a volume so data survives a restart |
+| `postgres` | PostgreSQL 17, data on the named volume `pgdata` |
 | `app` | the API server (`NXS_ANOMALY_START_SCHEDULER=false` — the worker runs it) |
 | `worker` | the background cycle: escalations, delivery, retries, retention |
 | `frontend` | nginx serving the interface and proxying `/api` same-origin |
+
+Data survives an ordinary `docker compose down` followed by `up` — the
+database lives on the named `pgdata` volume, not inside the container. To
+throw the installation away on purpose, `docker compose down -v` removes that
+volume along with the containers; there is no other supported way to lose it.
 
 Check it answered:
 
 ```bash
 curl http://127.0.0.1:8080/health
-# {"status":"ok","db_ok":true,"edition":"community","version":"v0.1.73",...}
+# {"status":"ok","db_ok":true,"edition":"community","version":"v0.1.88",...}
+
+curl http://127.0.0.1:8081/ready
+# the worker's own probe — {"status":"ok","db_ok":true,"worker_cycles_completed":N,...}.
+# app's /health always reports worker_cycles_completed: 0 here: the scheduler
+# runs on `worker` (NXS_ANOMALY_START_SCHEDULER=false on `app`), so that counter
+# is a different process's zero, not a sign the worker is down.
 ```
 
 The interface is on <http://127.0.0.1:3100>. Sign in with the bootstrap admin
-from your `.env`.
+from your `.env`. What you land on is an empty, unconfigured installation —
+see [Seeing it work](#seeing-it-work) below for demo data to look at, and the
+in-app Setup page for connecting your own alerts.
+
+To build the images from source instead of pulling a release — for
+development, or to try an unreleased change — use `docker-compose.dev.yml` and
+`.env.dev.example` in place of the two files above:
+
+```bash
+cp .env.dev.example .env
+docker compose -f docker-compose.dev.yml up -d --build
+```
+
+That variant has no `NXS_ANOMALY_VERSION` to set; everything else is the same.
 
 ## From source
 
@@ -51,14 +84,42 @@ Then, in another terminal:
 
 ```bash
 export NXS_ANOMALY_DB_DSN='postgres://nxs_anomaly:nxs_anomaly@127.0.0.1:5432/nxs_anomaly?sslmode=disable'
+export NXS_ANOMALY_BOOTSTRAP_ADMIN_USERNAME=admin
+export NXS_ANOMALY_BOOTSTRAP_ADMIN_PASSWORD='pick a password'
 
-go run ./cmd/nxs-anomaly seed-demo --force   # migrations + demo data
-go run ./cmd/nxs-anomaly serve               # the API
-go run ./cmd/nxs-anomaly run-worker          # the worker, separately
+go run ./cmd/nxs-anomaly serve               # the API — migrations run automatically
+go run ./cmd/nxs-anomaly run-worker          # the worker, in another terminal
 ```
 
 Migrations run automatically when the store initialises; there is no separate
-migrate step to forget.
+migrate step to forget. This gives you an authenticated, empty installation:
+sign in at the frontend below with the bootstrap admin. `seed-demo` (without
+`--force`, which is safe on an empty database — see [Seeing it
+work](#seeing-it-work)) adds demo users, a schedule and an integration to look
+at; it is a way to see the shape of the product, not a step the first run
+needs.
+
+The frontend is a separate build (Node.js 22.12+):
+
+```bash
+cd frontend
+npm ci
+npm run dev -- --port 3100   # http://127.0.0.1:3100, proxies /api to :8080
+```
+
+## Seeing it work
+
+To populate an empty installation with demo users, a schedule, an escalation
+chain and an integration — rather than connect your own alerts right away:
+
+```bash
+go run ./cmd/nxs-anomaly seed-demo           # fails loudly if the database is not empty
+go run ./cmd/nxs-anomaly print-state         # what it created, as JSON
+```
+
+`--force` additionally clears every collection first, demo and real data
+alike; it exists for resetting a scratch installation, not for a first run —
+run it only when you mean to discard whatever is already there.
 
 ## Commands
 
@@ -188,6 +249,12 @@ attaches it to the same group instead of opening a second one; sending it with
 - **Notifications are attempted and fail** — look for `delivery_failed` in the
   worker log; the destination, the channel and the provider's answer are in the
   structured fields.
-- **Nothing happens at all** — the worker may not be running. `/health` carries
-  `worker_cycles_completed`, and a zero that stays zero means `run-worker` is
-  not up.
+- **Nothing happens at all** — the worker may not be running. Check the
+  worker's *own* probe, not the API's: start it with `--worker-addr :8081` (the
+  Docker Compose stack already does) and curl `/ready` there —
+  `worker_cycles_completed` staying at zero, or `worker_stalled: true`, means
+  `run-worker` is not up or its cycle is wedged. The API's `/health` carries a
+  `worker_cycles_completed` field too, but it is that *process's* count: with
+  the scheduler split out (`NXS_ANOMALY_START_SCHEDULER=false`, the split
+  deployment this stack uses) it stays zero forever and proves nothing about
+  the worker.

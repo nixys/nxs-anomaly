@@ -15,14 +15,14 @@ import {
   Text,
   Timeline,
 } from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
+import { useDisclosure, useHotkeys } from '@mantine/hooks';
 import {
   IconAlertTriangle,
   IconArrowLeft,
   IconBellOff,
   IconChevronDown,
 } from '@tabler/icons-react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAllOf, useGroupAction, useItem, useList, useSilenceGroup } from '../api/hooks';
 import type { ReactNode } from 'react';
 import type { AlertGroup, Notification } from '../api/types';
@@ -47,6 +47,7 @@ import { EMPTY_VALUE } from '../i18n/format';
 export function AlertGroupDetailPage() {
   const { t } = useI18n();
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const group = useItem('alert-groups', id);
   const alerts = useList('alerts', { alert_group_id: id, limit: 200 }, { enabled: Boolean(id) });
   const notifications = useList(
@@ -56,6 +57,16 @@ export function AlertGroupDetailPage() {
   );
   const action = useGroupAction();
   const silence = useSilenceGroup();
+
+  // The same letters as the queue. Somebody who learned `a` and `r` on the list
+  // should not have to reach for the pointer the moment they open one incident —
+  // and this is the screen they open when a page woke them.
+  useHotkeys([
+    ['a', () => id && action.mutate({ id, action: 'acknowledge' })],
+    ['r', () => id && action.mutate({ id, action: 'resolve' })],
+    ['s', () => id && silence.mutate({ id, durationMinutes: 60 })],
+    ['Escape', () => navigate('/alert-groups')],
+  ]);
 
   return (
     <>

@@ -1,15 +1,25 @@
+// The product mark: a bell whose clapper frame draws an A.
+//
+// Served from /logo.png rather than inlined, so the browser caches it once for
+// the header, the sign-in screen and anywhere else it appears, and so the file
+// stays the single copy that /public owns. It is the mark alone — every place
+// that shows it already sets the product name in text beside it, and a lockup
+// carrying its own wordmark would print the name twice.
+//
+// The source assets are in frontend/logo/; frontend/public/logo.png is derived
+// from logo-full.png (cropped to the mark and re-padded square), because the
+// original is 1600x1600 and 1.1 MB.
 export function Logo({ size = 28 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden>
-      <rect width="32" height="32" rx="8" fill="var(--mantine-color-blue-6)" />
-      <path
-        d="M6 20.5 L11.5 20.5 L14 12 L18 24 L20.5 17 L26 17"
-        stroke="white"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-    </svg>
+    <img
+      src="/logo.png"
+      width={size}
+      height={size}
+      alt=""
+      // Decorative: the product name is beside it as real text, so a screen
+      // reader announcing the mark as well would just repeat it.
+      aria-hidden
+      style={{ display: 'block', objectFit: 'contain' }}
+    />
   );
 }

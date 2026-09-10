@@ -1,0 +1,154 @@
+# Community CI: what every push and pull request has to pass before a
+# maintainer applies it upstream (see CONTRIBUTING.md — a merge here is not the
+# release; the internal pipeline cuts the next tag from the applied change).
+#
+# This is a minimum, not a mirror of the internal pipeline: the internal
+# .gitlab-ci.yml also runs kind clusters, an office-sandbox PostgreSQL runner,
+# gosec, and a capacity harness that need infrastructure a public runner and a
+# fork's pull request do not have. What is here is what a contributor's laptop
+# and a GitHub-hosted runner can both do, and what release.yml itself does not
+# already gate (release.yml's `test` and `chart-test` jobs run go build/vet/test
+# and the chart render — this workflow additionally covers frontend, a real
+# PostgreSQL, and golangci-lint).
+#
+# `permissions: contents: read` throughout: a PR from a fork gets no write
+# credential, so this workflow runs the same way for every contributor.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: '1.25'
+  NODE_VERSION: '22.12'
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false # dependencies are vendored; the module cache restores nothing
+
+      - name: Build, vet, race
+        run: |
+          go build ./...
+          go vet ./...
+          go test -race -count=1 ./...
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: golangci-lint
+        # Same image and version as the internal pipeline and CONTRIBUTING.md's
+        # local instructions, so a result here matches a contributor's own run.
+        run: |
+          docker run --rm -v "$(pwd):/app" -w /app golangci/golangci-lint:v2.6-alpine \
+            golangci-lint run --timeout=15m ./...
+
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Install govulncheck
+        # Pinned, not @latest: golang.org/x/vuln v1.8.0 raised its own go.mod
+        # floor to go >= 1.26, so @latest breaks the moment this job's Go
+        # version (env.GO_VERSION, currently 1.25) lags upstream's toolchain
+        # bump — the same failure that hit the internal pipeline's equivalent
+        # job. v1.7.0 is the newest release that still declares go 1.25.
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+      - name: Vulnerability gate
+        run: GOVULNCHECK="$(go env GOPATH)/bin/govulncheck" bash scripts/vuln-gate.sh
+
+  postgres-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: nxs_anomaly
+          POSTGRES_USER: nxs_anomaly
+          POSTGRES_PASSWORD: nxs_anomaly
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nxs_anomaly"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NXS_ANOMALY_TEST_DATABASE_URL: postgres://nxs_anomaly:nxs_anomaly@localhost:5432/nxs_anomaly?sslmode=disable
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Integration tests against a real PostgreSQL
+        # Same script CONTRIBUTING.md tells a contributor to run locally — with
+        # NXS_ANOMALY_TEST_DATABASE_URL already set it uses this service
+        # container instead of starting its own.
+        run: bash tests/run_postgres_integration.sh
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Documentation checks
+        run: bash scripts/check-docs.sh
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  helm:
+    runs-on: ubuntu-latest
+    env:
+      CHART: deploy/helm/nxs-anomaly
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+        with:
+          version: v3.21.0
+      - name: Install helm-unittest
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version 1.0.3
+      - name: Lint and render
+        run: |
+          set -eu
+          helm lint "$CHART" --set inlineSecret.enabled=true
+          helm template t "$CHART" \
+            --set inlineSecret.enabled=true --set postgresql.enabled=true \
+            --set ingress.enabled=true --set ingress.host=h \
+            --set networkPolicy.enabled=true \
+            --set serviceMonitor.enabled=true --set prometheusRule.enabled=true >/dev/null
+      - name: Unit tests
+        run: helm unittest -f 'tests/unit/*_test.yaml' "$CHART"

@@ -168,7 +168,9 @@ describe('ScheduleDetailPage', () => {
     renderPage();
     // 2026-06-01T00:00:00Z is 02:00 in Europe/Berlin, the schedule's zone.
     expect(await screen.findByText(/06\/01\/2026,?\s+02:00\s*AM/i)).toBeInTheDocument();
-    expect(screen.getByText(/times in Europe\/Berlin/)).toBeInTheDocument();
+    // Both the calendar and the table underneath say which zone they are in:
+    // the same wall clock in two places must not be able to mean two zones.
+    expect(screen.getAllByText(/times in Europe\/Berlin/).length).toBeGreaterThan(0);
   });
 
   it('saves the rotation with the edited handoff interval', async () => {
