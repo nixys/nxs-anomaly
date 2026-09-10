@@ -480,7 +480,17 @@ func (e *Engine) ingestOneLocked(state *store.State, integration map[string]any,
 		// returns immediately for a group that is not open, which is what makes
 		// a window a rule over the existing silence rather than a second
 		// suppression path to keep in step with the first.
-		silenceForMaintenance(g, maintenance, utils.UTCNow(), ts)
+		// Emitted here rather than inside silenceForMaintenance: the analytics
+		// event belongs to the ingest transaction that created the group, and
+		// without it an episode suppressed on purpose is indistinguishable in
+		// ClickHouse from one nobody answered.
+		if silenceForMaintenance(g, maintenance, utils.UTCNow(), ts) {
+			e.emitGroupEvent(state, g, EventGroupSilenced, ts, map[string]any{
+				"actor_kind": authz.SystemActor.Kind,
+				"reason":     "maintenance",
+				"window_id":  utils.StrVal(maintenance, "id"),
+			})
+		}
 	} else {
 		// An acknowledgement is an operator saying "I know about this, stop
 		// paging me". A repeat firing of the same event is the source restating
