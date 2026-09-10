@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import {
   Anchor,
   Group,
@@ -22,6 +22,7 @@ import {
   StatusBadge,
 } from '../components/common';
 import { useI18n } from '../i18n/I18nProvider';
+import { useListParams } from '../ui/useListParams';
 import { useSeverityLabel, useStatusLabel } from '../i18n/domain';
 import { EMPTY_VALUE } from '../i18n/format';
 import type { StringKey } from '../i18n/I18nProvider';
@@ -38,11 +39,13 @@ export function AlertsPage() {
   const { t, plural } = useI18n();
   const statusLabel = useStatusLabel();
   const severityLabel = useSeverityLabel();
-  const [status, setStatus] = useState<string | null>(null);
-  const [severity, setSeverity] = useState<string | null>(null);
-  const [integrationId, setIntegrationId] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
-  const [sort, setSort] = useState({ field: 'received_at', desc: true });
+  // Same rule as the incident queue: the filtered list is a link, not a state
+  // that dies with the tab.
+  const { get, patch, page, filtered } = useListParams();
+  const status = get('status');
+  const severity = get('severity');
+  const integrationId = get('integration');
+  const sort = { field: get('sort') ?? 'received_at', desc: (get('order') ?? 'desc') !== 'asc' };
 
   const integrations = useAllOf('integrations');
   const alerts = useList('alerts', {
@@ -89,10 +92,7 @@ export function AlertsPage() {
             clearable
             data={statusOptions}
             value={status}
-            onChange={(value) => {
-              setStatus(value);
-              setPage(1);
-            }}
+            onChange={(value) => patch({ status: value })}
             w={160}
           />
           <Select
@@ -101,10 +101,7 @@ export function AlertsPage() {
             clearable
             data={severityOptions}
             value={severity}
-            onChange={(value) => {
-              setSeverity(value);
-              setPage(1);
-            }}
+            onChange={(value) => patch({ severity: value })}
             w={160}
           />
           <Select
@@ -114,20 +111,14 @@ export function AlertsPage() {
             searchable
             data={(integrations.data ?? []).map((i) => ({ value: i.id, label: i.name }))}
             value={integrationId}
-            onChange={(value) => {
-              setIntegrationId(value);
-              setPage(1);
-            }}
+            onChange={(value) => patch({ integration: value })}
             w={220}
           />
           <SortControl
             options={SORT_OPTIONS}
             field={sort.field}
             desc={sort.desc}
-            onChange={(next) => {
-              setSort(next);
-              setPage(1);
-            }}
+            onChange={(next) => patch({ sort: next.field, order: next.desc ? 'desc' : 'asc' })}
           />
           <Text size="sm" c="dimmed" ml="auto">
             {plural('alerts.total', total)}
@@ -139,7 +130,8 @@ export function AlertsPage() {
         <QueryState
           query={alerts}
           isEmpty={(data) => data.items.length === 0}
-          emptyLabel={t('alerts.empty')}
+          emptyLabel={filtered ? t('alerts.empty') : t('alerts.emptyUnfiltered')}
+          skeleton={{ rows: 8 }}
         >
           {(data) => (
             <Table.ScrollContainer minWidth={1000}>
@@ -206,7 +198,11 @@ export function AlertsPage() {
 
       {total > PAGE_SIZE && (
         <Group justify="center" mt="md">
-          <Pagination value={page} onChange={setPage} total={Math.ceil(total / PAGE_SIZE)} />
+          <Pagination
+            value={page}
+            onChange={(next) => patch({ page: String(next) }, { keepPage: true })}
+            total={Math.ceil(total / PAGE_SIZE)}
+          />
         </Group>
       )}
     </>

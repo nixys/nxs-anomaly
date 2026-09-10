@@ -4,24 +4,411 @@
  */
 
 export interface paths {
-    "/api/v1/auth/methods": {
+    "/api/v1/alert-groups": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Available sign-in methods */
+        /** List alert groups */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    limit?: components["parameters"]["Limit"];
+                    offset?: components["parameters"]["Offset"];
+                    /** @description Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere. */
+                    sort?: components["parameters"]["Sort"];
+                    /** @description Sort direction. Applies to the requested sort column, or to the collection default when none is named. */
+                    order?: components["parameters"]["Order"];
+                    /** @description Список id через запятую: вернуть только эти элементы. Пустой список возвращает пусто. */
+                    ids?: components["parameters"]["Ids"];
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
             };
             requestBody?: never;
             responses: {
-                200: components["responses"]["AuthMethods"];
+                200: components["responses"]["AlertGroupList"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/alert-groups/bulk-acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acknowledge many alert groups */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                200: components["responses"]["BulkAcknowledge"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/alert-groups/bulk-resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve many alert groups */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                200: components["responses"]["BulkResolve"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/alert-groups/bulk-silence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Silence many alert groups */
+        post: {
+            parameters: {
+                query?: {
+                    duration_minutes?: components["parameters"]["DurationMinutes"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                200: components["responses"]["BulkSilence"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/alert-groups/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an alert group */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["AlertGroup"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/alert-groups/{id}/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acknowledge an alert group */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["AlertGroup"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/alert-groups/{id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve an alert group */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["AlertGroup"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/alert-groups/{id}/silence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Silence an alert group */
+        post: {
+            parameters: {
+                query?: {
+                    duration_minutes?: components["parameters"]["DurationMinutes"];
+                };
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                200: components["responses"]["AlertGroup"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/alert-groups/{id}/timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** An alert group's timeline */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Object"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/alert-groups/{id}/unacknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Un-acknowledge an alert group */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["AlertGroup"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/alert-groups/{id}/unresolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Un-resolve an alert group */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["AlertGroup"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List raw alerts */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: components["parameters"]["Limit"];
+                    offset?: components["parameters"]["Offset"];
+                    /** @description Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere. */
+                    sort?: components["parameters"]["Sort"];
+                    /** @description Sort direction. Applies to the requested sort column, or to the collection default when none is named. */
+                    order?: components["parameters"]["Order"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["AlertList"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Query the audit trail (admin) */
+        get: {
+            parameters: {
+                query?: {
+                    actor_id?: components["parameters"]["ActorId"];
+                    entity_type?: components["parameters"]["EntityType"];
+                    entity_id?: components["parameters"]["EntityId"];
+                    action?: components["parameters"]["Action"];
+                    request_id?: components["parameters"]["RequestId"];
+                    trace_id?: components["parameters"]["TraceId"];
+                    limit?: components["parameters"]["Limit"];
+                    offset?: components["parameters"]["Offset"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["List"];
+                403: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -91,14 +478,14 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/auth/oidc/login": {
+    "/api/v1/auth/me": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Begin the OIDC authorization-code flow */
+        /** The current principal */
         get: {
             parameters: {
                 query?: never;
@@ -108,23 +495,36 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Redirect to the identity provider */
-                302: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                404: components["responses"]["Error"];
-                /** @description This edition does not implement single sign-on. Distinct from 404, which means the deployment has not configured it. */
-                501: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
+                200: components["responses"]["Identity"];
+                401: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/methods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Available sign-in methods */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["AuthMethods"];
             };
         };
         put?: never;
@@ -180,14 +580,14 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/auth/me": {
+    "/api/v1/auth/oidc/login": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** The current principal */
+        /** Begin the OIDC authorization-code flow */
         get: {
             parameters: {
                 query?: never;
@@ -197,42 +597,26 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                200: components["responses"]["Identity"];
-                401: components["responses"]["Error"];
+                /** @description Redirect to the identity provider */
+                302: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                404: components["responses"]["Error"];
+                /** @description This edition does not implement single sign-on. Distinct from 404, which means the deployment has not configured it. */
+                501: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/preferences": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** Save your own UI language and timezone */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["Object"];
-            responses: {
-                200: components["responses"]["UserPreferences"];
-                400: components["responses"]["Error"];
-                401: components["responses"]["Error"];
-                403: components["responses"]["Error"];
-            };
-        };
         post?: never;
         delete?: never;
         options?: never;
@@ -264,6 +648,37 @@ export interface paths {
                 401: components["responses"]["Error"];
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save your own UI language and timezone */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                200: components["responses"]["UserPreferences"];
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -323,6 +738,1476 @@ export interface paths {
             responses: {
                 200: components["responses"]["Object"];
                 401: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/backups/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record that a backup completed, for the readiness check (admin; called by the backup job) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["BackupReport"];
+            responses: {
+                200: components["responses"]["Object"];
+                400: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Report which features are usable here, and why not when they are not */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Capabilities"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chatops/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List ChatOps channels */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: components["parameters"]["Limit"];
+                    offset?: components["parameters"]["Offset"];
+                    /** @description Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere. */
+                    sort?: components["parameters"]["Sort"];
+                    /** @description Sort direction. Applies to the requested sort column, or to the collection default when none is named. */
+                    order?: components["parameters"]["Order"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["ChatOpsChannelList"];
+            };
+        };
+        put?: never;
+        /** Create a ChatOps channel */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                201: components["responses"]["ChatOpsChannel"];
+                400: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chatops/channels/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        /** Get a ChatOps channel */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["ChatOpsChannel"];
+                404: components["responses"]["Error"];
+            };
+        };
+        /** Update a ChatOps channel */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                200: components["responses"]["ChatOpsChannel"];
+                400: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /** Delete a ChatOps channel */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Object"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chatops/commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post a ChatOps command */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                200: components["responses"]["ChatOpsMessage"];
+                400: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chatops/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List ChatOps messages */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: components["parameters"]["Limit"];
+                    offset?: components["parameters"]["Offset"];
+                    /** @description Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere. */
+                    sort?: components["parameters"]["Sort"];
+                    /** @description Sort direction. Applies to the requested sort column, or to the collection default when none is named. */
+                    order?: components["parameters"]["Order"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["ChatOpsMessageList"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/delivery-attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Delivery attempts for a notification */
+        get: {
+            parameters: {
+                query?: {
+                    notification_id?: components["parameters"]["NotificationId"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["DeliveryAttemptList"];
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/escalation-chains": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List escalation chains */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: components["parameters"]["Limit"];
+                    offset?: components["parameters"]["Offset"];
+                    /** @description Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere. */
+                    sort?: components["parameters"]["Sort"];
+                    /** @description Sort direction. Applies to the requested sort column, or to the collection default when none is named. */
+                    order?: components["parameters"]["Order"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["EscalationChainList"];
+            };
+        };
+        put?: never;
+        /** Create an escalation chain */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                201: components["responses"]["EscalationChain"];
+                400: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/escalation-chains/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        /** Get an escalation chain */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["EscalationChain"];
+                404: components["responses"]["Error"];
+            };
+        };
+        /** Update an escalation chain */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                200: components["responses"]["EscalationChain"];
+                400: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /** Delete an escalation chain */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Object"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/escalations/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Force one escalation-processing pass (admin) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["ObjectList"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Incident/notification history */
+        get: {
+            parameters: {
+                query?: {
+                    from?: components["parameters"]["From"];
+                    to?: components["parameters"]["To"];
+                    limit?: components["parameters"]["Limit"];
+                    offset?: components["parameters"]["Offset"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["History"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/insights/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Insights summary and daily trend */
+        get: {
+            parameters: {
+                query?: {
+                    from?: components["parameters"]["From"];
+                    to?: components["parameters"]["To"];
+                    /** @description Ограничить все числа и тренд одной интеграцией. */
+                    integration_id?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["InsightsSummary"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List integrations */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: components["parameters"]["Limit"];
+                    offset?: components["parameters"]["Offset"];
+                    /** @description Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere. */
+                    sort?: components["parameters"]["Sort"];
+                    /** @description Sort direction. Applies to the requested sort column, or to the collection default when none is named. */
+                    order?: components["parameters"]["Order"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["IntegrationList"];
+            };
+        };
+        put?: never;
+        /** Create an integration */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                201: components["responses"]["Integration"];
+                400: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        /** Get an integration */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Integration"];
+                404: components["responses"]["Error"];
+            };
+        };
+        /** Update an integration */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                200: components["responses"]["Integration"];
+                400: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /** Delete an integration */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Object"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/{id}/rotate-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rotate an integration's ingest key */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Integration"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/maintenance-windows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List maintenance windows */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: components["parameters"]["Limit"];
+                    offset?: components["parameters"]["Offset"];
+                    /** @description Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere. */
+                    sort?: components["parameters"]["Sort"];
+                    /** @description Sort direction. Applies to the requested sort column, or to the collection default when none is named. */
+                    order?: components["parameters"]["Order"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["MaintenanceWindowList"];
+            };
+        };
+        put?: never;
+        /** Plan a maintenance window */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                201: components["responses"]["MaintenanceWindow"];
+                400: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/maintenance-windows/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        /** Get a maintenance window */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["MaintenanceWindow"];
+                404: components["responses"]["Error"];
+            };
+        };
+        /** Update a maintenance window */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                200: components["responses"]["MaintenanceWindow"];
+                400: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /** Delete a maintenance window */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Object"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mobile/alert-groups/{id}/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acknowledge an alert group from mobile */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "X-Mobile-Session": components["parameters"]["MobileSession"];
+                };
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Object"];
+                400: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mobile/alert-groups/{id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve an alert group from mobile */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "X-Mobile-Session": components["parameters"]["MobileSession"];
+                };
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Object"];
+                400: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mobile/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Mobile dashboard for the session */
+        get: {
+            parameters: {
+                query?: never;
+                header: {
+                    "X-Mobile-Session": components["parameters"]["MobileSession"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Object"];
+                400: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mobile/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List registered mobile devices */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: components["parameters"]["Limit"];
+                    offset?: components["parameters"]["Offset"];
+                    /** @description Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere. */
+                    sort?: components["parameters"]["Sort"];
+                    /** @description Sort direction. Applies to the requested sort column, or to the collection default when none is named. */
+                    order?: components["parameters"]["Order"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["List"];
+            };
+        };
+        put?: never;
+        /** Register a mobile device */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                201: components["responses"]["Object"];
+                400: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mobile/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a mobile session */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                201: components["responses"]["Object"];
+                400: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List notifications */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: components["parameters"]["Limit"];
+                    offset?: components["parameters"]["Offset"];
+                    /** @description Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere. */
+                    sort?: components["parameters"]["Sort"];
+                    /** @description Sort direction. Applies to the requested sort column, or to the collection default when none is named. */
+                    order?: components["parameters"]["Order"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["NotificationList"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/on-call": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Who is on call right now across all schedules (Schedule v2) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["CurrentOnCall"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Can this installation actually page someone? (BETA-051) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Readiness"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/readiness/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept the readiness blockers that exist right now (admin) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["ReadinessAcknowledgement"];
+            responses: {
+                200: components["responses"]["Readiness"];
+                400: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/routes/debug/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dump route resolution for an integration key (admin) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: components["parameters"]["Key"];
+                };
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                200: components["responses"]["RouteDebug"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/schedules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List schedules */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: components["parameters"]["Limit"];
+                    offset?: components["parameters"]["Offset"];
+                    /** @description Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere. */
+                    sort?: components["parameters"]["Sort"];
+                    /** @description Sort direction. Applies to the requested sort column, or to the collection default when none is named. */
+                    order?: components["parameters"]["Order"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["ScheduleList"];
+            };
+        };
+        put?: never;
+        /** Create a schedule */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                201: components["responses"]["Schedule"];
+                400: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/schedules/coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Standing coverage report across all schedules */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["ScheduleCoverage"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/schedules/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        /** Get a schedule */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Schedule"];
+                404: components["responses"]["Error"];
+            };
+        };
+        /** Update a schedule */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                200: components["responses"]["Schedule"];
+                400: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /** Delete a schedule */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Object"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/schedules/{id}/on-call": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Who is on call for a schedule at a time */
+        get: {
+            parameters: {
+                query?: {
+                    at?: components["parameters"]["At"];
+                };
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["ScheduleOnCall"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/schedules/{id}/override": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a schedule override */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                200: components["responses"]["Object"];
+                400: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/schedules/{id}/overrides": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a schedule override */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                200: components["responses"]["Object"];
+                400: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/schedules/{id}/overrides/{overrideId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+                overrideId: components["parameters"]["OverrideId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Update a schedule override */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                    overrideId: components["parameters"]["OverrideId"];
+                };
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                200: components["responses"]["Object"];
+                400: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /** Delete a schedule override */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                    overrideId: components["parameters"]["OverrideId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Object"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/schedules/{id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Preview a schedule's coverage over a window */
+        get: {
+            parameters: {
+                query?: {
+                    from?: components["parameters"]["From"];
+                    to?: components["parameters"]["To"];
+                };
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["SchedulePreview"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List teams */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: components["parameters"]["Limit"];
+                    offset?: components["parameters"]["Offset"];
+                    /** @description Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere. */
+                    sort?: components["parameters"]["Sort"];
+                    /** @description Sort direction. Applies to the requested sort column, or to the collection default when none is named. */
+                    order?: components["parameters"]["Order"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["TeamList"];
+            };
+        };
+        put?: never;
+        /** Create a team */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                201: components["responses"]["Team"];
+                400: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        /** Get a team */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Team"];
+                404: components["responses"]["Error"];
+            };
+        };
+        /** Update a team */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody: components["requestBodies"]["Object"];
+            responses: {
+                200: components["responses"]["Team"];
+                400: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /** Delete a team */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Object"];
             };
         };
         options?: never;
@@ -488,37 +2373,6 @@ export interface paths {
         };
         trace?: never;
     };
-    "/api/v1/users/{id}/duty-on": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Set a user on duty */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["Object"];
-                403: components["responses"]["Error"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/users/{id}/duty-off": {
         parameters: {
             query?: never;
@@ -550,7 +2404,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/users/{id}/test-push": {
+    "/api/v1/users/{id}/duty-on": {
         parameters: {
             query?: never;
             header?: never;
@@ -559,7 +2413,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Send a test mobile push, report the per-device verdict */
+        /** Set a user on duty */
         post: {
             parameters: {
                 query?: never;
@@ -581,7 +2435,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/users/{id}/test-notification": {
+    "/api/v1/users/{id}/erase": {
         parameters: {
             query?: never;
             header?: never;
@@ -590,7 +2444,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Send one test notification through a real provider */
+        /**
+         * Erase a person's data and verify it is gone (admin)
+         * @description Credentials, sessions, devices and ChatOps bindings are deleted; the user record, the delivery addresses on their notifications and the actor name/IP on their audit events are pseudonymised. The events themselves are untouched — the record of what happened, including what this person did to other people's data, is what an audit trail exists to keep. The response is a verification rather than a claim: the data is read back and searched for the original identifiers, and the copies outside this database (backups, logs, analytics, traces) are named as out of scope instead of being implied. Idempotent — a second call re-verifies and reports already_erased.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -600,12 +2457,48 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody: components["requestBodies"]["Object"];
+            requestBody?: never;
             responses: {
                 200: components["responses"]["Object"];
                 403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export everything held about one person (admin)
+         * @description Assembled by reading the records themselves rather than summarising them. Credentials are reported as present/absent and never included: a password hash is not information about the person, only one more place for it to leak. The two audit sections are bounded by audit_export_limit, which the response states, so a truncated section is visible as truncated. Admin-only despite being a GET.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Object"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -689,42 +2582,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/users/{id}/export": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Export everything held about one person (admin)
-         * @description Assembled by reading the records themselves rather than summarising them. Credentials are reported as present/absent and never included: a password hash is not information about the person, only one more place for it to leak. The two audit sections are bounded by audit_export_limit, which the response states, so a truncated section is visible as truncated. Admin-only despite being a GET.
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["Object"];
-                403: components["responses"]["Error"];
-                404: components["responses"]["Error"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/users/{id}/erase": {
+    "/api/v1/users/{id}/test-notification": {
         parameters: {
             query?: never;
             header?: never;
@@ -733,383 +2591,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Erase a person's data and verify it is gone (admin)
-         * @description Credentials, sessions, devices and ChatOps bindings are deleted; the user record, the delivery addresses on their notifications and the actor name/IP on their audit events are pseudonymised. The events themselves are untouched — the record of what happened, including what this person did to other people's data, is what an audit trail exists to keep. The response is a verification rather than a claim: the data is read back and searched for the original identifiers, and the copies outside this database (backups, logs, analytics, traces) are named as out of scope instead of being implied. Idempotent — a second call re-verifies and reports already_erased.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["Object"];
-                403: components["responses"]["Error"];
-                404: components["responses"]["Error"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/teams": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List teams */
-        get: {
-            parameters: {
-                query?: {
-                    limit?: components["parameters"]["Limit"];
-                    offset?: components["parameters"]["Offset"];
-                    /** @description Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere. */
-                    sort?: components["parameters"]["Sort"];
-                    /** @description Sort direction. Applies to the requested sort column, or to the collection default when none is named. */
-                    order?: components["parameters"]["Order"];
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["TeamList"];
-            };
-        };
-        put?: never;
-        /** Create a team */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["Object"];
-            responses: {
-                201: components["responses"]["Team"];
-                400: components["responses"]["Error"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/teams/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        /** Get a team */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["Team"];
-                404: components["responses"]["Error"];
-            };
-        };
-        /** Update a team */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["Object"];
-            responses: {
-                200: components["responses"]["Team"];
-                400: components["responses"]["Error"];
-            };
-        };
-        post?: never;
-        /** Delete a team */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["Object"];
-            };
-        };
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/schedules": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List schedules */
-        get: {
-            parameters: {
-                query?: {
-                    limit?: components["parameters"]["Limit"];
-                    offset?: components["parameters"]["Offset"];
-                    /** @description Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere. */
-                    sort?: components["parameters"]["Sort"];
-                    /** @description Sort direction. Applies to the requested sort column, or to the collection default when none is named. */
-                    order?: components["parameters"]["Order"];
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["ScheduleList"];
-            };
-        };
-        put?: never;
-        /** Create a schedule */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["Object"];
-            responses: {
-                201: components["responses"]["Schedule"];
-                400: components["responses"]["Error"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/on-call": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Who is on call right now across all schedules (Schedule v2) */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["CurrentOnCall"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/schedules/coverage": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Standing coverage report across all schedules */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["ScheduleCoverage"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/schedules/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        /** Get a schedule */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["Schedule"];
-                404: components["responses"]["Error"];
-            };
-        };
-        /** Update a schedule */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["Object"];
-            responses: {
-                200: components["responses"]["Schedule"];
-                400: components["responses"]["Error"];
-            };
-        };
-        post?: never;
-        /** Delete a schedule */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["Object"];
-            };
-        };
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/schedules/{id}/on-call": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Who is on call for a schedule at a time */
-        get: {
-            parameters: {
-                query?: {
-                    at?: components["parameters"]["At"];
-                };
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["ScheduleOnCall"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/schedules/{id}/preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Preview a schedule's coverage over a window */
-        get: {
-            parameters: {
-                query?: {
-                    from?: components["parameters"]["From"];
-                    to?: components["parameters"]["To"];
-                };
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["SchedulePreview"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/schedules/{id}/override": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create a schedule override */
+        /** Send one test notification through a real provider */
         post: {
             parameters: {
                 query?: never;
@@ -1122,448 +2604,6 @@ export interface paths {
             requestBody: components["requestBodies"]["Object"];
             responses: {
                 200: components["responses"]["Object"];
-                400: components["responses"]["Error"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/schedules/{id}/overrides": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create a schedule override */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["Object"];
-            responses: {
-                200: components["responses"]["Object"];
-                400: components["responses"]["Error"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/schedules/{id}/overrides/{overrideId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-                overrideId: components["parameters"]["OverrideId"];
-            };
-            cookie?: never;
-        };
-        get?: never;
-        /** Update a schedule override */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                    overrideId: components["parameters"]["OverrideId"];
-                };
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["Object"];
-            responses: {
-                200: components["responses"]["Object"];
-                400: components["responses"]["Error"];
-            };
-        };
-        post?: never;
-        /** Delete a schedule override */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                    overrideId: components["parameters"]["OverrideId"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["Object"];
-            };
-        };
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/escalation-chains": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List escalation chains */
-        get: {
-            parameters: {
-                query?: {
-                    limit?: components["parameters"]["Limit"];
-                    offset?: components["parameters"]["Offset"];
-                    /** @description Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere. */
-                    sort?: components["parameters"]["Sort"];
-                    /** @description Sort direction. Applies to the requested sort column, or to the collection default when none is named. */
-                    order?: components["parameters"]["Order"];
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["EscalationChainList"];
-            };
-        };
-        put?: never;
-        /** Create an escalation chain */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["Object"];
-            responses: {
-                201: components["responses"]["EscalationChain"];
-                400: components["responses"]["Error"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/escalation-chains/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        /** Get an escalation chain */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["EscalationChain"];
-                404: components["responses"]["Error"];
-            };
-        };
-        /** Update an escalation chain */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["Object"];
-            responses: {
-                200: components["responses"]["EscalationChain"];
-                400: components["responses"]["Error"];
-            };
-        };
-        post?: never;
-        /** Delete an escalation chain */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["Object"];
-            };
-        };
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/maintenance-windows": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List maintenance windows */
-        get: {
-            parameters: {
-                query?: {
-                    limit?: components["parameters"]["Limit"];
-                    offset?: components["parameters"]["Offset"];
-                    /** @description Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere. */
-                    sort?: components["parameters"]["Sort"];
-                    /** @description Sort direction. Applies to the requested sort column, or to the collection default when none is named. */
-                    order?: components["parameters"]["Order"];
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["MaintenanceWindowList"];
-            };
-        };
-        put?: never;
-        /** Plan a maintenance window */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["Object"];
-            responses: {
-                201: components["responses"]["MaintenanceWindow"];
-                400: components["responses"]["Error"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/maintenance-windows/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        /** Get a maintenance window */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["MaintenanceWindow"];
-                404: components["responses"]["Error"];
-            };
-        };
-        /** Update a maintenance window */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["Object"];
-            responses: {
-                200: components["responses"]["MaintenanceWindow"];
-                400: components["responses"]["Error"];
-            };
-        };
-        post?: never;
-        /** Delete a maintenance window */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["Object"];
-            };
-        };
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/integrations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List integrations */
-        get: {
-            parameters: {
-                query?: {
-                    limit?: components["parameters"]["Limit"];
-                    offset?: components["parameters"]["Offset"];
-                    /** @description Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere. */
-                    sort?: components["parameters"]["Sort"];
-                    /** @description Sort direction. Applies to the requested sort column, or to the collection default when none is named. */
-                    order?: components["parameters"]["Order"];
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["IntegrationList"];
-            };
-        };
-        put?: never;
-        /** Create an integration */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["Object"];
-            responses: {
-                201: components["responses"]["Integration"];
-                400: components["responses"]["Error"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/integrations/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        /** Get an integration */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["Integration"];
-                404: components["responses"]["Error"];
-            };
-        };
-        /** Update an integration */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["Object"];
-            responses: {
-                200: components["responses"]["Integration"];
-                400: components["responses"]["Error"];
-            };
-        };
-        post?: never;
-        /** Delete an integration */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["Object"];
-            };
-        };
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/integrations/{id}/rotate-key": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Rotate an integration's ingest key */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["Integration"];
                 403: components["responses"]["Error"];
             };
         };
@@ -1573,98 +2613,17 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/chatops/channels": {
+    "/api/v1/users/{id}/test-push": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List ChatOps channels */
-        get: {
-            parameters: {
-                query?: {
-                    limit?: components["parameters"]["Limit"];
-                    offset?: components["parameters"]["Offset"];
-                    /** @description Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere. */
-                    sort?: components["parameters"]["Sort"];
-                    /** @description Sort direction. Applies to the requested sort column, or to the collection default when none is named. */
-                    order?: components["parameters"]["Order"];
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["ChatOpsChannelList"];
-            };
-        };
+        get?: never;
         put?: never;
-        /** Create a ChatOps channel */
+        /** Send a test mobile push, report the per-device verdict */
         post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["Object"];
-            responses: {
-                201: components["responses"]["ChatOpsChannel"];
-                400: components["responses"]["Error"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/chatops/channels/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        /** Get a ChatOps channel */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["ChatOpsChannel"];
-                404: components["responses"]["Error"];
-            };
-        };
-        /** Update a ChatOps channel */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["Object"];
-            responses: {
-                200: components["responses"]["ChatOpsChannel"];
-                400: components["responses"]["Error"];
-            };
-        };
-        post?: never;
-        /** Delete a ChatOps channel */
-        delete: {
             parameters: {
                 query?: never;
                 header?: never;
@@ -1676,930 +2635,6 @@ export interface paths {
             requestBody?: never;
             responses: {
                 200: components["responses"]["Object"];
-            };
-        };
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/chatops/messages": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List ChatOps messages */
-        get: {
-            parameters: {
-                query?: {
-                    limit?: components["parameters"]["Limit"];
-                    offset?: components["parameters"]["Offset"];
-                    /** @description Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere. */
-                    sort?: components["parameters"]["Sort"];
-                    /** @description Sort direction. Applies to the requested sort column, or to the collection default when none is named. */
-                    order?: components["parameters"]["Order"];
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["ChatOpsMessageList"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/chatops/commands": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Post a ChatOps command */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["Object"];
-            responses: {
-                200: components["responses"]["ChatOpsMessage"];
-                400: components["responses"]["Error"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/mobile/devices": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List registered mobile devices */
-        get: {
-            parameters: {
-                query?: {
-                    limit?: components["parameters"]["Limit"];
-                    offset?: components["parameters"]["Offset"];
-                    /** @description Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere. */
-                    sort?: components["parameters"]["Sort"];
-                    /** @description Sort direction. Applies to the requested sort column, or to the collection default when none is named. */
-                    order?: components["parameters"]["Order"];
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["List"];
-            };
-        };
-        put?: never;
-        /** Register a mobile device */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["Object"];
-            responses: {
-                201: components["responses"]["Object"];
-                400: components["responses"]["Error"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/mobile/sessions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create a mobile session */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["Object"];
-            responses: {
-                201: components["responses"]["Object"];
-                400: components["responses"]["Error"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/mobile/dashboard": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Mobile dashboard for the session */
-        get: {
-            parameters: {
-                query?: never;
-                header: {
-                    "X-Mobile-Session": components["parameters"]["MobileSession"];
-                };
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["Object"];
-                400: components["responses"]["Error"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/mobile/alert-groups/{id}/acknowledge": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Acknowledge an alert group from mobile */
-        post: {
-            parameters: {
-                query?: never;
-                header: {
-                    "X-Mobile-Session": components["parameters"]["MobileSession"];
-                };
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["Object"];
-                400: components["responses"]["Error"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/mobile/alert-groups/{id}/resolve": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Resolve an alert group from mobile */
-        post: {
-            parameters: {
-                query?: never;
-                header: {
-                    "X-Mobile-Session": components["parameters"]["MobileSession"];
-                };
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["Object"];
-                400: components["responses"]["Error"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/alert-groups": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List alert groups */
-        get: {
-            parameters: {
-                query?: {
-                    limit?: components["parameters"]["Limit"];
-                    offset?: components["parameters"]["Offset"];
-                    /** @description Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere. */
-                    sort?: components["parameters"]["Sort"];
-                    /** @description Sort direction. Applies to the requested sort column, or to the collection default when none is named. */
-                    order?: components["parameters"]["Order"];
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["AlertGroupList"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/alert-groups/bulk-resolve": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Resolve many alert groups */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["Object"];
-            responses: {
-                200: components["responses"]["BulkResolve"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/alert-groups/bulk-acknowledge": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Acknowledge many alert groups */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["Object"];
-            responses: {
-                200: components["responses"]["BulkAcknowledge"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/alert-groups/bulk-silence": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Silence many alert groups */
-        post: {
-            parameters: {
-                query?: {
-                    duration_minutes?: components["parameters"]["DurationMinutes"];
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["Object"];
-            responses: {
-                200: components["responses"]["BulkSilence"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/alert-groups/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get an alert group */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["AlertGroup"];
-                404: components["responses"]["Error"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/alert-groups/{id}/timeline": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** An alert group's timeline */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["Object"];
-                404: components["responses"]["Error"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/alert-groups/{id}/acknowledge": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Acknowledge an alert group */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["AlertGroup"];
-                403: components["responses"]["Error"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/alert-groups/{id}/unacknowledge": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Un-acknowledge an alert group */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["AlertGroup"];
-                403: components["responses"]["Error"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/alert-groups/{id}/resolve": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Resolve an alert group */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["AlertGroup"];
-                403: components["responses"]["Error"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/alert-groups/{id}/unresolve": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Un-resolve an alert group */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["AlertGroup"];
-                403: components["responses"]["Error"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/alert-groups/{id}/silence": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Silence an alert group */
-        post: {
-            parameters: {
-                query?: {
-                    duration_minutes?: components["parameters"]["DurationMinutes"];
-                };
-                header?: never;
-                path: {
-                    id: components["parameters"]["Id"];
-                };
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["Object"];
-            responses: {
-                200: components["responses"]["AlertGroup"];
-                403: components["responses"]["Error"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/alerts": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List raw alerts */
-        get: {
-            parameters: {
-                query?: {
-                    limit?: components["parameters"]["Limit"];
-                    offset?: components["parameters"]["Offset"];
-                    /** @description Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere. */
-                    sort?: components["parameters"]["Sort"];
-                    /** @description Sort direction. Applies to the requested sort column, or to the collection default when none is named. */
-                    order?: components["parameters"]["Order"];
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["AlertList"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/notifications": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List notifications */
-        get: {
-            parameters: {
-                query?: {
-                    limit?: components["parameters"]["Limit"];
-                    offset?: components["parameters"]["Offset"];
-                    /** @description Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere. */
-                    sort?: components["parameters"]["Sort"];
-                    /** @description Sort direction. Applies to the requested sort column, or to the collection default when none is named. */
-                    order?: components["parameters"]["Order"];
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["NotificationList"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/delivery-attempts": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Delivery attempts for a notification */
-        get: {
-            parameters: {
-                query?: {
-                    notification_id?: components["parameters"]["NotificationId"];
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["DeliveryAttemptList"];
-                403: components["responses"]["Error"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/audit": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Query the audit trail (admin) */
-        get: {
-            parameters: {
-                query?: {
-                    actor_id?: components["parameters"]["ActorId"];
-                    entity_type?: components["parameters"]["EntityType"];
-                    entity_id?: components["parameters"]["EntityId"];
-                    action?: components["parameters"]["Action"];
-                    request_id?: components["parameters"]["RequestId"];
-                    trace_id?: components["parameters"]["TraceId"];
-                    limit?: components["parameters"]["Limit"];
-                    offset?: components["parameters"]["Offset"];
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["List"];
-                403: components["responses"]["Error"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/history": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Incident/notification history */
-        get: {
-            parameters: {
-                query?: {
-                    from?: components["parameters"]["From"];
-                    to?: components["parameters"]["To"];
-                    limit?: components["parameters"]["Limit"];
-                    offset?: components["parameters"]["Offset"];
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["History"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/routes/debug/{key}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Dump route resolution for an integration key (admin) */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    key: components["parameters"]["Key"];
-                };
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["Object"];
-            responses: {
-                200: components["responses"]["RouteDebug"];
-                403: components["responses"]["Error"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/capabilities": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Report which features are usable here, and why not when they are not */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["Capabilities"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/readiness": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Can this installation actually page someone? (BETA-051) */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["Readiness"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/readiness/acknowledge": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Accept the readiness blockers that exist right now (admin) */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["ReadinessAcknowledgement"];
-            responses: {
-                200: components["responses"]["Readiness"];
-                400: components["responses"]["Error"];
-                403: components["responses"]["Error"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/backups/report": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Record that a backup completed, for the readiness check (admin; called by the backup job) */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: components["requestBodies"]["BackupReport"];
-            responses: {
-                200: components["responses"]["Object"];
-                400: components["responses"]["Error"];
-                403: components["responses"]["Error"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/escalations/run": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Force one escalation-processing pass (admin) */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["ObjectList"];
                 403: components["responses"]["Error"];
             };
         };
@@ -3008,6 +3043,10 @@ export interface components {
             email: string;
             phone: string;
             telegram_id: string;
+            /** @description Slack account id. Attributes a Slack command or button tap to this person rather than to the bot; empty means the tap runs as the platform service principal. */
+            slack_id: string;
+            /** @description Mattermost account id. Same role as slack_id, for the Mattermost bot. */
+            mattermost_id: string;
             timezone: string;
             /**
              * @description Chosen UI language; empty means the UI follows the browser.
@@ -3390,6 +3429,33 @@ export interface components {
             edition: "community" | "enterprise";
             capabilities: components["schemas"]["Capability"][];
         };
+        InsightsTrendBucket: {
+            /** @description День в UTC, YYYY-MM-DD. */
+            day: string;
+            opened: number;
+            resolved: number;
+            delivered: number;
+            failed: number;
+        };
+        InsightsSummary: {
+            /** Format: date-time */
+            from: string;
+            /** Format: date-time */
+            to: string;
+            /** @description Число групп по статусу — состояние на сейчас, в пределах окна хранения. */
+            groups_by_status: {
+                [key: string]: number;
+            };
+            /** @description Число групп по уровню важности, а не по написанию: high и error попадают в один ключ error. */
+            groups_by_level: {
+                [key: string]: number;
+            };
+            notifications_by_state: {
+                [key: string]: number;
+            };
+            /** @description По дню на каждый день диапазона, включая дни без событий. */
+            trend: components["schemas"]["InsightsTrendBucket"][];
+        };
     };
     responses: {
         /** @description A single object */
@@ -3743,6 +3809,15 @@ export interface components {
                 "application/json": components["schemas"]["Capabilities"];
             };
         };
+        /** @description Сводка экрана «Инсайты»: текущие счётчики и дневной тренд */
+        InsightsSummary: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["InsightsSummary"];
+            };
+        };
     };
     parameters: {
         Id: string;
@@ -3766,6 +3841,8 @@ export interface components {
         RequestId: string;
         TraceId: string;
         MobileSession: string;
+        /** @description Список id через запятую: вернуть только эти элементы. Пустой список возвращает пусто. */
+        Ids: string;
     };
     requestBodies: {
         Object: {

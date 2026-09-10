@@ -50,11 +50,11 @@ func TestPostWebhook(t *testing.T) {
 }
 
 func TestSendTelegramGuardBranches(t *testing.T) {
-	status, msg, _ := sendTelegram(context.Background(), testClient(), "chat", "hi", "", "grp-1", false)
+	status, msg, _ := sendTelegram(context.Background(), testClient(), "chat", "hi", "", "grp-1", telegramShiftOptions{}, "")
 	if status != "failed" || msg == "" {
 		t.Errorf("empty token should fail: %q %q", status, msg)
 	}
-	status, msg, _ = sendTelegram(context.Background(), testClient(), "", "hi", "tok", "grp-1", false)
+	status, msg, _ = sendTelegram(context.Background(), testClient(), "", "hi", "tok", "grp-1", telegramShiftOptions{}, "")
 	if status != "failed" || msg == "" {
 		t.Errorf("empty chat id should fail: %q %q", status, msg)
 	}

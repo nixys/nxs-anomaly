@@ -196,10 +196,10 @@ func (e *Engine) postChatopsCommand(ctx context.Context, payload map[string]any,
 	cmdParts := strings.Fields(commandLine)
 	if len(cmdParts) > 0 {
 		switch strings.ToLower(strings.TrimPrefix(cmdParts[0], "/")) {
-		case "status", "alerts":
+		case "status", "alerts", "bulk":
 			loads = append(loads, store.LoadSpec{Collection: "alert_groups",
 				Filters: map[string]any{"status": store.NotEqualFilter{Value: "resolved"}}})
-		case "ack", "resolve":
+		case "ack", "resolve", "show", "silence", "unack", "unacknowledge", "unresolve", "reopen":
 			if len(cmdParts) > 1 {
 				loads = append(loads, loadItems("alert_groups", cmdParts[1])...)
 			}
@@ -221,13 +221,15 @@ func (e *Engine) postChatopsCommand(ctx context.Context, payload map[string]any,
 		// resolving the owner outside the lock would decide access from a
 		// snapshot the mutation no longer runs on.
 		switch strings.ToLower(strings.TrimPrefix(cmdParts[0], "/")) {
-		case "status", "alerts", "ack", "resolve":
+		case "status", "alerts", "ack", "resolve", "show", "silence",
+			"unack", "unacknowledge", "unresolve", "reopen", "bulk":
 			loads = append(loads, store.LoadSpec{Collection: "integrations"})
 		}
 		// Resolving from a chat tells whoever was paged that it is over, and
-		// that needs their notification targets.
+		// that needs their notification targets. "bulk" is here because one of
+		// its verbs is resolve.
 		switch strings.ToLower(strings.TrimPrefix(cmdParts[0], "/")) {
-		case "resolve":
+		case "resolve", "bulk":
 			loads = append(loads, store.LoadSpec{Collection: "users"})
 		}
 	}
@@ -762,7 +764,10 @@ func (e *Engine) executeChatopsCommand(ctx context.Context, state *store.State, 
 		if err := g.Acknowledge(ts, "Alert group acknowledged from ChatOps by "+chatHandle, principal); err != nil {
 			return nil, errValidation(err.Error())
 		}
-		return map[string]any{"text": "Acknowledged " + g.ID(), "alert_group": g.Raw()}, nil
+		return map[string]any{
+			"text":        "Acknowledged " + groupLabel(g) + " — " + principal.Describe(),
+			"alert_group": g.Raw(),
+		}, nil
 
 	case "resolve", "/resolve":
 		if len(args) == 0 {
@@ -778,7 +783,10 @@ func (e *Engine) executeChatopsCommand(ctx context.Context, state *store.State, 
 		ts := utils.ToISO(utils.UTCNow())
 		g.Resolve(ts, "Resolved from ChatOps by "+chatHandle, principal)
 		e.notifyGroupResolved(state, g, ts)
-		return map[string]any{"text": "Resolved " + g.ID(), "alert_group": g.Raw()}, nil
+		return map[string]any{
+			"text":        "Resolved " + groupLabel(g) + " — " + principal.Describe(),
+			"alert_group": g.Raw(),
+		}, nil
 
 	case "oncall", "/oncall", "whoisoncall":
 		if len(args) == 0 {
@@ -802,12 +810,258 @@ func (e *Engine) executeChatopsCommand(ctx context.Context, state *store.State, 
 		}
 		return map[string]any{"text": "On-call now: " + who, "users": users}, nil
 
+	case "show", "/show":
+		// Read-only, and that is the point: the listing used to acknowledge a
+		// group when someone tapped a row labelled with its title. Opening and
+		// acting are now two different buttons, and this is the opening one.
+		if len(args) == 0 {
+			return nil, errValidation("show command requires alert group id")
+		}
+		g, err := getGroupOrError(state, args[0])
+		if err != nil {
+			return nil, err
+		}
+		if !chatopsGroupAccess(state, channel, principal, g) {
+			return nil, errForbiddenTeam("alert_groups")
+		}
+		return map[string]any{"text": groupCardText(g), "alert_group_card": g.Raw()}, nil
+
+	case "silence", "/silence":
+		if len(args) == 0 {
+			return nil, errValidation("silence command requires alert group id")
+		}
+		minutes := chatopsSilenceDefaultMinutes
+		if len(args) > 1 {
+			n, err := strconv.Atoi(args[1])
+			if err != nil || n <= 0 || n > chatopsSilenceMaxMinutes {
+				return nil, errValidation(fmt.Sprintf("silence accepts 1 to %d minutes", chatopsSilenceMaxMinutes))
+			}
+			minutes = n
+		}
+		g, err := getGroupOrError(state, args[0])
+		if err != nil {
+			return nil, err
+		}
+		if err := guardChatopsGroupCommand(state, channel, principal, g); err != nil {
+			return nil, err
+		}
+		now := utils.UTCNow()
+		ts := utils.ToISO(now)
+		until := utils.ToISO(now.Add(time.Duration(minutes) * time.Minute))
+		if err := g.Silence(ts, until, "Alert group silenced from ChatOps by "+chatHandle, minutes, principal); err != nil {
+			return nil, errValidation(err.Error())
+		}
+		return map[string]any{
+			"text":        fmt.Sprintf("Silenced %s for %s", groupLabel(g), silenceDurationText(minutes)),
+			"alert_group": g.Raw(),
+		}, nil
+
+	case "unack", "/unack", "unacknowledge":
+		if len(args) == 0 {
+			return nil, errValidation("unack command requires alert group id")
+		}
+		g, err := getGroupOrError(state, args[0])
+		if err != nil {
+			return nil, err
+		}
+		if err := guardChatopsGroupCommand(state, channel, principal, g); err != nil {
+			return nil, err
+		}
+		if err := g.Unacknowledge(utils.ToISO(utils.UTCNow()), principal); err != nil {
+			return nil, errValidation(err.Error())
+		}
+		return map[string]any{
+			"text":        "Acknowledgement taken back, escalation resumes: " + groupLabel(g),
+			"alert_group": g.Raw(),
+		}, nil
+
+	case "unresolve", "/unresolve", "reopen":
+		if len(args) == 0 {
+			return nil, errValidation("unresolve command requires alert group id")
+		}
+		g, err := getGroupOrError(state, args[0])
+		if err != nil {
+			return nil, err
+		}
+		if err := guardChatopsGroupCommand(state, channel, principal, g); err != nil {
+			return nil, err
+		}
+		if err := g.Unresolve(utils.ToISO(utils.UTCNow()), principal); err != nil {
+			return nil, errValidation(err.Error())
+		}
+		return map[string]any{"text": "Reopened " + groupLabel(g), "alert_group": g.Raw()}, nil
+
+	case "bulk", "/bulk":
+		return e.chatopsBulk(state, channel, principal, chatHandle, args)
+
+	case "start", "/start":
+		// First contact with the bot. It used to answer "unsupported chatops
+		// command", and — because an errored command produced no reply at all —
+		// in practice it answered nothing.
+		return map[string]any{
+			"text":                 startText(principal),
+			"offer_start_keyboard": true,
+		}, nil
+
 	case "help", "/help":
-		return map[string]any{"text": "Commands: alerts [page], status, ack <group_id>, " +
-			"resolve <group_id>, duty on|off, duty take [schedule_id] [hours], " +
+		return map[string]any{"text": "Commands: alerts [page], status, show <group_id>, " +
+			"ack <group_id>, resolve <group_id>, silence <group_id> [minutes], " +
+			"unack <group_id>, unresolve <group_id>, bulk ack|silence|resolve [minutes], " +
+			"duty on|off, duty take [schedule_id] [hours], " +
 			"priority [username] <high|medium|low>, oncall <schedule_id>"}, nil
 	}
 	return nil, fmt.Errorf("unsupported chatops command: %s", cmd)
+}
+
+// chatopsSilenceDefaultMinutes is what a silence button without a duration
+// means, and matches the web UI's own default (the "s" shortcut on a group).
+const chatopsSilenceDefaultMinutes = 60
+
+// chatopsSilenceMaxMinutes bounds a typed duration. A day is already generous;
+// anything longer is a maintenance window, which is a different object with its
+// own audit trail — not something to reach by mistyping a number into a chat.
+const chatopsSilenceMaxMinutes = 24 * 60
+
+// groupLabel names a group the way a channel reads it. The id is what the next
+// typed command needs, but nobody recognises an incident by it, so the title
+// leads and the id is the fallback for a group that has none.
+func groupLabel(g model.AlertGroup) string {
+	if title := strings.TrimSpace(g.Title()); title != "" {
+		return "«" + title + "»"
+	}
+	return g.ID()
+}
+
+// silenceDurationText renders a duration the way the person who tapped the
+// button thinks of it.
+func silenceDurationText(minutes int) string {
+	if minutes%60 == 0 {
+		return fmt.Sprintf("%dh", minutes/60)
+	}
+	return fmt.Sprintf("%dm", minutes)
+}
+
+// groupCardText is what "show" answers: enough of the group to decide whether to
+// act on it, without opening the web UI.
+func groupCardText(g model.AlertGroup) string {
+	lines := []string{
+		fmt.Sprintf("[%s] %s", strDefault(g.Severity(), "unknown"), strDefault(g.Title(), "alert")),
+		fmt.Sprintf("status: %s · alerts: %d · escalation step: %d", g.Status(), g.AlertCount(), g.CurrentStep()),
+		"last seen: " + strDefault(g.LastReceivedAt(), "unknown"),
+	}
+	if by := actorName(g.AcknowledgedBy()); by != "" {
+		lines = append(lines, "acknowledged by: "+by)
+	}
+	if until := utils.StrVal(g.Raw(), "silenced_until"); until != "" {
+		lines = append(lines, "silenced until: "+until)
+	}
+	lines = append(lines, "id: "+g.ID())
+	return strings.Join(lines, "\n")
+}
+
+// actorName reads the compact attribution the group stores, so a card can say
+// who acted rather than only that somebody did.
+func actorName(ref any) string {
+	m, ok := ref.(map[string]any)
+	if !ok {
+		return ""
+	}
+	return utils.StrVal(m, "name")
+}
+
+// startText greets a first-time user of the bot and, when the account is not
+// linked, says so — because every command that needs a person will otherwise
+// refuse with a message that reads like a bug.
+func startText(principal authz.Actor) string {
+	if principal.Kind == authz.KindUser && principal.ID != "" {
+		return "nxs-anomaly is connected. You can list open alert groups, act on them, " +
+			"and check in for your shift. Type help for every command."
+	}
+	return "nxs-anomaly is connected, but this chat account is not linked to a user here, " +
+		"so anything about a person — duty, priority — will be refused. Ask an administrator " +
+		"to add your chat account id to your profile. Type help for every command."
+}
+
+// chatopsBulk applies one verb to every open group the caller can act on.
+//
+// The storm case: forty groups from one cluster failure, and a keyboard that can
+// only act on them one at a time. Scoped to what this principal may already
+// reach, so it is a shortcut for repetition, not a way around the boundary.
+func (e *Engine) chatopsBulk(state *store.State, channel map[string]any, principal authz.Actor, chatHandle string, args []string) (map[string]any, error) {
+	if len(args) == 0 || !bulkChatActions[strings.ToLower(args[0])] {
+		return nil, errValidation("bulk command requires ack, silence or resolve")
+	}
+	verb := strings.ToLower(args[0])
+	minutes := chatopsSilenceDefaultMinutes
+	if verb == "silence" && len(args) > 1 {
+		n, err := strconv.Atoi(args[1])
+		if err != nil || n <= 0 || n > chatopsSilenceMaxMinutes {
+			return nil, errValidation(fmt.Sprintf("silence accepts 1 to %d minutes", chatopsSilenceMaxMinutes))
+		}
+		minutes = n
+	}
+	if !principal.Can(authz.ActionRespond) {
+		return nil, errForbidden("acting on alerts requires the responder role")
+	}
+	now := utils.UTCNow()
+	ts := utils.ToISO(now)
+	until := utils.ToISO(now.Add(time.Duration(minutes) * time.Minute))
+
+	// Collected and sorted before anything is written: map iteration order would
+	// make the reported count reproducible but the log order arbitrary, and this
+	// is the one command whose whole answer is a count.
+	var ids []string
+	for id, rec := range state.AlertGroups {
+		g, ok := groupAG(rec)
+		if !ok || g.Status() == model.StatusResolved {
+			continue
+		}
+		if !chatopsGroupAccess(state, channel, principal, g) {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	var changed int
+	var resolved []model.AlertGroup
+	for _, id := range ids {
+		g, ok := groupAG(state.AlertGroups[id])
+		if !ok {
+			continue
+		}
+		var err error
+		switch verb {
+		case "ack":
+			err = g.Acknowledge(ts, "Alert group acknowledged from ChatOps by "+chatHandle, principal)
+		case "silence":
+			err = g.Silence(ts, until, "Alert group silenced from ChatOps by "+chatHandle, minutes, principal)
+		case "resolve":
+			g.Resolve(ts, "Resolved from ChatOps by "+chatHandle, principal)
+			resolved = append(resolved, g)
+		}
+		// A group that refused the transition is skipped, not fatal: one group
+		// that cannot be acknowledged must not stop the other thirty-nine.
+		if err != nil {
+			continue
+		}
+		changed++
+	}
+	// Telling whoever was paged that it is over is part of resolving, and it
+	// happens after the loop so the notifications describe the set that was
+	// actually written.
+	for _, g := range resolved {
+		e.notifyGroupResolved(state, g, ts)
+	}
+	what := verb
+	if verb == "silence" {
+		what = "silenced for " + silenceDurationText(minutes)
+	}
+	return map[string]any{
+		"text":        fmt.Sprintf("%d of %d open alert group(s): %s", changed, len(ids), what),
+		"bulk_action": verb,
+		"bulk_count":  changed,
+	}, nil
 }
 
 func scheduleUserIDsFromState(_ *store.State, sched map[string]any) []string {
@@ -822,7 +1076,38 @@ func scheduleUserIDsFromState(_ *store.State, sched map[string]any) []string {
 // platform sent the update; the account id inside it is the only thing in that
 // update tied to a person this deployment already knows.
 func (e *Engine) FindUserByTelegramID(ctx context.Context, telegramID string) (map[string]any, error) {
-	if telegramID == "" {
+	return e.FindUserByChatAccount(ctx, "telegram", telegramID)
+}
+
+// ChatAccountField names the profile field that carries a person's account id on
+// one chat platform, or "" for a platform this deployment does not link.
+//
+// Identity used to be a Telegram-only question: Slack and Mattermost taps ran as
+// the platform service principal, so the group's log and the audit trail said a
+// bot had acknowledged, and every command that needs a person refused with a
+// message telling a Mattermost user to link their Telegram account.
+func ChatAccountField(platform string) string {
+	switch strings.ToLower(platform) {
+	case "telegram":
+		return "telegram_id"
+	case "slack":
+		return "slack_id"
+	case "mattermost":
+		return "mattermost_id"
+	}
+	return ""
+}
+
+// FindUserByChatAccount resolves a platform account id to a configured user,
+// returning nil when nobody claims it.
+//
+// This is what lets an acknowledge from a chat be attributed to the engineer who
+// tapped rather than to the bot. The platform's own credential proves the update
+// is genuine; the account id inside it is the only thing tied to a person this
+// deployment already knows.
+func (e *Engine) FindUserByChatAccount(ctx context.Context, platform, accountID string) (map[string]any, error) {
+	field := ChatAccountField(platform)
+	if field == "" || accountID == "" {
 		return nil, nil
 	}
 	users, err := e.refCollection(ctx, "users")
@@ -830,7 +1115,7 @@ func (e *Engine) FindUserByTelegramID(ctx context.Context, telegramID string) (m
 		return nil, err
 	}
 	for _, u := range users {
-		if utils.StrVal(u, "telegram_id") == telegramID {
+		if utils.StrVal(u, field) == accountID {
 			return u, nil
 		}
 	}

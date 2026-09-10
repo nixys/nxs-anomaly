@@ -88,7 +88,7 @@ func (e *Engine) deliverNotificationViaAdapter(ctx context.Context, ntf map[stri
 	case "slack", "mattermost":
 		text := renderNotificationText(ntf, payload, "")
 		groupID := utils.StrVal(payload, "alert_group_id")
-		body := SlackMessagePayload(text, groupID)
+		body := SlackMessagePayload(text, groupID, e.deliveryCfg.PublicURL)
 		if channel == "mattermost" {
 			body = MattermostMessagePayload(text, groupID,
 				e.deliveryCfg.PublicURL, e.deliveryCfg.MattermostActionSecret)
@@ -101,7 +101,10 @@ func (e *Engine) deliverNotificationViaAdapter(ctx context.Context, ntf map[stri
 	case "telegram":
 		text := renderNotificationText(ntf, payload, e.getNotificationTemplate(ctx, utils.StrVal(payload, "integration_id"), "telegram"))
 		return e.sendTelegramOutcome(ctx, target, text,
-			utils.StrVal(payload, "alert_group_id"), utils.BoolVal(payload, "offer_checkin", false))
+			utils.StrVal(payload, "alert_group_id"), telegramShiftOptions{
+				offerCheckin: utils.BoolVal(payload, "offer_checkin", false),
+				scheduleID:   utils.StrVal(payload, "schedule_id"),
+			})
 
 	case "email":
 		text := renderNotificationText(ntf, payload, e.getNotificationTemplate(ctx, utils.StrVal(payload, "integration_id"), "email"))
@@ -157,9 +160,9 @@ func (e *Engine) deliverNotificationViaAdapter(ctx context.Context, ntf map[stri
 }
 
 // sendTelegramOutcome wraps the Telegram adapter in the outcome contract.
-func (e *Engine) sendTelegramOutcome(ctx context.Context, chatID, text, groupID string, offerCheckin bool) deliveryOutcome {
+func (e *Engine) sendTelegramOutcome(ctx context.Context, chatID, text, groupID string, shift telegramShiftOptions) deliveryOutcome {
 	status, errMsg, providerResp := sendTelegram(ctx, e.deliveryCfg.clientFor("telegram"), chatID, text,
-		e.deliveryCfg.TelegramToken, groupID, offerCheckin)
+		e.deliveryCfg.TelegramToken, groupID, shift, e.deliveryCfg.PublicURL)
 	if status == "delivered" {
 		return delivered(strDefault(providerResp, "telegram_sendMessage"), 200, "")
 	}

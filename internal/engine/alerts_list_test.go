@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/nixys/nxs-anomaly/internal/model"
@@ -85,22 +86,47 @@ func TestPageArgDefaultsToFirstPage(t *testing.T) {
 func TestTelegramReplyPayloadPutsAButtonOnEveryGroup(t *testing.T) {
 	result := map[string]any{"response": alertsPage(listGroups(3), 1)}
 
-	payload := TelegramReplyPayload("-100500", "Open alert groups: 3", result)
+	payload := telegramReplyPayload("-100500", "Open alert groups: 3", result, "")
 
 	markup, ok := payload["reply_markup"].(map[string]any)
 	if !ok {
 		t.Fatalf("no keyboard on a list of 3 groups: %+v", payload)
 	}
 	rows := markup["inline_keyboard"].([]any)
-	if len(rows) != 3 {
-		t.Fatalf("keyboard has %d row(s), want one per group and no pager", len(rows))
+	// One row per group, plus the bulk row; no pager, since three groups fit.
+	if len(rows) != 4 {
+		t.Fatalf("keyboard has %d row(s), want one per group plus bulk and no pager", len(rows))
 	}
 	for i, raw := range rows {
-		button := raw.([]any)[0].(map[string]any)
-		data, _ := button["callback_data"].(string)
-		if _, ok := ParseTelegramCallbackData(data); !ok {
-			t.Errorf("row %d renders callback_data %q the callback path rejects", i, data)
+		for j, rawButton := range raw.([]any) {
+			data, _ := rawButton.(map[string]any)["callback_data"].(string)
+			if _, ok := ParseTelegramCallbackData(data); !ok {
+				t.Errorf("row %d button %d renders callback_data %q the callback path rejects", i, j, data)
+			}
 		}
+	}
+}
+
+// Opening a group and acting on it are two different buttons. They used to be
+// one: a row labelled with the group's title whose action was acknowledge, so
+// the label promised navigation and the tap changed the incident's state.
+func TestTelegramListingSeparatesOpeningFromActing(t *testing.T) {
+	result := map[string]any{"response": alertsPage(listGroups(1), 1)}
+
+	payload := telegramReplyPayload("-100500", "Open alert groups: 1", result, "")
+
+	rows := payload["reply_markup"].(map[string]any)["inline_keyboard"].([]any)
+	row := rows[0].([]any)
+	if len(row) != 2 {
+		t.Fatalf("group row has %d button(s), want the label and the acknowledge", len(row))
+	}
+	open := row[0].(map[string]any)
+	if got, _ := open["callback_data"].(string); !strings.HasPrefix(got, "show:") {
+		t.Errorf("the labelled button runs %q, want a read-only show", got)
+	}
+	act := row[1].(map[string]any)
+	if got, _ := act["callback_data"].(string); !strings.HasPrefix(got, "ack:") {
+		t.Errorf("the second button runs %q, want the acknowledge", got)
 	}
 }
 
@@ -118,7 +144,7 @@ func TestTelegramReplyPayloadPagerOnlyOffersReachablePages(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.label, func(t *testing.T) {
-			payload := TelegramReplyPayload("-100500", "x", map[string]any{"response": alertsPage(groups, c.page)})
+			payload := telegramReplyPayload("-100500", "x", map[string]any{"response": alertsPage(groups, c.page)}, "")
 			rows := payload["reply_markup"].(map[string]any)["inline_keyboard"].([]any)
 			pager := rows[len(rows)-1].([]any)
 			if len(pager) != len(c.want) {
@@ -134,19 +160,19 @@ func TestTelegramReplyPayloadPagerOnlyOffersReachablePages(t *testing.T) {
 }
 
 func TestTelegramReplyPayloadHasNoPagerWhenEverythingFits(t *testing.T) {
-	payload := TelegramReplyPayload("-100500", "x", map[string]any{"response": alertsPage(listGroups(2), 1)})
+	payload := telegramReplyPayload("-100500", "x", map[string]any{"response": alertsPage(listGroups(2), 1)}, "")
 
 	rows := payload["reply_markup"].(map[string]any)["inline_keyboard"].([]any)
-	if len(rows) != 2 {
-		t.Errorf("keyboard has %d row(s), want two groups and no navigation", len(rows))
+	if len(rows) != 3 {
+		t.Errorf("keyboard has %d row(s), want two groups plus bulk and no navigation", len(rows))
 	}
 }
 
 // An ordinary command answer — an acknowledge, a help text — carries no list and
 // must not grow a keyboard out of nothing.
 func TestTelegramReplyPayloadWithoutAListHasNoKeyboard(t *testing.T) {
-	payload := TelegramReplyPayload("-100500", "Acknowledged grp-1",
-		map[string]any{"response": map[string]any{"text": "Acknowledged grp-1"}})
+	payload := telegramReplyPayload("-100500", "Acknowledged grp-1",
+		map[string]any{"response": map[string]any{"text": "Acknowledged grp-1"}}, "")
 
 	if _, present := payload["reply_markup"]; present {
 		t.Errorf("keyboard attached to a plain answer: %+v", payload["reply_markup"])

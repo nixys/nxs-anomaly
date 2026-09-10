@@ -573,8 +573,9 @@ actually do:
   internal `id`, so without it commands from this channel will not match.
 
 For inbound commands (acknowledging an alert straight from the chat) configure a
-signature: `NXS_ANOMALY_SLACK_SIGNING_SECRET` or
-`NXS_ANOMALY_TELEGRAM_WEBHOOK_SECRET`. Without the secret the corresponding
+signature: `NXS_ANOMALY_SLACK_SIGNING_SECRET`,
+`NXS_ANOMALY_TELEGRAM_WEBHOOK_SECRET` or
+`NXS_ANOMALY_MATTERMOST_COMMAND_TOKEN`. Without the secret the corresponding
 endpoint answers `501` — unsigned commands are not accepted.
 
 ### Adding a Telegram bot
@@ -693,6 +694,55 @@ buttons are checked separately and without a channel — wait for the next alert
 your direct messages and press `Acknowledge`; the group should move to
 `acknowledged`, and the person acknowledging in the audit trail should be a human,
 not the `chatops:telegram` service principal.
+
+### The buttons under an alert
+
+All three platforms offer the same actions:
+
+| Button | What it does |
+|---|---|
+| `Acknowledge` | taken; escalation stops |
+| `Resolve` | closed |
+| `Silence 1h` / `4h` / `8h` | mute for a while; escalation stops, status becomes `silenced` |
+| `Open in nxs-anomaly` | a link to the group's page; needs `NXS_ANOMALY_PUBLIC_URL` |
+
+After a press the message is **not** replaced by the verdict: the alert keeps its
+text, the result is appended to it, and the only button left is the way back
+(`Undo acknowledge` after `Acknowledge`, `Reopen` after `Resolve`). A mis-tap from
+a phone is fixed where it happened, without opening the web UI. `Silence` has no
+undo: it lapses on its own.
+
+In the `/alerts` listing each row is two buttons: the label opens the group's
+card, `✓` acknowledges it. Below the rows are `Acknowledge all open` and
+`Silence all 1h` for a storm; both act on every open group the caller can see.
+
+### Adding a Mattermost bot
+
+A two-way bot needs two values, and they are different values.
+
+**1. Buttons (outbound and taps).** `NXS_ANOMALY_PUBLIC_URL` — the address
+Mattermost posts a tap back to — and `NXS_ANOMALY_MATTERMOST_ACTION_SECRET`, any
+secret you choose (`openssl rand -hex 32`). Mattermost does not sign these
+callbacks: the secret rides in the button's context and is compared in constant
+time. Without either the alert goes out plain — a button posting to a URL nobody
+answers is worse than no button.
+
+**2. Commands.** In Mattermost: *Integrations → Slash Commands → Add*. Request URL
+is `https://<your-host>/integrations/v1/chatops/mattermost/command`, method `POST`.
+Mattermost issues **its own** token; put that in
+`NXS_ANOMALY_MATTERMOST_COMMAND_TOKEN`. You cannot choose this token, which is why
+it is never the same value as the secret from step 1.
+
+Pick any trigger word (`/nxs`, `/oncall`) — it is dropped, and the arguments are
+the command: `/nxs ack grp_1` runs `ack grp_1`, and `/nxs` with no arguments runs
+`help`. This differs from Slack, where the trigger word is the verb and each
+command is registered separately.
+
+**3. Linking people.** For an action from Mattermost to be attributed to a person
+rather than to the bot, set that user's `mattermost_id` (in the UI, the field next
+to Telegram ID). Without it the command runs as the `chatops:mattermost` service
+principal with the responder role, and `duty` and `priority` refuse — they need a
+person. The same field for Slack is called `slack_id`.
 
 ## 9. A proxy for outbound delivery
 

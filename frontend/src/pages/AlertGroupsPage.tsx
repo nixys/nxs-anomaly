@@ -17,7 +17,7 @@ import {
   Text,
   Tooltip,
 } from '@mantine/core';
-import { useDisclosure, useHotkeys, useMediaQuery } from '@mantine/hooks';
+import { useDisclosure, useHotkeys, useMediaQuery, useReducedMotion } from '@mantine/hooks';
 import {
   IconBellOff,
   IconCheck,
@@ -49,6 +49,8 @@ import {
   StatusBadge,
 } from '../components/common';
 import { SEVERITY_LEVELS, severityStripe } from '../domain/severity';
+import { DURATION, EASE_SETTLE } from '../ui/motion';
+import { useVisibleInterval } from '../ui/useVisibleInterval';
 import { useI18n } from '../i18n/I18nProvider';
 import { useSeverityLabel, useStatusLabel } from '../i18n/domain';
 import type { StringKey } from '../i18n/I18nProvider';
@@ -168,7 +170,9 @@ export function AlertGroupsPage() {
   // One list or the other, never both: rendering the table and the cards
   // together and hiding one with CSS doubles the rows a screen reader walks.
   const compact = useMediaQuery('(max-width: 48em)', false);
+  const visibleInterval = useVisibleInterval(15_000);
   const [helpOpen, help] = useDisclosure(false);
+  const reduceMotion = useReducedMotion();
   const rowRefs = useRef<Array<HTMLTableRowElement | null>>([]);
 
   const integrations = useAllOf('integrations');
@@ -183,7 +187,10 @@ export function AlertGroupsPage() {
       sort: sort.field,
       order: sort.desc ? 'desc' : 'asc',
     },
-    { refetchInterval: live ? 15_000 : false },
+    // Polling stops when the tab is hidden: a queue nobody is looking at does
+    // not need a request every fifteen seconds, and a responder with six tabs
+    // open should not be six pollers.
+    { refetchInterval: live ? visibleInterval : false },
   );
 
   const groupAction = useGroupAction();
@@ -197,6 +204,10 @@ export function AlertGroupsPage() {
   }, [integrations.data]);
 
   const items = useMemo(() => groups.data?.items ?? [], [groups.data]);
+  // Which rows are new since the last refetch. Auto-refresh every 15 seconds
+  // otherwise changes the list in silence: something arrives while the responder
+  // is reading and nothing says so.
+  const arrived = useArrivals(items.map((item) => item.id));
   // "Nothing matched" and "nothing exists yet" are different screens with
   // different next moves: widen the filter, or connect a source.
   const filtered = Boolean(status || severity || integrationId);
@@ -347,7 +358,13 @@ export function AlertGroupsPage() {
       {/* The bulk bar exists only while something is selected. Three permanently
           disabled buttons taught people to read this strip as decoration. */}
       {selected.length > 0 && (
-        <Paper withBorder p="sm" mb="md" bg="var(--mantine-color-blue-light)">
+        <Paper
+          withBorder
+          p="sm"
+          mb="md"
+          bg="var(--mantine-color-blue-light)"
+          style={{ animation: reduceMotion ? undefined : `nxsSlideDown ${DURATION.panel}ms ${EASE_SETTLE}` }}
+        >
           <Group gap="sm" wrap="wrap">
             <Text size="sm" fw={500}>
               {plural('groups.selected', selected.length)}
@@ -430,6 +447,7 @@ export function AlertGroupsPage() {
                       group.integration_id ? integrationName.get(group.integration_id) : undefined
                     }
                     selected={selected.includes(group.id)}
+                    arrived={arrived.has(group.id)}
                     onToggle={() => toggleOne(group.id)}
                   />
                 ))}
@@ -469,6 +487,7 @@ export function AlertGroupsPage() {
                         group.integration_id ? integrationName.get(group.integration_id) : undefined
                       }
                       selected={selected.includes(group.id)}
+                      arrived={arrived.has(group.id)}
                       focused={index === cursor}
                       onFocus={() => setCursor(index)}
                       onToggle={() => toggleOne(group.id)}
@@ -528,6 +547,7 @@ function Row({
   group,
   integrationName,
   selected,
+  arrived,
   focused,
   rowRef,
   onFocus,
@@ -538,6 +558,7 @@ function Row({
   group: AlertGroup;
   integrationName: string | undefined;
   selected: boolean;
+  arrived: boolean;
   focused: boolean;
   rowRef: (node: HTMLTableRowElement | null) => void;
   onFocus: () => void;
@@ -546,6 +567,7 @@ function Row({
   onSilence: (minutes: number) => void;
 }) {
   const { t } = useI18n();
+  const reduce = useReducedMotion();
   return (
     <Table.Tr
       ref={rowRef}
@@ -553,10 +575,12 @@ function Row({
       bg={selected ? 'var(--mantine-color-blue-light)' : undefined}
       style={{
         // The stripe is the only thing that survives a squint: severity read as
-        // shape and position, before any badge is parsed.
+        // shape and position, before any badge is parsed. It never animates —
+        // it is what the eye compares down the column.
         boxShadow: `inset 4px 0 0 0 ${severityStripe(group.severity)}`,
         outline: focused ? '2px solid var(--mantine-color-blue-filled)' : undefined,
         outlineOffset: '-2px',
+        animation: arrived && !reduce ? `nxsArrive ${DURATION.arrival}ms ${EASE_SETTLE}` : undefined,
       }}
     >
       <Table.Td>
@@ -659,14 +683,17 @@ function MobileCard({
   group,
   integrationName,
   selected,
+  arrived,
   onToggle,
 }: {
   group: AlertGroup;
   integrationName: string | undefined;
   selected: boolean;
+  arrived: boolean;
   onToggle: () => void;
 }) {
   const { t } = useI18n();
+  const reduce = useReducedMotion();
   return (
     <Paper
       withBorder={false}
@@ -675,6 +702,7 @@ function MobileCard({
         borderBottom: '1px solid var(--mantine-color-default-border)',
         boxShadow: `inset 4px 0 0 0 ${severityStripe(group.severity)}`,
         background: selected ? 'var(--mantine-color-blue-light)' : undefined,
+        animation: arrived && !reduce ? `nxsArrive ${DURATION.arrival}ms ${EASE_SETTLE}` : undefined,
       }}
     >
       <Group align="flex-start" wrap="nowrap" gap="sm">
@@ -705,6 +733,37 @@ function MobileCard({
       </Group>
     </Paper>
   );
+}
+
+/**
+ * Ids that appeared since the previous render of the list.
+ *
+ * The first load is not an arrival: everything is new then, and a list that
+ * lights up entirely on open teaches people to ignore the highlight.
+ */
+function useArrivals(ids: string[]): Set<string> {
+  const seen = useRef<Set<string> | null>(null);
+  const [arrived, setArrived] = useState<Set<string>>(new Set());
+  const key = ids.join(',');
+
+  useEffect(() => {
+    const current = new Set(ids);
+    if (seen.current === null) {
+      seen.current = current;
+      return;
+    }
+    const fresh = new Set<string>();
+    for (const id of current) if (!seen.current.has(id)) fresh.add(id);
+    seen.current = current;
+    if (fresh.size === 0) return;
+    setArrived(fresh);
+    const timer = setTimeout(() => setArrived(new Set()), DURATION.arrival);
+    return () => clearTimeout(timer);
+    // ids is rebuilt every render; the joined key is what actually changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  return arrived;
 }
 
 /** Exported so other pages can reuse the same silence presets. */

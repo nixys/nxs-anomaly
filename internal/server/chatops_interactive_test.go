@@ -53,6 +53,7 @@ func tapSlackButton(t *testing.T, srv *Server, actionID, value string) map[strin
 		"type":    "block_actions",
 		"user":    map[string]any{"id": "U1", "username": "bob"},
 		"channel": map[string]any{"id": "C123"},
+		"message": map[string]any{"text": "[critical] disk full"},
 		"actions": []any{map[string]any{"action_id": actionID, "value": value}},
 	})
 	if err != nil {
@@ -148,6 +149,69 @@ func TestSlackButtonKeepsTheMessageWhenRefused(t *testing.T) {
 	}
 }
 
+// The message used to be replaced by the verdict alone — "Acknowledged grp-1" —
+// which threw away the incident the channel had been reading and left the id,
+// which nobody reads.
+func TestSlackSettledMessageKeepsTheAlertAndOffersTheUndo(t *testing.T) {
+	srv, _ := interactiveServer(t, "slack")
+
+	reply := tapSlackButton(t, srv, "ack", "grp-1")
+
+	if reply["replace_original"] != true {
+		t.Fatalf("replace_original = %v; an acknowledged alert must stop offering Acknowledge", reply["replace_original"])
+	}
+	text, _ := reply["text"].(string)
+	if !strings.Contains(text, "disk full") {
+		t.Errorf("text = %q, want the alert kept", text)
+	}
+	if !strings.Contains(text, "Acknowledged") {
+		t.Errorf("text = %q, want the verdict appended", text)
+	}
+	blocks, _ := reply["blocks"].([]any)
+	if len(blocks) != 2 {
+		t.Fatalf("blocks = %+v, want the text and the undo", blocks)
+	}
+	elements, _ := blocks[1].(map[string]any)["elements"].([]any)
+	if len(elements) != 1 {
+		t.Fatalf("got %d button(s) on a settled alert, want just the undo", len(elements))
+	}
+	if got := elements[0].(map[string]any)["action_id"]; got != "unack" {
+		t.Errorf("undo action = %v, want unack", got)
+	}
+}
+
+// A silence has nothing to take back — it lapses on its own — so the settled
+// message carries no button at all.
+func TestSlackSettledSilenceOffersNoUndo(t *testing.T) {
+	srv, _ := interactiveServer(t, "slack")
+
+	reply := tapSlackButton(t, srv, "silence:60", "grp-1")
+
+	blocks, _ := reply["blocks"].([]any)
+	if len(blocks) != 1 {
+		t.Errorf("blocks = %+v, want only the text", blocks)
+	}
+}
+
+// A Slack tap used to run as the platform service principal, so the group's log
+// named a bot as the actor.
+func TestSlackButtonIsAttributedToTheLinkedUser(t *testing.T) {
+	srv, st := interactiveServer(t, "slack")
+	if err := st.UpsertItem(t.Context(), "users", map[string]any{
+		"id": "usr-bob", "username": "bob",
+		"slack_id": "U1", "role": string(authz.RoleResponder),
+	}); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	tapSlackButton(t, srv, "ack", "grp-1")
+
+	by, _ := st.Row("alert_groups", "grp-1")["acknowledged_by"].(map[string]any)
+	if by == nil || by["id"] != "usr-bob" {
+		t.Errorf("acknowledged_by = %v, want the person who tapped", by)
+	}
+}
+
 func TestSlackButtonRejectsAnUnknownAction(t *testing.T) {
 	srv, st := interactiveServer(t, "slack")
 
@@ -159,6 +223,10 @@ func TestSlackButtonRejectsAnUnknownAction(t *testing.T) {
 }
 
 func TestMattermostButtonResolves(t *testing.T) {
+	// The undo button is a callback like any other Mattermost button, so it
+	// needs the address this deployment answers on. Set before the engine is
+	// built, which is where the delivery configuration is read.
+	t.Setenv("NXS_ANOMALY_PUBLIC_URL", "https://alerts.example.com")
 	srv, st := interactiveServer(t, "mattermost")
 
 	w, reply := tapMattermostButton(t, srv, "resolve", "grp-1", mattermostSecret)
@@ -173,10 +241,28 @@ func TestMattermostButtonResolves(t *testing.T) {
 	if !ok {
 		t.Fatalf("no update in reply: %+v", reply)
 	}
+	// The post keeps its message: an update that does not name one leaves it
+	// alone. Replacing it with the verdict — which is what this used to do —
+	// threw away the incident the channel had been reading and left the id.
+	if _, replaced := update["message"]; replaced {
+		t.Errorf("update names a message (%v); the alert text must be left as it stands", update["message"])
+	}
 	props, _ := update["props"].(map[string]any)
 	attachments, _ := props["attachments"].([]any)
-	if len(attachments) != 0 {
-		t.Errorf("attachments = %+v, want them emptied so the buttons go", attachments)
+	if len(attachments) != 1 {
+		t.Fatalf("attachments = %+v, want exactly the verdict", attachments)
+	}
+	attachment, _ := attachments[0].(map[string]any)
+	if text, _ := attachment["text"].(string); !strings.Contains(text, "Resolved") {
+		t.Errorf("attachment text = %q, want the verdict", text)
+	}
+	// The verdict's own attachment carries the way back, and nothing else.
+	actions, _ := attachment["actions"].([]any)
+	if len(actions) != 1 {
+		t.Fatalf("attachment has %d action(s), want just the undo", len(actions))
+	}
+	if got := actions[0].(map[string]any)["id"]; got != "unresolve" {
+		t.Errorf("undo action = %v, want unresolve", got)
 	}
 }
 

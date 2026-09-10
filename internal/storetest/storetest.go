@@ -638,6 +638,90 @@ func (m *Store) ClearCollections(_ context.Context, cols []string) error {
 func (m *Store) OldestDueEscalationAgeSeconds(context.Context) (float64, error)   { return 0, nil }
 func (m *Store) OldestPendingDeliveryAgeSeconds(context.Context) (float64, error) { return 0, nil }
 
+// InsightsSummaryQuery counts what the in-memory rows say, in the same shapes the
+// SQL returns: by status, by severity *level* (so "high" lands under "error",
+// which is the property the screen depends on), and per day.
+func (m *Store) InsightsSummaryQuery(_ context.Context, integrationID string, integrationIDs []string, from, to time.Time) (store.InsightsSummary, error) {
+	out := store.InsightsSummary{
+		GroupsByStatus:       map[string]int{},
+		GroupsByLevel:        map[string]int{},
+		NotificationsByState: map[string]int{},
+	}
+	allowed := map[string]bool{}
+	for _, id := range integrationIDs {
+		allowed[id] = true
+	}
+	inScope := func(row map[string]any) bool {
+		id, _ := row["integration_id"].(string)
+		if integrationID != "" && id != integrationID {
+			return false
+		}
+		if integrationIDs != nil && !allowed[id] {
+			return false
+		}
+		return true
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	byDay := map[string]*store.InsightsBucket{}
+	day := from.UTC().Truncate(24 * time.Hour)
+	for !day.After(to.UTC()) {
+		key := day.Format("2006-01-02")
+		byDay[key] = &store.InsightsBucket{Day: key}
+		day = day.Add(24 * time.Hour)
+	}
+	bucketFor := func(row map[string]any) *store.InsightsBucket {
+		created, _ := row["created_at"].(string)
+		if len(created) < 10 {
+			return nil
+		}
+		return byDay[created[:10]]
+	}
+
+	for _, row := range m.data["alert_groups"] {
+		if !inScope(row) {
+			continue
+		}
+		status, _ := row["status"].(string)
+		out.GroupsByStatus[status]++
+		severity, _ := row["severity"].(string)
+		out.GroupsByLevel[store.SeverityLevel(severity)]++
+		if b := bucketFor(row); b != nil {
+			b.Opened++
+			if status == "resolved" {
+				b.Resolved++
+			}
+		}
+	}
+	for _, row := range m.data["notifications"] {
+		if !inScope(row) {
+			continue
+		}
+		status, _ := row["status"].(string)
+		out.NotificationsByState[status]++
+		if b := bucketFor(row); b != nil {
+			switch status {
+			case "delivered":
+				b.Delivered++
+			case "failed":
+				b.Failed++
+			}
+		}
+	}
+
+	keys := make([]string, 0, len(byDay))
+	for k := range byDay {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		out.Trend = append(out.Trend, *byDay[k])
+	}
+	return out, nil
+}
+
 // QueryHistoryGroups models buildHistoryWhere closely enough for the filters the
 // engine actually sets.
 //

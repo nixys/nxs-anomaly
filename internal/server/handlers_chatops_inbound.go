@@ -48,6 +48,10 @@ type chatopsInboundConfig struct {
 	slackSigningSecret     string
 	telegramSecretToken    string
 	mattermostActionSecret string
+	// mattermostCommandToken is separate from the action secret because
+	// Mattermost generates it: an operator can paste it in, but cannot choose
+	// it, so the two values are never the same one.
+	mattermostCommandToken string
 }
 
 func chatopsInboundConfigFromEnv() chatopsInboundConfig {
@@ -55,6 +59,7 @@ func chatopsInboundConfigFromEnv() chatopsInboundConfig {
 		slackSigningSecret:     strings.TrimSpace(os.Getenv("NXS_ANOMALY_SLACK_SIGNING_SECRET")),
 		telegramSecretToken:    strings.TrimSpace(os.Getenv("NXS_ANOMALY_TELEGRAM_WEBHOOK_SECRET")),
 		mattermostActionSecret: strings.TrimSpace(os.Getenv("NXS_ANOMALY_MATTERMOST_ACTION_SECRET")),
+		mattermostCommandToken: strings.TrimSpace(os.Getenv("NXS_ANOMALY_MATTERMOST_COMMAND_TOKEN")),
 	}
 }
 
@@ -90,9 +95,8 @@ func (srv *Server) handleSlackCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	command := strings.TrimSpace(form.Get("command") + " " + form.Get("text"))
-	// Slack user ids are not the identifier this deployment stores for a person,
-	// so a Slack command still runs as the platform service principal.
-	srv.dispatchChatopsCommand(w, r, "slack", form.Get("channel_id"), form.Get("user_name"), "", command)
+	srv.dispatchChatopsCommand(w, r, "slack", form.Get("channel_id"), form.Get("user_name"),
+		form.Get("user_id"), command)
 }
 
 // handleSlackInteractive accepts a tap on a Slack message button.
@@ -131,11 +135,17 @@ func (srv *Server) handleSlackInteractive(w http.ResponseWriter, r *http.Request
 	}
 	var interaction struct {
 		User struct {
+			ID   string `json:"id"`
 			Name string `json:"username"`
 		} `json:"user"`
 		Channel struct {
 			ID string `json:"id"`
 		} `json:"channel"`
+		// What the message being acted on says, so the verdict can be appended
+		// to the alert rather than replace it.
+		Message struct {
+			Text string `json:"text"`
+		} `json:"message"`
 		Actions []struct {
 			ActionID string `json:"action_id"`
 			Value    string `json:"value"`
@@ -159,14 +169,16 @@ func (srv *Server) handleSlackInteractive(w http.ResponseWriter, r *http.Request
 		})
 		return
 	}
-	// Slack user ids are not what this deployment stores for a person, so the
-	// tap runs as the platform service principal — the same limitation the
-	// typed Slack command has.
-	out := srv.runChatopsCommand(r.Context(), "slack", interaction.Channel.ID, interaction.User.Name, "", command)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"replace_original": out.err == nil,
-		"text":             out.text,
-	})
+	out := srv.runChatopsCommand(r.Context(), "slack", interaction.Channel.ID, interaction.User.Name,
+		interaction.User.ID, command)
+	if out.err != nil {
+		// A refusal changes nothing, so the message keeps its buttons and only
+		// the person who tapped is told why.
+		writeJSON(w, http.StatusOK, map[string]any{"replace_original": false, "text": out.text})
+		return
+	}
+	writeJSON(w, http.StatusOK, engine.SlackSettledPayload(
+		interaction.Message.Text, out.text, engine.UndoActionFor(command), action.Value))
 }
 
 // handleMattermostAction accepts a tap on a Mattermost message button.
@@ -191,6 +203,7 @@ func (srv *Server) handleMattermostAction(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var action struct {
+		UserID    string `json:"user_id"`
 		UserName  string `json:"user_name"`
 		ChannelID string `json:"channel_id"`
 		Context   struct {
@@ -214,21 +227,65 @@ func (srv *Server) handleMattermostAction(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusOK, map[string]any{"ephemeral_text": "This button is no longer supported"})
 		return
 	}
-	out := srv.runChatopsCommand(r.Context(), "mattermost", action.ChannelID, action.UserName, "", command)
+	out := srv.runChatopsCommand(r.Context(), "mattermost", action.ChannelID, action.UserName,
+		action.UserID, command)
 	if out.err != nil {
 		// A refusal changes nothing, so the post keeps its buttons and only the
 		// person who tapped is told why.
 		writeJSON(w, http.StatusOK, map[string]any{"ephemeral_text": out.text})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"update": map[string]any{
-			"message": out.text,
-			// Emptying the attachments is what removes the buttons; omitting
-			// props would leave the original ones in place.
-			"props": map[string]any{"attachments": []any{}},
-		},
-	})
+	writeJSON(w, http.StatusOK, engine.MattermostSettledUpdate(out.text,
+		engine.UndoActionFor(command), action.Context.GroupID,
+		srv.eng.PublicURL(), secret))
+}
+
+// handleMattermostCommand accepts a Mattermost slash command.
+//
+// Mattermost posts these form-encoded with the token it generated for the
+// command, which is the only credential the request carries — it does not sign
+// them — so the token is compared in constant time, exactly as the action
+// callback's is.
+//
+// Until this existed the Mattermost bot was one-way: it could show two buttons
+// and take a tap, and there was no way to ask it anything. Every command the
+// engine supports was reachable from Telegram and Slack and from nowhere else.
+func (srv *Server) handleMattermostCommand(w http.ResponseWriter, r *http.Request) {
+	if !srv.allowChatopsInbound(w, r, "mattermost") {
+		return
+	}
+	token := srv.chatopsInbound.mattermostCommandToken
+	if token == "" {
+		writeJSON(w, http.StatusNotImplemented, map[string]any{
+			"error": "mattermost commands are not configured (NXS_ANOMALY_MATTERMOST_COMMAND_TOKEN)",
+		})
+		return
+	}
+	body, ok := readRawBody(w, r)
+	if !ok {
+		return
+	}
+	form, err := url.ParseQuery(string(body))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "malformed slash command payload"})
+		return
+	}
+	if subtleCompare(form.Get("token"), token) != 1 {
+		slog.Warn("chatops_inbound_rejected", "platform", "mattermost", "error", "command token mismatch")
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "command token mismatch"})
+		return
+	}
+	// One slash command carries all of them, and its trigger word is whatever
+	// the operator registered — "/nxs", "/oncall", anything. So the trigger is
+	// dropped and the arguments are the ChatOps command: "/nxs ack grp_1" runs
+	// "ack grp_1". Slack keeps its own shape, where the trigger word is the verb
+	// and each one is registered separately.
+	command := strings.TrimSpace(form.Get("text"))
+	if command == "" {
+		command = "help"
+	}
+	srv.dispatchChatopsCommand(w, r, "mattermost", form.Get("channel_id"), form.Get("user_name"),
+		form.Get("user_id"), command)
 }
 
 // handleTelegramCommand accepts a Telegram bot update.
@@ -342,11 +399,16 @@ func (srv *Server) handleTelegramCallback(w http.ResponseWriter, r *http.Request
 	// Paging replaces the listing in place. Sending a new message per tap would
 	// bury the chat under near-identical lists, and the one worth reading would
 	// be whichever happened to be last.
-	if reply := telegramPagerReply(cb, out); reply != nil {
+	publicURL := srv.eng.PublicURL()
+	if reply := telegramPagerReply(cb, out, publicURL); reply != nil {
 		writeJSON(w, http.StatusOK, reply)
 		return
 	}
-	if reply := telegramSettledReply(cb, out); reply != nil {
+	if reply := telegramCardReply(cb, out, publicURL); reply != nil {
+		writeJSON(w, http.StatusOK, reply)
+		return
+	}
+	if reply := telegramSettledReply(cb, command, out); reply != nil {
 		writeJSON(w, http.StatusOK, reply)
 		return
 	}
@@ -361,7 +423,7 @@ func (srv *Server) handleTelegramCallback(w http.ResponseWriter, r *http.Request
 // on screen is a button implying the work is still waiting. The verdict is
 // appended to the text the message already carries, and the keyboard is dropped
 // because there is nothing left to press.
-func telegramSettledReply(cb telegramCallback, out chatopsOutcome) map[string]any {
+func telegramSettledReply(cb telegramCallback, command string, out chatopsOutcome) map[string]any {
 	if out.err != nil || cb.messageID == 0 || cb.chatID == "" || cb.messageText == "" {
 		return nil
 	}
@@ -376,14 +438,33 @@ func telegramSettledReply(cb telegramCallback, out chatopsOutcome) map[string]an
 		"text":       cb.messageText + "\n\n✓ " + out.text,
 		// An empty inline_keyboard removes the buttons; omitting reply_markup
 		// entirely would leave the old ones in place.
-		"reply_markup":             map[string]any{"inline_keyboard": []any{}},
+		"reply_markup":             telegramUndoMarkup(command, response),
 		"disable_web_page_preview": true,
 	}
 }
 
+// telegramUndoMarkup leaves exactly one button on a settled alert: the one that
+// takes the action back.
+//
+// A mis-tapped Resolve from a phone was otherwise unfixable from the chat — the
+// only way back was to open the web UI, which is precisely what somebody paged
+// at three in the morning cannot conveniently do. An empty inline_keyboard is
+// what removes the buttons; omitting reply_markup would leave the old ones.
+func telegramUndoMarkup(command string, response map[string]any) map[string]any {
+	undo := engine.UndoActionFor(command)
+	groupID := ""
+	if g, ok := response["alert_group"].(map[string]any); ok {
+		groupID = utils.StrVal(g, "id")
+	}
+	if row := engine.TelegramUndoRow(undo, groupID); row != nil {
+		return map[string]any{"inline_keyboard": []any{row}}
+	}
+	return map[string]any{"inline_keyboard": []any{}}
+}
+
 // telegramPagerReply renders the webhook answer that redraws a listing in place,
 // or nil when this tap produced no listing to redraw.
-func telegramPagerReply(cb telegramCallback, out chatopsOutcome) map[string]any {
+func telegramPagerReply(cb telegramCallback, out chatopsOutcome, publicURL string) map[string]any {
 	if out.err != nil || cb.messageID == 0 || cb.chatID == "" {
 		return nil
 	}
@@ -391,9 +472,28 @@ func telegramPagerReply(cb telegramCallback, out chatopsOutcome) map[string]any 
 	if response == nil || response["alerts_page"] == nil {
 		return nil
 	}
-	reply := engine.TelegramReplyPayload(cb.chatID, out.text, out.result)
+	reply := engine.TelegramReplyPayload(cb.chatID, out.text, out.result, publicURL)
 	reply["method"] = "editMessageText"
 	reply["message_id"] = cb.messageID
+	return reply
+}
+
+// telegramCardReply answers a tap on a listing row with the group's own card as
+// a new message, or nil when this tap opened nothing.
+//
+// A new message rather than an edit: the listing is what the person came from
+// and will go back to, and replacing it with one group would cost them the other
+// thirty-nine.
+func telegramCardReply(cb telegramCallback, out chatopsOutcome, publicURL string) map[string]any {
+	if out.err != nil || cb.chatID == "" {
+		return nil
+	}
+	response, _ := out.result["response"].(map[string]any)
+	if response == nil || response["alert_group_card"] == nil {
+		return nil
+	}
+	reply := engine.TelegramReplyPayload(cb.chatID, out.text, out.result, publicURL)
+	reply["method"] = "sendMessage"
 	return reply
 }
 
@@ -426,15 +526,41 @@ func telegramID(v any) string {
 // dispatchChatopsCommand resolves the platform channel to a configured ChatOps
 // channel and runs the command through the same engine path as the internal
 // API, so behaviour cannot drift between the two entry points.
+// A refusal is answered in the platform's own shape, with 200, for the same
+// reason the button path already does: a chat platform reads a non-2xx as a
+// delivery it should retry, and re-delivering a command that was refused runs it
+// again. Telegram additionally ignores any body that is not a method call, so
+// the old JSON error object reached nobody — a typo answered with silence, and
+// the update was redelivered until Telegram gave up on it.
 func (srv *Server) dispatchChatopsCommand(w http.ResponseWriter, r *http.Request, platform, externalID, chatHandle, platformUserID, command string) {
 	out := srv.runChatopsCommand(r.Context(), platform, externalID, chatHandle, platformUserID, command)
-	switch {
-	case out.err != nil:
-		writeResult(w, http.StatusOK, nil, out.err)
-	case out.status != http.StatusOK:
-		writeJSON(w, out.status, map[string]any{"error": out.text})
+	if out.err != nil || out.status != http.StatusOK {
+		writeJSON(w, http.StatusOK, chatopsErrorReply(platform, externalID, out))
+		return
+	}
+	writeJSON(w, http.StatusOK, chatopsReply(platform, externalID, out.result, srv.eng.PublicURL()))
+}
+
+// chatopsErrorReply renders a refusal the way the platform will actually show
+// it. The text is the engine's own message, which already says what was wrong
+// and what to do about it.
+func chatopsErrorReply(platform, chatID string, out chatopsOutcome) map[string]any {
+	text := out.text
+	if text == "" && out.err != nil {
+		text = out.err.Error()
+	}
+	if text == "" {
+		text = "command failed"
+	}
+	switch platform {
+	case "slack", "mattermost":
+		// Ephemeral: a refusal belongs to whoever typed it, not to the channel.
+		return map[string]any{"response_type": "ephemeral", "text": text}
 	default:
-		writeJSON(w, http.StatusOK, chatopsReply(platform, externalID, out.result))
+		if chatID == "" {
+			return map[string]any{"ok": false, "text": text}
+		}
+		return map[string]any{"method": "sendMessage", "chat_id": chatID, "text": text}
 	}
 }
 
@@ -547,7 +673,7 @@ func (srv *Server) chatopsPrincipal(ctx context.Context, platform, platformUserI
 	if platformUserID == "" {
 		return service, true
 	}
-	user, err := srv.eng.FindUserByTelegramID(ctx, platformUserID)
+	user, err := srv.eng.FindUserByChatAccount(ctx, platform, platformUserID)
 	if err != nil {
 		// Fail closed on a lookup that did not run: reading an error as "nobody
 		// claims this id" would silently hand out the service principal's rights.
@@ -583,10 +709,10 @@ func (srv *Server) chatopsPrincipal(ctx context.Context, platform, platformUserI
 // a method call, so a typed command answered nothing at all. The reply is now
 // the method call — which also means the answer costs no second HTTP request to
 // the Bot API.
-func chatopsReply(platform, chatID string, result map[string]any) map[string]any {
+func chatopsReply(platform, chatID string, result map[string]any, publicURL string) map[string]any {
 	text := chatopsResponseText(result)
 	switch platform {
-	case "slack":
+	case "slack", "mattermost":
 		return map[string]any{"response_type": "ephemeral", "text": text}
 	default:
 		if chatID == "" {
@@ -594,7 +720,7 @@ func chatopsReply(platform, chatID string, result map[string]any) map[string]any
 			// diagnosable with curl.
 			return map[string]any{"ok": true, "text": text}
 		}
-		reply := engine.TelegramReplyPayload(chatID, text, result)
+		reply := engine.TelegramReplyPayload(chatID, text, result, publicURL)
 		reply["method"] = "sendMessage"
 		return reply
 	}

@@ -575,6 +575,9 @@ func (m *memStore) ListCollectionPage(_ context.Context, collection string, filt
 func (m *memStore) QueryHistoryGroups(context.Context, map[string]any, int, int) ([]map[string]any, int, error) {
 	return nil, 0, nil
 }
+func (m *memStore) InsightsSummaryQuery(context.Context, string, []string, time.Time, time.Time) (store.InsightsSummary, error) {
+	return store.InsightsSummary{}, nil
+}
 func (m *memStore) DeleteOldResolvedGroups(context.Context, string) (int, error) { return 0, nil }
 
 // SetAlertStatusForGroups is modelled rather than stubbed: whether a closed

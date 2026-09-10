@@ -315,6 +315,7 @@ func (srv *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /integrations/v1/chatops/telegram", srv.handleTelegramCommand)
 	mux.HandleFunc("POST /integrations/v1/chatops/slack/interactive", srv.handleSlackInteractive)
 	mux.HandleFunc("POST /integrations/v1/chatops/mattermost", srv.handleMattermostAction)
+	mux.HandleFunc("POST /integrations/v1/chatops/mattermost/command", srv.handleMattermostCommand)
 
 	// Management API (all require API key when configured)
 	mux.HandleFunc("/api/v1/", srv.handleAPI)

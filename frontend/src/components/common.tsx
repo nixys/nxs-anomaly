@@ -8,22 +8,26 @@ import {
   Code,
   Group,
   Loader,
+  Menu,
   Modal,
   Select,
+  Skeleton,
   Stack,
   Text,
   Title,
   Tooltip,
 } from '@mantine/core';
 import type { MantineColor } from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
+import { useDisclosure, useReducedMotion } from '@mantine/hooks';
 import {
   IconAlertTriangle,
+  IconDotsVertical,
   IconInbox,
   IconSortAscending,
   IconSortDescending,
   IconTrash,
 } from '@tabler/icons-react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useI18n } from '../i18n/I18nProvider';
 import type { StringKey } from '../i18n/I18nProvider';
@@ -31,6 +35,7 @@ import { describeError } from '../i18n/errors';
 import { EMPTY_VALUE, parseDate } from '../i18n/format';
 import { useStatusLabel, useSeverityLabel } from '../i18n/domain';
 import { SEVERITY_COLOR, SEVERITY_GLYPH, severityLevel } from '../domain/severity';
+import { DURATION, transition } from '../ui/motion';
 
 export function PageHeader({
   title,
@@ -67,6 +72,48 @@ export function LoadingState({ label }: { label?: string }) {
         </Text>
       </Stack>
     </Center>
+  );
+}
+
+/**
+ * A placeholder shaped like what is coming.
+ *
+ * A centred spinner tells the reader that something is happening and nothing
+ * about what; when the answer arrives the page jumps to a completely different
+ * height. A skeleton in the shape of the rows or cards that will land keeps the
+ * layout still and makes the wait legible.
+ *
+ * It appears no earlier than 200 ms. A fast answer that flashes a skeleton on
+ * the way reads as a glitch, and most answers here are fast.
+ */
+export function SkeletonState({
+  rows = 5,
+  variant = 'rows',
+}: {
+  rows?: number;
+  variant?: 'rows' | 'cards' | 'form';
+}) {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setVisible(true), 200);
+    return () => clearTimeout(timer);
+  }, []);
+  if (!visible) return null;
+
+  const height = variant === 'cards' ? 78 : variant === 'form' ? 46 : 34;
+  return (
+    <Stack gap={variant === 'rows' ? 4 : 'sm'} p={variant === 'rows' ? 'xs' : 0} aria-hidden>
+      {Array.from({ length: rows }, (_, index) => (
+        <Skeleton
+          key={index}
+          height={height}
+          radius="sm"
+          // Slightly uneven widths: a stack of identical bars reads as a
+          // pattern, an uneven one reads as text that has not arrived.
+          width={variant === 'rows' && index % 3 === 2 ? '82%' : '100%'}
+        />
+      ))}
+    </Stack>
   );
 }
 
@@ -123,6 +170,7 @@ export function QueryState<T>({
   isEmpty,
   emptyLabel,
   emptyAction,
+  skeleton,
   children,
 }: {
   query: { isPending: boolean; isError: boolean; error: unknown; data: T | undefined };
@@ -130,10 +178,12 @@ export function QueryState<T>({
   emptyLabel?: string;
   /** What the reader can do about the emptiness, when the page knows. */
   emptyAction?: ReactNode;
+  /** Wait with a placeholder shaped like the content instead of a spinner. */
+  skeleton?: { rows?: number; variant?: 'rows' | 'cards' | 'form' };
   children: (data: T) => ReactNode;
 }) {
   const { t } = useI18n();
-  if (query.isPending) return <LoadingState />;
+  if (query.isPending) return skeleton ? <SkeletonState {...skeleton} /> : <LoadingState />;
   if (query.isError) return <ErrorState error={query.error} />;
   if (query.data === undefined) return <EmptyState label={emptyLabel ?? t('common.noData')} />;
   if (isEmpty?.(query.data)) {
@@ -161,12 +211,41 @@ const STATUS_COLORS: Record<string, MantineColor> = {
   degraded: 'red',
 };
 
+/**
+ * A badge that acknowledges its own change.
+ *
+ * When an operator acknowledges an incident the row is often not the thing they
+ * are looking at — the toast is in the corner, the pointer is on the button. A
+ * short scale on the badge puts the confirmation where the change happened.
+ */
+function useChangeFlash(value: string | undefined) {
+  const reduce = useReducedMotion();
+  const previous = useRef(value);
+  const [flash, setFlash] = useState(false);
+  useEffect(() => {
+    if (previous.current !== undefined && previous.current !== value) {
+      setFlash(true);
+      const timer = setTimeout(() => setFlash(false), DURATION.swap);
+      previous.current = value;
+      return () => clearTimeout(timer);
+    }
+    previous.current = value;
+  }, [value]);
+  if (reduce) return undefined;
+  return {
+    transform: flash ? 'scale(1.12)' : 'scale(1)',
+    transition: transition('transform', DURATION.swap, { reduce }),
+  } as const;
+}
+
 export function StatusBadge({ status }: { status: string | undefined }) {
   const label = useStatusLabel();
+  const flash = useChangeFlash(status);
   if (!status) return <Text c="dimmed">{EMPTY_VALUE}</Text>;
+  const key = status.toLowerCase();
   return (
-    <Badge color={STATUS_COLORS[status] ?? 'gray'} variant="light" tt="none">
-      {label(status)}
+    <Badge color={STATUS_COLORS[key] ?? 'gray'} variant="light" tt="none" style={flash}>
+      {label(key)}
     </Badge>
   );
 }
@@ -319,6 +398,7 @@ export function ConfirmDeleteButton({
   loading,
   disabled,
   disabledReason,
+  asMenuItem,
 }: {
   label: string;
   onConfirm: () => void;
@@ -326,9 +406,58 @@ export function ConfirmDeleteButton({
   /** Set for objects the API will refuse to delete, e.g. Terraform-managed ones. */
   disabled?: boolean;
   disabledReason?: string;
+  /**
+   * Render as an item inside a row's overflow menu instead of a bare red icon.
+   *
+   * A destructive action sitting a few pixels from "edit", with no label, is a
+   * mis-click away from a dialog nobody meant to open. Behind the menu it takes
+   * a deliberate second click to reach, and it arrives with its name written on
+   * it.
+   */
+  asMenuItem?: boolean;
 }) {
   const [opened, { open, close }] = useDisclosure(false);
   const { t } = useI18n();
+
+  const confirmModal = (
+    <Modal opened={opened} onClose={close} title={t('common.confirmDeletion')} centered>
+      <Stack>
+        <Text size="sm">{t('common.confirmDeleteBody', { name: label })}</Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={close}>
+            {t('common.cancel')}
+          </Button>
+          <Button
+            color="red"
+            loading={loading}
+            onClick={() => {
+              onConfirm();
+              close();
+            }}
+          >
+            {t('common.delete')}
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
+  );
+
+  if (asMenuItem) {
+    return (
+      <>
+        <Menu.Item
+          color="red"
+          leftSection={<IconTrash size={14} />}
+          onClick={open}
+          disabled={disabled}
+        >
+          {disabled && disabledReason ? disabledReason : t('common.delete')}
+        </Menu.Item>
+        {confirmModal}
+      </>
+    );
+  }
+
   return (
     <>
       <Tooltip label={disabled ? (disabledReason ?? t('common.delete')) : t('common.delete')} withArrow>
@@ -347,27 +476,42 @@ export function ConfirmDeleteButton({
           </ActionIcon>
         </Box>
       </Tooltip>
-      <Modal opened={opened} onClose={close} title={t('common.confirmDeletion')} centered>
-        <Stack>
-          <Text size="sm">{t('common.confirmDeleteBody', { name: label })}</Text>
-          <Group justify="flex-end">
-            <Button variant="default" onClick={close}>
-              {t('common.cancel')}
-            </Button>
-            <Button
-              color="red"
-              loading={loading}
-              onClick={() => {
-                onConfirm();
-                close();
-              }}
-            >
-              {t('common.delete')}
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+      {confirmModal}
     </>
+  );
+}
+
+/**
+ * The actions of a table row: what is used often as icons, everything else — and
+ * everything destructive — behind one "⋯".
+ *
+ * Three unlabelled icons in a row, one of them red, is a design that asks the
+ * reader to aim. This keeps the common action one click away and puts the rest
+ * where a slip cannot reach them.
+ */
+export function RowActions({
+  children,
+  menu,
+  label,
+}: {
+  children?: ReactNode;
+  menu?: ReactNode;
+  label?: string;
+}) {
+  const { t } = useI18n();
+  if (!menu) return <Group gap={4} wrap="nowrap">{children}</Group>;
+  return (
+    <Group gap={4} wrap="nowrap" justify="flex-end">
+      {children}
+      <Menu withinPortal position="bottom-end">
+        <Menu.Target>
+          <ActionIcon variant="subtle" aria-label={label ?? t('common.actions')}>
+            <IconDotsVertical size={16} />
+          </ActionIcon>
+        </Menu.Target>
+        <Menu.Dropdown>{menu}</Menu.Dropdown>
+      </Menu>
+    </Group>
   );
 }
 

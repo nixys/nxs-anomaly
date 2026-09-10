@@ -40,10 +40,21 @@ ok() { printf 'check-docs ok    %s\n' "$1"; }
 # Checking the source is what keeps every derived copy honest, and checking the
 # English ones as they appear is what keeps a translation from outliving the
 # thing it describes.
+#
+# This script also ships into the community tree unchanged (it is not one of
+# the enterprise-only paths make-community.sh removes), and CONTRIBUTING.md
+# there tells a contributor to run it. In that tree docs/enterprise/ and
+# .gitlab-ci.yml do not exist, so both are detected rather than assumed —
+# without this a contributor's very first run would fail on paths the cut
+# deleted, not on anything they wrote.
 DOCS=(README.md SECURITY.md CONTRIBUTING.md CHANGELOG.md
       docs/enterprise/ru/*.md docs/community/ru/*.md
       docs/enterprise/en/*.md docs/community/en/*.md)
-DOCS_RU_SRC=docs/enterprise/ru
+if [ -d docs/enterprise/ru ]; then
+  DOCS_RU_SRC=docs/enterprise/ru
+else
+  DOCS_RU_SRC=docs/community/ru
+fi
 
 # ── 1. Every migration has a row in docs/MIGRATIONS.md ───────────────────────
 # The table drifted six versions behind the directory. Nobody notices, because a
@@ -155,20 +166,30 @@ done < <(grep -rnE 'integrations/v1/(<|\$|\{|[a-z]*key)' "${DOCS[@]}" 2>/dev/nul
 # informational after that job became a hard gate, and did not mention four jobs
 # added since. Job *semantics* cannot be checked here, but a job named in the
 # prose and absent from the pipeline can.
-# sed, not tr: `tr -d ':'` would turn "test:unit:" into "testunit" and report
-# every job as missing.
-grep -oE '^[a-z][a-z0-9:_-]*:' .gitlab-ci.yml | sed 's/:$//' | sort -u > "${WORK}/jobs_ci.txt"
-grep -ohE '`(test|deps|helm|build|release):[a-z0-9:_-]+`' CONTRIBUTING.md \
-  | tr -d '`' | sort -u > "${WORK}/jobs_docs.txt"
-bad_jobs=0
-while read -r job; do
-  [ -z "${job}" ] && continue
-  if ! grep -qx "${job}" "${WORK}/jobs_ci.txt"; then
-    fail "CONTRIBUTING.md names CI job ${job}, which .gitlab-ci.yml does not define"
-    bad_jobs=$((bad_jobs + 1))
-  fi
-done < "${WORK}/jobs_docs.txt"
-[ "${bad_jobs}" -eq 0 ] && ok "every CI job named in CONTRIBUTING.md exists"
+#
+# .gitlab-ci.yml is one of the enterprise-only paths — it does not exist in a
+# community checkout, where CONTRIBUTING.md instead names GitHub Actions job
+# ids in prose rather than in the `stage:job` backtick form this check looks
+# for, so there is nothing for this section to verify there. Skipped, not
+# failed: an absent file here is the cut working as designed, not drift.
+if [ -f .gitlab-ci.yml ]; then
+  # sed, not tr: `tr -d ':'` would turn "test:unit:" into "testunit" and report
+  # every job as missing.
+  grep -oE '^[a-z][a-z0-9:_-]*:' .gitlab-ci.yml | sed 's/:$//' | sort -u > "${WORK}/jobs_ci.txt"
+  grep -ohE '`(test|deps|helm|build|release):[a-z0-9:_-]+`' CONTRIBUTING.md \
+    | tr -d '`' | sort -u > "${WORK}/jobs_docs.txt"
+  bad_jobs=0
+  while read -r job; do
+    [ -z "${job}" ] && continue
+    if ! grep -qx "${job}" "${WORK}/jobs_ci.txt"; then
+      fail "CONTRIBUTING.md names CI job ${job}, which .gitlab-ci.yml does not define"
+      bad_jobs=$((bad_jobs + 1))
+    fi
+  done < "${WORK}/jobs_docs.txt"
+  [ "${bad_jobs}" -eq 0 ] && ok "every CI job named in CONTRIBUTING.md exists"
+else
+  ok "no .gitlab-ci.yml here (community checkout) — CI job check does not apply"
+fi
 
 echo
 if [ "${failures}" -gt 0 ]; then

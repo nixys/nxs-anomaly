@@ -39,13 +39,31 @@ export interface SetupStep {
   to?: string;
   /** The specific objects at fault, when the check named any. */
   items: string[];
+  /**
+   * Whether this step counts toward setupProgress's percentage. The "test"
+   * step is deliberately never 'done' (nothing records that a test alert was
+   * actually delivered and acknowledged — see its status below), so counting
+   * it toward the denominator would put a hard ceiling under 100% on every
+   * installation, including one that has finished configuring everything.
+   * That reads as the wizard being broken, not as "verification is worth
+   * repeating" — which is the message an always-actionable, unscored step
+   * sends instead.
+   */
+  countsTowardProgress: boolean;
 }
 
 export interface SetupCounts {
   teams: number;
   users: number;
   schedules: number;
-  chains: number;
+  /**
+   * Whether at least one escalation chain has a step, not merely whether one
+   * exists. The server accepts an empty draft chain — creating one is often
+   * the first thing someone does before adding steps — so counting chains
+   * would mark this step done while "who gets paged, and when" is still
+   * unanswered.
+   */
+  hasNonEmptyChain: boolean;
   integrations: number;
 }
 
@@ -101,6 +119,7 @@ export function buildSetupSteps(readiness: Readiness | undefined, counts: SetupC
       status: counts.users > 0 ? 'done' : 'todo',
       to: '/users',
       items: [],
+      countsTowardProgress: true,
     },
     {
       key: 'providers',
@@ -110,6 +129,7 @@ export function buildSetupSteps(readiness: Readiness | undefined, counts: SetupC
       detail: detailOf('notification_targets'),
       to: '/users',
       items: itemsOf('notification_targets'),
+      countsTowardProgress: true,
     },
     {
       key: 'schedule',
@@ -119,14 +139,16 @@ export function buildSetupSteps(readiness: Readiness | undefined, counts: SetupC
       detail: detailOf('schedule_coverage'),
       to: '/schedules',
       items: itemsOf('schedule_coverage'),
+      countsTowardProgress: true,
     },
     {
       key: 'chain',
       labelKey: 'setup.step.chain',
       descriptionKey: 'setup.step.chainDescription',
-      status: counts.chains > 0 ? 'done' : 'todo',
+      status: counts.hasNonEmptyChain ? 'done' : 'todo',
       to: '/escalation-chains',
       items: [],
+      countsTowardProgress: true,
     },
     {
       key: 'integration',
@@ -136,6 +158,7 @@ export function buildSetupSteps(readiness: Readiness | undefined, counts: SetupC
       detail: detailOf('routing') ?? detailOf('integrations'),
       to: '/integrations',
       items: itemsOf('routing'),
+      countsTowardProgress: true,
     },
     {
       key: 'test',
@@ -148,14 +171,16 @@ export function buildSetupSteps(readiness: Readiness | undefined, counts: SetupC
       status: 'todo',
       to: '/integrations',
       items: [],
+      countsTowardProgress: false,
     },
   ];
 }
 
 /** How far along setup is, for the progress indicator. */
 export function setupProgress(steps: SetupStep[]): { done: number; total: number; percent: number } {
-  const done = steps.filter((s) => s.status === 'done').length;
-  const total = steps.length;
+  const counted = steps.filter((s) => s.countsTowardProgress);
+  const done = counted.filter((s) => s.status === 'done').length;
+  const total = counted.length;
   return { done, total, percent: total === 0 ? 0 : Math.round((done / total) * 100) };
 }
 

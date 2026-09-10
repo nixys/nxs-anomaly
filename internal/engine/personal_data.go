@@ -35,7 +35,8 @@ const (
 // Listed explicitly rather than derived, and reused by both the erasure and its
 // verification: if the two disagreed, the verification would be checking a
 // different question from the one the erasure answered.
-var personalFields = []string{"name", "username", "email", "phone", "telegram_id", "oidc_subject"}
+var personalFields = []string{"name", "username", "email", "phone",
+	"telegram_id", "slack_id", "mattermost_id", "oidc_subject"}
 
 // ExportUserData returns everything this installation holds about one person.
 //
@@ -233,6 +234,11 @@ func (e *Engine) EraseUser(ctx context.Context, userID string) (map[string]any, 
 			current["email"] = ""
 			current["phone"] = ""
 			current["telegram_id"] = ""
+			// A chat account id is an identifier of a person like any other: left
+			// behind, an erased user is still reachable from a chat and still
+			// named as the actor on anything they press.
+			current["slack_id"] = ""
+			current["mattermost_id"] = ""
 			// No role means no sign-in, and off duty means no paging: an erased
 			// person must not be reachable, and must not appear as somebody the
 			// escalation could still try.
