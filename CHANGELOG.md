@@ -7,6 +7,76 @@ semantic versioning once it reaches 1.0.
 ## [Unreleased]
 
 ### Added
+- **Incident-response analytics: ten dashboards, and the schema that makes them
+  honest.** The single 23-panel dashboard is split into one file per question in
+  `docs/enterprise/grafana/` — overview, response latency, backlog, noise,
+  delivery, escalation, on-call load, schedule coverage, an episode explorer, and
+  data quality. Import `10-analytics-data-quality.json` first: an empty response
+  chart is produced both by a quiet week and by a consumer that stopped three days
+  ago, and only that one tells them apart. New views back them —
+  `nxs_episode_fact` (the response with its service, severity and a single
+  terminal outcome), `nxs_notification_fact` (per notification rather than per
+  provider call), `nxs_group_state_latest` (what is unfinished now),
+  `nxs_response_objectives` (targets as data, per service and severity, with a
+  validity interval) and `nxs_analytics_health`. Rationale, metric dictionary and
+  what the data cannot answer: `docs/enterprise/ru/INCIDENT_ANALYTICS_DASHBOARDS.md`.
+
+- **A delivery attempt now says what it was for.** `purpose` on
+  `notification.delivery_attempted` separates a page from a resolution notice, a
+  shift handover, a test click in the UI and a line written to the group log.
+  Without it every delivered message counted as a page, so pressing "test"
+  improved time-to-first-page.
+
+- **A group silenced by a maintenance window now emits the silence.** The
+  suppression was applied at group creation without an event, so an episode
+  suppressed on purpose was indistinguishable in ClickHouse from one nobody
+  answered.
+
+### Fixed
+- **Target attainment counted only the episodes that were answered.** The share
+  left out exactly the incidents nobody responded to, so it improved every time
+  one dragged on. It is now computed over a matured cohort: an episode whose
+  deadline has passed unanswered is late, one whose deadline has not passed is
+  pending, and neither is a success. `nxs_response_attainment` reports the counts;
+  shares are `sum(numerator)/sum(denominator)`, never an average of per-team
+  shares — one team answering 1 of 1 and another 0 of 99 is 1%, and averaging the
+  two says 50%.
+
+- **Percentiles were being averaged.** Panels read `avg(p95_…)` across teams and
+  days, which is not a p95. The daily views now carry mergeable
+  `quantileState` columns beside the plain percentiles, and every panel that spans
+  more than one team or day reads those through `quantileMerge`.
+
+- **An episode replaced by the next pass at its group stayed unresolved forever.**
+  It is now `superseded`, which is a terminal outcome rather than permanent
+  backlog.
+
+- **The first delivered attempt was treated as the first page**, so a resolution
+  notice or a test message set the page time. `first_paged_at` now requires
+  `purpose = 'page'`, and events published before that field existed report
+  unknown rather than being promoted to pages.
+
+- **A group opened and silenced in one transaction read as either state.** Both
+  events share a millisecond, and ordering by time alone picked one arbitrarily;
+  the state is now resolved by (time, position in the lifecycle).
+
+- **A late resolution never rebuilt its rollup.** The response rollup is keyed by
+  the day an episode opened, and the trailing window covers recent days only — an
+  episode opened five weeks ago and resolved this morning kept a row saying it was
+  never resolved. The rebuild now also names the opening days of episodes that
+  moved since.
+
+- **Stage intervals are guarded on their own ordering.** An acknowledgement
+  timestamped before the opening produced a negative MTTA that quietly dragged the
+  average down; such an episode now contributes NULL and is counted on the data
+  quality dashboard instead.
+
+- **Delivery rows carried no episode or team**, so a person paged twice about one
+  group in two separate episodes collapsed into one interruption and a team filter
+  silently showed global delivery numbers. Both ids are exposed, and the schedule
+  coverage view gained `report_id` so the per-check totals — which repeat on every
+  schedule row — are taken once.
+
 - **Both READMEs open with the product lockup.** `frontend/logo/horizontal.png` is
   the mark beside the name — the shape a document header wants, and the one the app
   chrome must not have, since the header and the sign-in screen set the name as real

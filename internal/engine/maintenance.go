@@ -268,13 +268,13 @@ func maintenanceIntegrationsArg(payload map[string]any) ([]string, error) {
 // state for the remainder of the window. A nil window silences nothing.
 //
 // Runs inside the ingest advisory lock against pre-loaded windows.
-func silenceForMaintenance(g model.AlertGroup, window map[string]any, now time.Time, ts string) {
+func silenceForMaintenance(g model.AlertGroup, window map[string]any, now time.Time, ts string) bool {
 	if window == nil {
-		return
+		return false
 	}
 	ends, err := utils.ParseDatetime(utils.StrVal(window, "ends_at"))
 	if err != nil {
-		return
+		return false
 	}
 	minutes := int(ends.Sub(now).Minutes())
 	if minutes < 1 {
@@ -285,9 +285,10 @@ func silenceForMaintenance(g model.AlertGroup, window map[string]any, now time.T
 	// to silence this particular group, a rule did, and the audit trail should
 	// not read as though somebody sat there silencing alerts at 3am.
 	if err := g.Silence(ts, utils.ToISO(ends), "Maintenance window: "+name, minutes, authz.SystemActor); err != nil {
-		return
+		return false
 	}
 	g.AppendLog("maintenance_silenced",
 		"Silenced by maintenance window "+name,
 		map[string]any{"window_id": utils.StrVal(window, "id"), "until": utils.ToISO(ends)})
+	return true
 }

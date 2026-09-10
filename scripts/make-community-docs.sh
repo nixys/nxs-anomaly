@@ -16,7 +16,7 @@ SRC="${ROOT_DIR}/docs/enterprise/ru"
 DST="${1:-${ROOT_DIR}/docs/community/ru}"
 
 # Documents that exist only for the enterprise edition.
-ENTERPRISE_ONLY=(KAFKA.md)
+ENTERPRISE_ONLY=(KAFKA.md INCIDENT_ANALYTICS_DASHBOARDS.md)
 
 rm -rf "${DST}"; mkdir -p "${DST}"
 for src in "${SRC}"/*.md; do
