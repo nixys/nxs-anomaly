@@ -475,6 +475,13 @@ func (e *Engine) notifyGroupResolved(state *store.State, g model.AlertGroup, tim
 
 // renderNotificationText renders the notification text using templates or a fallback.
 func renderNotificationText(notification, payload map[string]any, templateStr string) string {
+	// A report digest is not alert-shaped: it carries its own pre-rendered
+	// text (Report.PlainText) and has no title/severity/labels to fall back
+	// on. Rendering it through the alert template below would print
+	// "[unknown] Alert notification" above the digest.
+	if utils.StrVal(payload, "kind") == "report_digest" {
+		return utils.StrVal(payload, "text")
+	}
 	title := strDefault(utils.StrVal(payload, "title"), "Alert notification")
 	severity := strDefault(utils.StrVal(payload, "severity"), "unknown")
 	reason := strDefault(utils.StrVal(payload, "reason"), utils.StrVal(notification, "reason"))
