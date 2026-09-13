@@ -339,6 +339,9 @@ externalPostgres:
   database: nxs_anomaly
   sslmode: require
 
+
+
+# ── Networking ───────────────────────────────────────────────────────────────
 ingress:
   enabled: false
   # Name of the Ingress. Empty means the release's full name. Set it when two

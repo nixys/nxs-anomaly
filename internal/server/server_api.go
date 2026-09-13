@@ -349,6 +349,14 @@ func (srv *Server) routeAPI(w http.ResponseWriter, r *http.Request) {
 		v, err := eng.MobileResolveGroup(ctx, token, segment(path, 4))
 		writeResult(w, http.StatusOK, v, err)
 
+	// Stored reports remain readable without a configured ClickHouse source.
+	case method == http.MethodGet && path == "/api/v1/reports":
+		v, err := eng.ListCollectionPage(ctx, "reports", pageParams(r))
+		writeResult(w, http.StatusOK, v, err)
+	case method == http.MethodGet && pathDepth(path, "/api/v1/reports/") == 1:
+		v, err := eng.GetItem(ctx, "reports", lastSegment(path))
+		writeResult(w, http.StatusOK, v, err)
+
 	// Alert groups
 	case method == http.MethodGet && path == "/api/v1/alert-groups":
 		v, err := eng.ListCollectionPage(ctx, "alert_groups", pageParams(r))

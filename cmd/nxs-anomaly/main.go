@@ -53,7 +53,7 @@ func setupLogging() {
 // each to its handler. One list instead of a switch plus a hand-written usage
 // string, which drifted apart the moment a command was added to only one.
 var commandOrder = []string{
-	"serve", "healthcheck", "run-worker", "run-escalations",
+	"serve", "healthcheck", "run-worker", "run-escalations", "run-report",
 	"seed-demo", "print-state", "history", "alerts", "notifications",
 }
 
@@ -62,6 +62,7 @@ var commands = map[string]func([]string){
 	"healthcheck":     cmdHealthcheck,
 	"run-worker":      cmdRunWorker,
 	"run-escalations": cmdRunEscalations,
+	"run-report":      cmdRunReport,
 	"seed-demo":       cmdSeedDemo,
 	"print-state":     cmdPrintState,
 	"history":         cmdHistory,
@@ -237,6 +238,67 @@ func cmdRunEscalations(args []string) {
 		os.Exit(1)
 	}
 	printJSON(result)
+}
+
+// cmdRunReport generates and delivers the on-call quality digest (Enterprise;
+// see internal/engine/report.go). Intended to run from the weekly Helm
+// CronJob, but safe to run by hand: a period already reported for a team is
+// returned as-is rather than re-sent (GenerateAndDeliverOnCallQualityReport is
+// idempotent by team+period).
+func cmdRunReport(args []string) {
+	fs := flag.NewFlagSet("run-report", flag.ExitOnError)
+	team := fs.String("team", "", "comma-separated team IDs to report on; empty means one installation-wide report")
+	allTeams := fs.Bool("all-teams", false, "generate one report per existing team instead of --team")
+	parseFlags(fs, args)
+
+	ctx := context.Background()
+	s, err := store.NewPostgreSQLStore(ctx)
+	if err != nil {
+		slog.Error("store init failed", "err", err)
+		os.Exit(1)
+	}
+	defer s.Close()
+
+	eng := newEngine(s)
+	defer eng.Close()
+
+	var teamIDs []string
+	switch {
+	case *allTeams:
+		teams, err := eng.ListCollection(ctx, "teams")
+		if err != nil {
+			slog.Error("list teams failed", "err", err)
+			os.Exit(1)
+		}
+		for _, t := range teams {
+			teamIDs = append(teamIDs, strVal(t, "id"))
+		}
+	case *team != "":
+		for _, id := range strings.Split(*team, ",") {
+			if id = strings.TrimSpace(id); id != "" {
+				teamIDs = append(teamIDs, id)
+			}
+		}
+	default:
+		teamIDs = []string{""}
+	}
+
+	now := time.Now().UTC()
+	results := make([]map[string]any, 0, len(teamIDs))
+	failed := false
+	for _, id := range teamIDs {
+		report, err := eng.GenerateAndDeliverOnCallQualityReport(ctx, id, now)
+		if err != nil {
+			slog.Error("generate report failed", "team_id", id, "err", err)
+			failed = true
+			continue
+		}
+		results = append(results, report)
+	}
+	printJSON(results)
+	if failed {
+		os.Exit(1)
+	}
 }
 
 func cmdSeedDemo(args []string) {

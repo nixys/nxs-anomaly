@@ -114,6 +114,7 @@ var advisoryLock = map[string]int64{
 	// planned-maintenance windows
 	"create_maintenance_window": 72544241,
 	"update_maintenance_window": 72544242,
+	"generate_oncall_report":    72544243,
 }
 
 // Engine is the OnCall business logic engine.
@@ -150,6 +151,17 @@ type Engine struct {
 	// not be able to page them again for the event they already took. See
 	// ingestOneLocked.
 	reopenAckedOnNewAlert bool
+	// reportSource is the ClickHouse-backed reader the on-call quality report
+	// queries. Set by SetReportSource (enterprise builds only, when
+	// NXS_ANOMALY_CLICKHOUSE_HOST is configured); nil in the community edition
+	// and in any enterprise install that has not configured ClickHouse, which
+	// GenerateOnCallQualityReport reports as ErrReportsNotAvailable rather than
+	// treating as a bug.
+	reportSource reportDataSource
+	// reportRecipients is the digest's email distribution list
+	// (NXS_ANOMALY_REPORT_RECIPIENTS), read once at startup like the rest of
+	// DeliveryConfig.
+	reportRecipients []string
 }
 
 // coverageCheckInterval is how often the worker re-checks schedule coverage.
@@ -201,12 +213,38 @@ func New(s store.PostgreSQLStore) *Engine {
 		breaker:               newCircuitBreaker(cfg.CircuitBreakerThreshold, cfg.CircuitBreakerCooldown),
 		workerID:              utils.MakeID("wkr"),
 		reopenAckedOnNewAlert: os.Getenv("NXS_ANOMALY_REOPEN_ACKED_ON_NEW_ALERT") == "true",
+		reportRecipients:      splitAndTrim(os.Getenv("NXS_ANOMALY_REPORT_RECIPIENTS")),
 	}
 }
+
+// splitAndTrim splits a comma-separated env var into trimmed, non-empty parts.
+func splitAndTrim(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+// SetReportSource wires the ClickHouse-backed reader the on-call quality
+// report queries. Left nil, GenerateOnCallQualityReport reports
+// ErrReportsNotAvailable — the same state a community build or an enterprise
+// install with no ClickHouse DSN configured is always in.
+func (e *Engine) SetReportSource(src reportDataSource) { e.reportSource = src }
 
 // Close releases resources held by the engine. Must be called on shutdown to
 // flush and close the Kafka producer connection.
 func (e *Engine) Close() {
+	if closer, ok := e.reportSource.(interface{ Close() error }); ok {
+		if err := closer.Close(); err != nil {
+			slog.Error("clickhouse_report_source_close_failed", "error", err)
+		}
+	}
 	if e.kafkaProducer != nil {
 		if err := e.kafkaProducer.Close(); err != nil {
 			slog.Error("kafka_producer_close_failed", "error", err)

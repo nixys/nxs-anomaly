@@ -4,6 +4,72 @@
  */
 
 export interface paths {
+    "/api/v1/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List on-call quality reports (Enterprise) */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: components["parameters"]["Limit"];
+                    offset?: components["parameters"]["Offset"];
+                    /** @description Column to order by, validated against the collection's own columns; an unknown name is a 400 rather than a silently ignored parameter. Defaults to the newest-first column where the collection has one (alert groups: last_received_at, alerts: received_at, notifications: created_at) and to id elsewhere. */
+                    sort?: components["parameters"]["Sort"];
+                    /** @description Sort direction. Applies to the requested sort column, or to the collection default when none is named. */
+                    order?: components["parameters"]["Order"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["ReportList"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an on-call quality report (Enterprise) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Report"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/alert-groups": {
         parameters: {
             query?: never;
@@ -3235,6 +3301,82 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** @description An on-call quality digest (internal/engine/report.go). Generation requires Enterprise with ClickHouse; stored reports remain readable without it. Team-scoped readers cannot access installation-wide reports. required lists the keys Report.toMap() always writes; team_id is null for the installation-wide report. ack/channels/night_load/escalations/noise/late_episodes/exhausted_episodes carry the digest itself. */
+        Report: {
+            id: string;
+            team_id: string | null;
+            /** Format: date-time */
+            period_start: string;
+            /** Format: date-time */
+            period_end: string;
+            /** Format: date-time */
+            generated_at: string;
+            format: string;
+            ack: {
+                matured: number;
+                on_time: number;
+                late: number;
+                pending: number;
+                late_share: number;
+            };
+            late_episodes: {
+                alert_group_id: string;
+                episode_id: string;
+                service: string;
+                severity: string;
+                /** Format: date-time */
+                opened_at: string;
+                detail: number;
+            }[];
+            channels: {
+                channel: string;
+                alert_group_id: string;
+                attempts: number;
+                delivered: number;
+                failed: number;
+                skipped: number;
+                retries: number;
+                top_error_class: string;
+                failure_share: number;
+            }[];
+            night_load: {
+                pages_by_hour_utc: number[];
+                total: number;
+                night_share: number;
+                night_window_utc: string;
+            };
+            escalations: {
+                episodes: number;
+                exhausted: number;
+                reopened_new_alert: number;
+                reopened_unresolved: number;
+                exhausted_share: number;
+            };
+            exhausted_episodes: {
+                alert_group_id: string;
+                episode_id: string;
+                service: string;
+                severity: string;
+                /** Format: date-time */
+                opened_at: string;
+                detail: number;
+            }[];
+            noise: {
+                alertname: string;
+                service: string;
+                alert_group_id: string;
+                alerts: number;
+                episodes: number;
+                alerts_per_episode: number;
+            }[];
+            summary_text: string;
+        };
+        ReportPage: {
+            items: components["schemas"]["Report"][];
+            total: number;
+            limit: number;
+            offset: number;
+        };
         /** @description The required keys are the ones internal/model/alertgroup.go emits unconditionally for every group shape. The optional ones live in the model's Extra map: they are shape-dependent (a direct-paged group has no integration) or nullable state. */
         AlertGroup: {
             id: string;
@@ -3753,6 +3895,24 @@ export interface components {
             };
             content: {
                 "application/json": components["schemas"]["IntegrationPage"];
+            };
+        };
+        /** @description An on-call quality report (Enterprise) */
+        Report: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Report"];
+            };
+        };
+        /** @description A paginated list of on-call quality reports (Enterprise) */
+        ReportList: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ReportPage"];
             };
         };
         /** @description An alert group */

@@ -66,6 +66,56 @@ trust root covers `github.com`'s OIDC issuer. The `verify` job in `release.yml` 
 commands above against the just-published artifacts **with no registry credentials**, so a
 release cannot go green with a signature that does not check out.
 
+### Helm chart provenance
+
+The chart carries a **second, independent** signature: Helm's own GPG provenance
+(`.prov`), pushed as an extra layer of the same OCI artifact next to the chart. It exists
+because Artifact Hub's "Signed" badge and `helm pull --verify` both speak this format, not
+Sigstore — the cosign signature above proves *this workflow, from this repository, built
+it*; this one proves *the key named in [`Chart.yaml`](deploy/helm/nxs-anomaly/Chart.yaml)'s
+`artifacthub.io/signKey` blessed these exact bytes*. Neither substitutes for the other.
+
+```bash
+gpg --import assets/nxs-anomaly-helm-signing.pub.asc
+helm pull oci://ghcr.io/nixys/nxs-anomaly --version <chart-version> --verify
+```
+
+**Generating and rotating the key** (maintainer runbook; do this once, off the runner, and
+keep the result in the team password manager — never in this repository):
+
+```sh
+gpg --batch --pinentry-mode loopback --passphrase-fd 0 --quick-gen-key \
+  "Nixys Team (nxs-anomaly Helm chart signing)" rsa4096 sign never <<< "$(openssl rand -base64 24)"
+# ^ prompts nothing further; the passphrase above is generated, not chosen — save it now,
+# it is not recoverable from the key material.
+
+FPR="$(gpg --list-secret-keys --with-colons "nxs-anomaly Helm chart signing" \
+  | awk -F: '/^fpr:/ { print $10; exit }')"
+gpg --armor --export "$FPR" > nxs-anomaly-helm-signing.pub.asc
+gpg --export-secret-keys "$FPR" | base64 -w0 > nxs-anomaly-helm-signing.key.b64
+```
+
+Then:
+
+1. Commit `nxs-anomaly-helm-signing.pub.asc` as `packaging/community/assets/nxs-anomaly-helm-signing.pub.asc`
+   (it ships into the public repo verbatim — this is the file the verify commands above import).
+2. Set `artifacthub.io/signKey` in `deploy/helm/nxs-anomaly/Chart.yaml` to:
+   ```yaml
+   artifacthub.io/signKey: |
+     fingerprint: <FPR from above>
+     url: https://raw.githubusercontent.com/nixys/nxs-anomaly/main/assets/nxs-anomaly-helm-signing.pub.asc
+   ```
+3. In the GitHub repository's **Settings → Secrets and variables → Actions**, set
+   `HELM_GPG_PRIVATE_KEY` to the contents of `nxs-anomaly-helm-signing.key.b64` and
+   `HELM_GPG_PASSPHRASE` to the passphrase saved in step 1. Both are read only by
+   `release.yml`'s `chart` job.
+4. Delete the local `.key.b64`/passphrase copies once they are in the password manager and
+   GitHub; the private key must not exist anywhere but those two places.
+
+Rotation is the same sequence with a new key: `artifacthub.io/signKey` and the GitHub secrets
+move together in one release, and Artifact Hub simply starts reporting the new fingerprint —
+older, already-published chart versions keep verifying against the key that actually signed them.
+
 ### Dependency policy
 
 Two gates, one per ecosystem, built the same way:
