@@ -15,16 +15,19 @@ description: >-
   (API, worker and web frontend). Its datastores can be run in-cluster for
   dev/test or referenced as external managed services.
 type: application
+# Artifact Hub takes the package logo from `icon` and fetches it by URL; a path
+# inside the chart is not read.
+icon: https://raw.githubusercontent.com/nixys/nxs-anomaly/main/frontend/logo/logo-full.png
 # Both lines are stamped from ./VERSION by scripts/set-version.sh and gated by
 # scripts/check-version.sh. `appVersion` keeps the `v` because image.tag defaults
 # to it and the published image tags are the git tag verbatim (v0.1.29); the chart
 # version cannot, because chart versions must be SemVer. The release job
 # (release:helm-chart) repackages with the same pair.
-version: 0.1.104
-appVersion: "v0.1.104"
-home: https://github.com/nixys/nxs-anomaly/nxs-anomaly
+version: 0.1.105
+appVersion: "v0.1.105"
+home: https://github.com/nixys/nxs-anomaly
 sources:
-  - https://github.com/nixys/nxs-anomaly/nxs-anomaly
+  - https://github.com/nixys/nxs-anomaly
 maintainers:
   - name: Nixys Team
     email: hello@nixys.io

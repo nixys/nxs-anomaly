@@ -1,0 +1,5 @@
+# Artifact Hub repository metadata. The release workflow pushes this file to
+# ghcr.io/nixys/nxs-anomaly:artifacthub.io, and Artifact Hub marks the repository
+# "Verified publisher" when this ID matches the one it registered. The ID is not
+# a secret: Artifact Hub publishes it.
+repositoryID: 85c816ca-3360-4f11-9aef-98b42a551be3

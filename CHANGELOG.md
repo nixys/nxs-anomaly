@@ -7,6 +7,9 @@ semantic versioning once it reaches 1.0.
 ## [Unreleased]
 
 ### Fixed
+- **The community Helm chart's home and source links resolve.** The community
+  cut rewrote the project URL to `github.com/nixys/nxs-anomaly/nxs-anomaly`,
+  which Artifact Hub showed as the package home and which answers 404.
 - **The release acceptance job creates the directory it verifies the chart
   provenance into.** `helm pull --destination` does not create it (unlike
   `--untardir`), so the check failed after a successful download with
@@ -20,6 +23,10 @@ semantic versioning once it reaches 1.0.
   so the workflow now decodes it straight to the keyring file.
 
 ### Added
+- **Artifact Hub shows nxs-anomaly as a verified publisher, with a logo.** The
+  community release pushes `artifacthub-repo.yml` to the `artifacthub.io` tag of
+  `ghcr.io/nixys/nxs-anomaly`, and the chart names its logo in `icon`. The
+  community README carries a Terraform Registry badge.
 - **The community Helm chart carries GPG provenance for Artifact Hub.** The
   existing keyless cosign signature proves *this workflow, from this repo,
   built it*, but Artifact Hub's "Signed" badge and `helm pull --verify` read
