@@ -177,6 +177,7 @@ var advisoryLockCallSiteNames = []string{
 	"bulk_resolve_groups", "silence_group", "bulk_acknowledge_groups", "bulk_silence_groups",
 	"advance_policy_runs",
 	"create_maintenance_window", "update_maintenance_window",
+	"generate_oncall_report",
 }
 
 // TestAdvisoryLockRegistryIsFullyExercised keeps the list above honest in the

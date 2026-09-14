@@ -1,5 +1,7 @@
 # nxs-anomaly Community
 
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/nxs-anomaly-community-edition)](https://artifacthub.io/packages/helm/nxs-anomaly-community-edition/nxs-anomaly)
+
 ![nxs-anomaly](assets/horizontal.png)
 
 **Turn monitoring alerts into an on-call response — in your own infrastructure.**
@@ -11,15 +13,15 @@ notification attempts, acknowledgements and resolutions.
 
 The backend is a Go binary with PostgreSQL; the web interface ships separately.
 Community needs no message broker or cache and is released under Apache 2.0.
+Maintained by [Nixys](https://nixys.io/), with community contributions welcome.
 
 **[Start with Community](#quickstart)** ·
+[Install on Kubernetes](deploy/helm/nxs-anomaly/README.md) ·
 [Read the docs](#documentation) ·
 [Compare editions](#community-and-enterprise) ·
 [Discuss Enterprise with Nixys](https://nixys.io/contacts/)
 
-## Introduction
-
-### Who can use the tool?
+## Who is it for?
 
 - **SRE and DevOps teams** that already collect alerts and need on-call rotations,
   escalation policies and a clear owner for each response.
@@ -31,7 +33,7 @@ Community needs no message broker or cache and is released under Apache 2.0.
   response workflow in Community; consider Enterprise when you need corporate
   sign-in, access boundaries between teams or an analytics event stream.
 
-### Features
+## What Community includes
 
 | What your team needs | What Community provides |
 |---|---|
@@ -47,7 +49,7 @@ Community needs no message broker or cache and is released under Apache 2.0.
 The interface is available in English and Russian, with per-user language and
 timezone preferences.
 
-### How it works
+## How it works
 
 ```text
 Alertmanager / Grafana / Webhooks
@@ -79,8 +81,14 @@ You need Git, Docker with Docker Compose, and access to GitHub Container Registr
 The stack starts PostgreSQL, the API, a worker and the web interface from release
 images; Go and Node.js are only needed for a source build.
 
+Choose a tag from [Releases](https://github.com/nixys/nxs-anomaly/releases) and
+replace `REPLACE_WITH_RELEASE_TAG` below before running the commands. Keeping
+Compose files and image versions on the same release avoids configuration drift.
+
 ```bash
-git clone https://github.com/nixys/nxs-anomaly.git
+# Choose a published release tag, including the v prefix.
+RELEASE_TAG='REPLACE_WITH_RELEASE_TAG'
+git clone --branch "$RELEASE_TAG" --depth 1 https://github.com/nixys/nxs-anomaly.git
 cd nxs-anomaly
 cp .env.example .env
 ```
@@ -89,7 +97,7 @@ Edit `.env` before starting:
 
 | Variable | Set it to |
 |---|---|
-| `NXS_ANOMALY_VERSION` | A published tag from [Releases](https://github.com/nixys/nxs-anomaly/releases), including the `v` prefix |
+| `NXS_ANOMALY_VERSION` | The same published tag used for `RELEASE_TAG`, including the `v` prefix |
 | `POSTGRES_PASSWORD` | A strong database password; a randomly generated hexadecimal value avoids URL-encoding issues in the Compose DSN |
 | `NXS_ANOMALY_BOOTSTRAP_ADMIN_USERNAME` | Your initial administrator username (`admin` is prefilled) |
 | `NXS_ANOMALY_BOOTSTRAP_ADMIN_PASSWORD` | A strong administrator password |
@@ -160,7 +168,7 @@ notification's delivery status. See [troubleshooting](docs/community/en/SETUP.md
 |---|---|
 | Local evaluation or a VM with Docker | Use Compose above; [Setup](docs/community/en/SETUP.md) explains configuration and source builds |
 | Bare metal or a VM without Docker | Run the Go service against PostgreSQL and serve the web interface; see [From source](docs/community/en/SETUP.md#from-source) |
-| Kubernetes | Use the [Helm chart](deploy/helm/nxs-anomaly) and [deployment guide](docs/community/en/DEPLOY.md#kubernetes); configure your database, secrets and ingress |
+| Kubernetes | Use the [Helm chart installation guide](deploy/helm/nxs-anomaly/README.md) and [deployment guide](docs/community/en/DEPLOY.md#kubernetes); configure your database, secrets and ingress |
 | Production | Plan external PostgreSQL, TLS, authentication, provider credentials, [hardening](docs/community/en/SECURITY_PROFILE.md) and [backup/restore](docs/community/en/BACKUP_RESTORE.md) |
 
 The Compose example binds ports to loopback and uses HTTP for local evaluation.
@@ -201,6 +209,7 @@ team membership in Community does not create an access boundary.
 | Corporate single sign-on through OIDC | — | Included; configure your identity provider |
 | Access scoping by team | — | Included; enable and configure team scoping |
 | Lifecycle event stream for external analytics | — | Included; export through Kafka for downstream processing, such as ClickHouse |
+| On-call quality reports | — | Overdue ACKs, delivery problems, night-time load, escalation and noise analysis; requires ClickHouse analytics |
 | Support | Community issues, best effort | Commercial support; scope and response terms agreed with Nixys |
 
 ### When to consider Enterprise
@@ -210,7 +219,9 @@ team membership in Community does not create an access boundary.
 - **Several teams share the installation but need different visibility.**
   Configure team access boundaries alongside the existing roles.
 - **You need to analyze incident lifecycles in your data platform.** Export
-  events to build reporting across alerts, acknowledgements and resolutions.
+  events through Kafka for downstream analytics. With ClickHouse configured,
+  on-call quality reports help identify overdue acknowledgements, night-time
+  load, repeated escalations and noisy sources, with links to the affected alerts.
 - **Your operations need an agreed support response.** Discuss deployment and
   support requirements with Nixys.
 
@@ -253,6 +264,7 @@ Report vulnerabilities privately using [SECURITY.md](SECURITY.md).
 ## Contributing
 
 Bug reports, documentation improvements and pull requests are welcome.
+For a substantial change, open an issue first to discuss the use case and approach.
 [CONTRIBUTING.md](CONTRIBUTING.md) explains the commit format and required checks.
 
 This public repository is generated from an internal source repository.

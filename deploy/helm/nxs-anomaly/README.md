@@ -1,315 +1,328 @@
-# Helm chart nxs-anomaly
+# nxs-anomaly Community Helm chart
 
-Официальный chart для [nxs-anomaly](../../../README.md): API, worker и веб-интерфейс,
-с подключаемыми сервисами данных и выбираемым источником секретов.
+![nxs-anomaly](https://raw.githubusercontent.com/nixys/nxs-anomaly/main/deploy/helm/nxs-anomaly/logo.png)
 
-## Быстрый старт
+**Self-hosted alerting and on-call response for Kubernetes.**
 
-Разработка / kind (всё встроенное, dev-секрет рендерится из values):
+[nxs-anomaly Community](https://github.com/nixys/nxs-anomaly) receives alerts from
+Alertmanager, Grafana and webhooks, groups repeated events, routes notifications
+to the person on call, and escalates unanswered alerts. This chart deploys the
+API, background worker and web interface. PostgreSQL stores application data;
+Community does not require a message broker, analytics database or cache.
+
+Community is licensed under **Apache 2.0**. The core alerting workflow is included;
+[Enterprise](#community-and-enterprise) adds organization-wide access controls and
+analytics. This chart installs Community only.
+
+[Quickstart](#quickstart) · [Production](#production-installation) ·
+[Configuration](#configuration-reference) · [Support](#support-and-contributing)
+
+## Prerequisites
+
+- A Kubernetes cluster and `kubectl` access with permission to create the chart's resources.
+- Helm 3.8 or later with OCI support and access to GitHub Container Registry.
+- PostgreSQL: use the bundled `postgres:17-alpine` instance for evaluation or an
+  externally managed database for production.
+- For bundled PostgreSQL, a working default StorageClass, or an explicitly set
+  `postgresql.persistence.storageClass`.
+- An ingress controller and a TLS certificate when publishing the interface.
+  Optional integrations need their own operators and CRDs; this chart does not install them.
+
+## Quickstart
+
+This example creates a local evaluation with persistent PostgreSQL and an initial
+administrator. It uses HTTP through a loopback port-forward. You also need Bash
+and OpenSSL for the password generation commands.
+
+Choose a published version from [Releases](https://github.com/nixys/nxs-anomaly/releases).
+Set `CHART_VERSION` below before running the commands: chart versions use `X.Y.Z`,
+without the `v` prefix. Application images use `vX.Y.Z`; leave image tags unset to
+use the matching chart `appVersion`.
 
 ```bash
-helm install nxs-anomaly deploy/helm/nxs-anomaly \
-  --set inlineSecret.enabled=true \
-  --set postgresql.enabled=true
+CHART_VERSION='REPLACE_WITH_CHART_VERSION'
+umask 077
+cat > evaluation-values.yaml <<EOF_VALUES
+postgresql:
+  enabled: true
+  auth:
+    password: "$(openssl rand -hex 24)"
+inlineSecret:
+  enabled: true
+  data:
+    NXS_ANOMALY_BOOTSTRAP_ADMIN_USERNAME: "admin"
+    NXS_ANOMALY_BOOTSTRAP_ADMIN_PASSWORD: "$(openssl rand -hex 24)"
+config:
+  NXS_ANOMALY_SESSION_COOKIE_SECURE: "false"
+EOF_VALUES
+
+helm install nxs-anomaly oci://ghcr.io/nixys/nxs-anomaly \
+  --version "$CHART_VERSION" --namespace nxs-anomaly --create-namespace \
+  --values evaluation-values.yaml --wait --timeout 5m
+
+kubectl --namespace nxs-anomaly port-forward service/nxs-anomaly-frontend 3100:8080
 ```
 
-Production (OCI-chart + внешний managed PostgreSQL + production-пресет):
+Open [http://localhost:3100](http://localhost:3100). Sign in as `admin` using the
+administrator password saved in `evaluation-values.yaml`. Keep this file private
+and reuse it for this installation; regenerating it does not rotate an existing
+database password. Inline secrets are also stored in Helm release data.
+
+In **Setup**, create people and notification targets, a team and current on-call
+rotation, an escalation chain and an integration. Configure channel credentials
+for the worker, send a test alert and confirm that a notification reaches its
+recipient and can be acknowledged. The default `log` target only writes to logs.
+See the [first-alert walkthrough](https://github.com/nixys/nxs-anomaly#get-your-first-notification).
+
+HTTP cookies are enabled only for this local example. Use HTTPS and keep
+`NXS_ANOMALY_SESSION_COOKIE_SECURE: "true"` for a published installation.
+
+## Production installation
+
+Provision PostgreSQL, database backups, DNS, an ingress controller and a TLS
+Secret first. The example below assumes an ingress class named `nginx` and a TLS
+Secret named `nxs-anomaly-tls` in the application namespace. Replace the example
+hostnames and credentials with your own.
+
+Create a private `credentials.env` file containing these keys. URL-encode special
+characters in the PostgreSQL username and password; do not put shell quotes
+around values in this file.
+
+```dotenv
+NXS_ANOMALY_DB_DSN=postgres://nxs_anomaly:REPLACE_WITH_PASSWORD@pg.example.com:5432/nxs_anomaly?sslmode=require
+NXS_ANOMALY_BOOTSTRAP_ADMIN_USERNAME=admin
+NXS_ANOMALY_BOOTSTRAP_ADMIN_PASSWORD=REPLACE_WITH_STRONG_PASSWORD
+```
+
+Add the notification provider credentials your worker needs; see
+[Configuration](https://github.com/nixys/nxs-anomaly/blob/main/docs/community/en/CONFIGURATION.md).
+The sample DSN requires encrypted transport. For database server identity
+verification, configure `verify-full` with the appropriate trusted CA.
 
 ```bash
-VERSION=0.1.95          # устанавливаемый релиз; образы имеют тег v$VERSION
-HELM_PROJECT="<значение HARBOR_HELM_PROJECT>"
-
-# 1. Создать Secret как минимум с NXS_ANOMALY_DB_DSN (и учётными данными провайдеров).
-kubectl create secret generic nxs-anomaly-env \
-  --from-literal=NXS_ANOMALY_DB_DSN='postgres://user:pass@pg.prod:5432/nxs_anomaly?sslmode=require'
-# 2. Аутентифицироваться и получить chart (production-пресет лежит внутри него).
-echo "$HELM_REGISTRY_PASSWORD" | helm registry login ghcr.io/nixys \
-  -u "$HELM_REGISTRY_USER" --password-stdin
-helm pull "oci://ghcr.io/nixys/nxs-anomaly" \
-  --version "$VERSION" --untar
-# 3. Установить с пресетом.
-helm install nxs-anomaly nxs-anomaly/ \
-  -f nxs-anomaly/values-production.yaml \
-  --set existingSecret.name=nxs-anomaly-env \
-  --set externalPostgres.host=pg.prod \
-  --set ingress.enabled=true --set ingress.host=nxs-anomaly.example.com
+chmod 600 credentials.env
+kubectl create namespace nxs-anomaly --dry-run=client -o yaml | kubectl apply -f -
+kubectl --namespace nxs-anomaly create secret generic nxs-anomaly-env \
+  --from-env-file=credentials.env
 ```
 
-### Правило «одна версия, один префикс»
+Save the following as `production-values.yaml`:
 
-| Строка | Форма | Где |
+```yaml
+existingSecret:
+  enabled: true
+  name: nxs-anomaly-env
+config:
+  NXS_ANOMALY_PROFILE: "production"
+  # Community is one shared access domain; team isolation requires Enterprise.
+  NXS_ANOMALY_TEAM_SCOPING: "false"
+ingress:
+  enabled: true
+  className: nginx
+  host: alerts.example.com
+  tls:
+    - secretName: nxs-anomaly-tls
+      hosts:
+        - alerts.example.com
+```
+
+```bash
+helm install nxs-anomaly oci://ghcr.io/nixys/nxs-anomaly \
+  --version "$CHART_VERSION" --namespace nxs-anomaly \
+  --values production-values.yaml --wait --timeout 5m
+```
+
+Open your configured HTTPS hostname and complete Setup. The production profile
+requires external datastores and managed secrets, retains secure session cookies
+and the outbound webhook SSRF guard, and checks replica/PDB settings. It does not
+provision database backups, certificates or notification providers. Review the
+[security profile](https://github.com/nixys/nxs-anomaly/blob/main/docs/community/en/SECURITY_PROFILE.md)
+and [capacity guide](https://github.com/nixys/nxs-anomaly/blob/main/docs/community/en/CAPACITY.md)
+before using the service for on-call response.
+
+## Configuration reference
+
+These are the chart defaults, before either example above is applied. Inspect
+all values for your selected release with:
+
+```bash
+helm show values oci://ghcr.io/nixys/nxs-anomaly --version "$CHART_VERSION" > chart-defaults.yaml
+```
+
+| Value | Default | Purpose |
 |---|---|---|
-| Git-тег | `v$VERSION` | на что реагирует релизный пайплайн |
-| Теги образов | `v$VERSION` | `ghcr.io/nixys/nxs-anomaly`, `…/nxs-anomaly-frontend` |
-| `appVersion` chart-а | `v$VERSION` | `image.tag` по умолчанию равен ему, то есть это *и есть* тег, который разрешит рендер |
-| `version` chart-а | `$VERSION` | версии chart-а обязаны быть SemVer, поэтому без `v` |
+| `image.tag`, `frontend.image.tag` | `""` | Use the chart's `appVersion` |
+| `api.replicaCount` | `2` | API replicas |
+| `worker.replicaCount` | `1` | Background worker replicas |
+| `frontend.enabled`, `frontend.replicaCount` | `true`, `2` | Web interface and same-origin API proxy |
+| `existingSecret.enabled`, `existingSecret.name` | `false`, `""` | Use a Secret in the release namespace |
+| `externalSecrets.enabled` | `false` | Create an External Secrets Operator resource |
+| `vaultSecretOperator.enabled` | `false` | Create a Vault Secrets Operator resource |
+| `inlineSecret.enabled` | `false` | Put credentials in Helm values; evaluation only |
+| `postgresql.enabled` | `false` | Deploy a single-node PostgreSQL StatefulSet |
+| `postgresql.auth.password` | `change-me` | Replace before enabling bundled PostgreSQL |
+| `postgresql.persistence.enabled`, `.size` | `true`, `5Gi` | Bundled database storage |
+| `externalPostgres.sslmode` | `require` | TLS mode when the chart assembles a DSN |
+| `config.NXS_ANOMALY_PROFILE` | `""` | Set to `production` for the security profile |
+| `config.NXS_ANOMALY_SESSION_COOKIE_SECURE` | `"true"` | Require HTTPS for session cookies |
+| `ingress.enabled` | `false` | Publish the frontend through an Ingress |
+| `networkPolicy.enabled` | `false` | Enable chart NetworkPolicies; requires an enforcing CNI |
+| `serviceMonitor.enabled`, `prometheusRule.enabled` | `false`, `false` | Prometheus Operator integration |
+| `tracing.enabled` | `false` | OTLP/HTTP tracing; also set `tracing.endpoint` |
+| `tests.acceptance.enabled` | `false` | Opt-in test that writes a canary alert |
 
-Все они происходят из [`VERSION`](../../../VERSION) в корне репозитория:
-`scripts/set-version.sh` проставляет их, а `scripts/check-version.sh` (pre-commit,
-pre-push и CI-джоба `test:version`) отклоняет релиз, где они расходятся. Потеря `v`
-в `appVersion` — не косметика: из-за неё рендер укажет на тег образа, который никогда
-не публиковался.
+Exactly one secret source must be enabled. Its resulting Secret must contain
+`NXS_ANOMALY_DB_DSN`; add bootstrap credentials for a fresh installation and
+provider credentials as needed. Inline mode can assemble a DSN from
+`postgresql.auth` or `externalPostgres` values. With an existing Secret, its DSN
+is authoritative; `externalPostgres.*` does not override it.
 
-Пресет [`values-production.yaml`](values-production.yaml) включает production-профиль
-безопасности (SSRF-гейт, лимиты частоты, circuit breaker, запрет inline-секретов),
-NetworkPolicy, ServiceMonitor и PrometheusRule и требует внешнюю базу и Secret,
-управляемый оператором. **Preflight** роняет рендер, если production-профиль
-скомбинирован с inline-секретами, встроенной базой или ослабленным флагом
-SSRF/secure-cookie: наполовину переведённая в production инсталляция останавливается
-громко, а не уезжает небезопасной.
+External Secrets Operator and Vault Secrets Operator must already be installed.
+For Vault, configure either an existing `vaultSecretOperator.vaultAuthRef` or
+`vaultSecretOperator.vaultAuth.create`; the chart does not create a
+`VaultConnection`.
 
-### Валидация до рендера
+Use at most one ingress option: `ingress.enabled`,
+`istio.virtualService.enabled` or `gatewayAPI.httpRoute.enabled`. Istio and
+Gateway API require their respective controllers and CRDs. Route traffic through
+the frontend for the web interface and same-origin API access.
 
-Два независимых механизма, и они дополняют друг друга:
+With NetworkPolicy enabled, configure ingress for your ingress controller and
+Prometheus through `networkPolicy.extraIngress` as needed. Review the rendered
+policies against your cluster; API/worker outbound access is not restricted to a
+list of notification providers. `rateLimits.webhookRatePerCluster` and
+`rateLimits.apiRatePerCluster` divide a rate across API replicas with independent
+per-pod buckets; they are not a coordinated global quota.
 
-- [`values.schema.json`](values.schema.json) — форма и типы. Helm проверяет его
-  на `install`/`upgrade`/`lint`, поэтому `sslmode: bogus` или строка вместо
-  числа реплик отклоняются раньше, чем шаблон начнёт рендериться.
-- **Preflight** в `templates/_helpers.tpl` — сочетания, которые схема выразить
-  не может: два одновременно включённых источника секретов, production с
-  встроенным PostgreSQL, пустой хост внешней базы там, где чарт сам собирает
-  DSN, число реплик (и PDB, который не даёт слить ни один под), трейсинг без
-  endpoint, невыставленный team scoping, небезопасный `sslmode`, NetworkPolicy
-  с ServiceMonitor, но без доступа Prometheus.
+Helm validates types with `values.schema.json` and checks incompatible settings
+before rendering. The [deployment guide](https://github.com/nixys/nxs-anomaly/blob/main/docs/community/en/DEPLOY.md#kubernetes)
+provides additional context; use the files from your release tag when their
+contents differ from `main`.
 
-Схема отклоняет значение неправильного вида, preflight — правильное значение в
-неправильном сочетании; сообщение об ошибке во втором случае объясняет, чем это
-плохо, а не только что это запрещено.
+## Verify release artifacts
 
-## Проверьте подписи перед установкой
+The Community release workflow uses keyless cosign signatures for the chart and
+container images. The chart additionally has GPG-signed Helm provenance (`.prov`).
+These mechanisms verify artifact integrity and signer identity, not freedom from
+vulnerabilities. Verify the selected release before installation.
 
-Каждый релиз по тегу подписывает и образы, **и** chart через cosign ключевой парой
-проекта (та же модель, что в
-[nxs-universal-chart](https://github.com/apps/nxs-universal-chart)). Публичная
-половина публикуется с каждым релизом как артефакт `cosign.pub` джобы
-`release:verify` (закрепите собственную копию — ключ, полученный оттуда же, откуда и
-артефакт, за который он ручается, сам по себе доказывает мало):
+For cosign, check the exact release workflow identity. The chart tag has no `v`:
 
 ```bash
-VERSION=0.1.95
-HELM_PROJECT="<значение HARBOR_HELM_PROJECT>"
-IMAGE_PROJECT="<значение HARBOR_PROJECT>"
-
-# У проекта с chart-ами свои учётные данные.
-echo "$HELM_REGISTRY_PASSWORD" | docker login ghcr.io/nixys \
-  -u "$HELM_REGISTRY_USER" --password-stdin
-cosign verify --key cosign.pub \
-  "ghcr.io/nixys/nxs-anomaly:$VERSION"
-docker logout ghcr.io/nixys
-
-# Образы приложения используют учётные данные проекта образов.
-echo "$CI_REGISTRY_PASSWORD" | docker login ghcr.io/nixys \
-  -u "$CI_REGISTRY_USER" --password-stdin
-for ref in ghcr.io/nixys/nxs-anomaly:v$VERSION \
-           ghcr.io/nixys/nxs-anomaly-frontend:v$VERSION; do
-  cosign verify --key cosign.pub "$ref"
-done
-# SBOM образов приложены как cosign-аттестации:
-cosign verify-attestation --key cosign.pub --type cyclonedx \
-  ghcr.io/nixys/nxs-anomaly:v$VERSION
-docker logout ghcr.io/nixys
+cosign verify \
+  --certificate-identity "https://github.com/nixys/nxs-anomaly/.github/workflows/release.yml@refs/tags/v${CHART_VERSION}" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  "ghcr.io/nixys/nxs-anomaly:${CHART_VERSION}"
 ```
 
-Обратите внимание на асимметрию ссылок: chart адресуется своим SemVer (`$VERSION`),
-образы — git-тегом (`v$VERSION`); см. таблицу версий выше.
-
-**Почему ключ, а не keyless.** Keyless-cosign выпускает сертификат Fulcio от
-OIDC-issuer-а CI, а публичный Sigstore доверяет `gitlab.com`, но не self-hosted
-инстансу. CI этого проекта — `github.com`, поэтому keyless-подпись либо не была бы
-выпущена, либо не проверялась бы против публичного корня доверия. Релизный ключ живёт
-в маскированных переменных CI (`COSIGN_PRIVATE_KEY` / `COSIGN_PUBLIC_KEY`) и
-подписывает **по digest**, поэтому тег, позже переставленный на другой артефакт,
-подпись не наследует.
-
-Эти команды не нужно принимать на веру. Релизный пайплайн выполняет ровно их против
-только что опубликованных артефактов: chart забирается с `HELM_REGISTRY_USER` /
-`HELM_REGISTRY_PASSWORD`, затем эти учётные данные удаляются, и только после этого
-проверяются публичные образы приложения. Протокол публикуется как артефакт джобы
-`release-verification.txt`.
-
-Чтобы обеспечить это на уровне кластера, допускайте только подписанные образы через
-контроллер политик (например, Kyverno `verifyImages` или Sigstore policy-controller)
-с тем же публичным ключом.
-
-### Как публикуется релиз
-
-Пять джоб в четырёх стадиях, по одной ответственности на каждую — чтобы падение
-называло конкретный шаг:
-
-| Стадия | Джоба | Что делает |
-|---|---|---|
-| package | `release:sbom` | CycloneDX SBOM на каждый образ (syft) |
-| package | `release:chart:package` | `helm package` с версией тега → артефакт `dist/*.tgz` |
-| publish | `release:chart:publish` | `helm push` в `oci://$HARBOR_REGISTRY/$HARBOR_HELM_PROJECT`, фиксирует digest |
-| sign | `release:sign` | `cosign sign --key` для обоих образов и chart-а (по digest) + аттестации SBOM |
-| verify | `release:verify` | проверка chart-а с Helm-учётными данными, затем проверка образов с учётными данными образов |
-
-Переменные CI, нужные релизу: `COSIGN_PRIVATE_KEY`, `COSIGN_PUBLIC_KEY` (плюс
-`COSIGN_PASSWORD`, если ключ защищён паролем), `HARBOR_PROJECT`,
-`CI_REGISTRY_USER` / `CI_REGISTRY_PASSWORD` для образов, а также
-`HARBOR_HELM_PROJECT`, `HELM_REGISTRY_USER` и `HELM_REGISTRY_PASSWORD` для chart-а —
-как генерируется и хранится пара, описано в
-[CONTRIBUTING.md](../../../CONTRIBUTING.md#generating-the-release-key-pair).
-
-## Обновления
+For Helm provenance, download the published public key, check its fingerprint
+against the maintainer's published signing-key information, and create a binary
+GPG keyring explicitly. This also works when your normal GPG keyring uses the
+newer keybox format.
 
 ```bash
-VERSION=0.1.95          # релиз, на который обновляемся
-HELM_PROJECT="<значение HARBOR_HELM_PROJECT>"
-# Сначала посмотрите, что изменится.
-helm diff upgrade nxs-anomaly "oci://ghcr.io/nixys/nxs-anomaly" \
-  --version "$VERSION" -f values-production.yaml --reuse-values   # опциональный плагин
-helm upgrade nxs-anomaly "oci://ghcr.io/nixys/nxs-anomaly" \
-  --version "$VERSION" -f values-production.yaml --reuse-values
+VERIFY_DIR=$(mktemp -d)
+curl --fail --silent --show-error --location \
+  https://raw.githubusercontent.com/nixys/nxs-anomaly/main/assets/nxs-anomaly-helm-signing.pub.asc \
+  --output "$VERIFY_DIR/signing-key.asc"
+gpg --show-keys --with-fingerprint "$VERIFY_DIR/signing-key.asc"
+# Check the fingerprint before continuing.
+gpg --batch --dearmor --output "$VERIFY_DIR/keyring.gpg" "$VERIFY_DIR/signing-key.asc"
+helm pull oci://ghcr.io/nixys/nxs-anomaly --version "$CHART_VERSION" \
+  --verify --keyring "$VERIFY_DIR/keyring.gpg" --destination "$VERIFY_DIR"
 ```
 
-Миграции применяются автоматически при старте под advisory-локом (отдельной Job нет).
-Сначала снимите резервную копию базы и убедитесь, что знаете путь отката — см.
-[docs/BACKUP_RESTORE.md](../../../docs/BACKUP_RESTORE.md).
+See the [security policy](https://github.com/nixys/nxs-anomaly/blob/main/SECURITY.md#supply-chain)
+for image verification. The signing-key fingerprint is published in the
+[chart metadata](https://github.com/nixys/nxs-anomaly/blob/main/deploy/helm/nxs-anomaly/Chart.yaml)
+under `artifacthub.io/signKey`; check the metadata for your release.
 
-## Компоненты
+## Upgrading and uninstalling
 
-| Компонент | Workload | Порт | Масштабирование |
-|---|---|---|---|
-| API | Deployment (`serve --no-scheduler`) | 8080 | горизонтальное |
-| Worker | Deployment (`run-worker`) | 8081 (телеметрия) | несколько реплик безопасны (claim + шарды) |
-| Frontend | Deployment (nginx SPA + same-origin прокси к API) | 8080 | горизонтальное |
+The project is **pre-1.0**. Read [release notes](https://github.com/nixys/nxs-anomaly/releases)
+and [migrations](https://github.com/nixys/nxs-anomaly/blob/main/docs/community/en/MIGRATIONS.md)
+for your target version. Back up PostgreSQL before upgrading. Migrations run at
+startup under an advisory lock and are forward-only; `helm rollback` does not
+reverse them. Prepare a [database restore plan](https://github.com/nixys/nxs-anomaly/blob/main/docs/community/en/BACKUP_RESTORE.md).
 
-Миграции применяются автоматически при старте под advisory-локом PostgreSQL, поэтому
-параллельный старт реплик безопасен и **отдельной Job для миграций нет**.
-
-## Секреты — выберите один основной источник
-
-Secret с окружением приложения обязан содержать как минимум `NXS_ANOMALY_DB_DSN`.
-Chart по умолчанию не зашивает секреты в открытом виде; рендер без включённого
-источника падает.
-
-| Режим | Values | Что делает |
-|---|---|---|
-| Существующий | `existingSecret.enabled`, `existingSecret.name` | ссылается на Secret, управляемый оператором |
-| External Secrets | `externalSecrets.enabled`, `externalSecrets.secretStoreRef`, `externalSecrets.data` | рендерит `ExternalSecret` (external-secrets.io) |
-| Vault Secrets Operator | `vaultSecretOperator.enabled`, `vaultSecretOperator.mount/path` | рендерит `VaultStaticSecret` |
-| Inline (только dev) | `inlineSecret.enabled`, `inlineSecret.data` | рендерит Secret из values; DSN подставляется из встроенного или внешнего Postgres |
-
-Аутентификация в режиме VSO задаётся одним из двух способов, вместе они
-отвергаются preflight-ом:
-
-* `vaultSecretOperator.vaultAuthRef` — имя `VaultAuth`, созданного платформой;
-* `vaultSecretOperator.vaultAuth.create=true` — chart рендерит свой `VaultAuth`
-  (`mount` — путь auth-бэкенда, не KV-mount; `vaultConnectionRef` — существующий
-  `VaultConnection`; `kubernetes.role`, `kubernetes.serviceAccount` — по умолчанию
-  ServiceAccount чарта, `kubernetes.audiences`). Тогда `VaultStaticSecret`
-  ссылается на него автоматически.
-
-`VaultConnection` chart не создаёт: адрес Vault, CA и TLS — инфраструктура
-кластера, переживающая любой релиз. Если не указать ни `vaultAuthRef`, ни
-`vaultAuth.create`, VSO молча использует свои default-объекты в namespace
-оператора — это не ошибка установки, а тихо не обновляющийся секрет.
-
-## Сервисы данных
-
-Каждый может работать **встроенным** (одноузловой StatefulSet, только для
-разработки и тестов) либо указывать на **внешний** managed-инстанс.
-
-| Сервис | Встроенный | Внешний | Используется приложением |
-|---|---|---|---|
-| PostgreSQL | `postgresql.enabled` | `externalPostgres.*` (или DSN в секрете) | да (обязателен) |
-
-## Сеть и наблюдаемость
-
-- `ingress.enabled` — опубликовать фронтенд (который проксирует API same-origin).
-- `ingress.name` — имя `Ingress`; по умолчанию — полное имя релиза.
-- `istio.virtualService.enabled` — отрендерить Istio `VirtualService`. Привяжите его
-  к существующему Gateway через `istio.virtualService.gateways` либо задайте
-  `istio.gateway.enabled=true` и укажите `istio.gateway.name`; опциональный TLS
-  использует `istio.gateway.tls.credentialName`.
-- `istio.virtualService.name` — имя `VirtualService`; по умолчанию — полное имя
-  релиза.
-- `gatewayAPI.httpRoute.enabled` — отрендерить `HTTPRoute`
-  (`gateway.networking.k8s.io/v1`). Привяжите через `gatewayAPI.httpRoute.parentRefs`
-  либо позвольте chart-у создать Gateway через `gatewayAPI.gateway.enabled=true`,
-  `name` и `gatewayClassName`. Маршрут между namespace-ами автоматически получает
-  нужный backend `ReferenceGrant`.
-- `gatewayAPI.httpRoute.name` — имя `HTTPRoute`; по умолчанию — полное имя релиза.
-  `ReferenceGrant` для меж-namespace маршрута называется по этому же имени.
-- Ingress, Istio и Gateway API отключаются независимо. Обычно включают ровно один;
-  все три маршрутизируют `/` на same-origin прокси фронтенда либо напрямую в API,
-  если `frontend.enabled=false`.
-
-Имя задаётся у всех трёх маршрутов — `ingress.name`, `istio.virtualService.name`,
-`gatewayAPI.httpRoute.name` — и по одной причине. Два релиза, публикующиеся через
-один контроллер или кладущие маршруты в один namespace (community и enterprise
-рядом, или по релизу на команду), дают одинаковое имя объекта, и GitOps-контроллер
-видит один объект, принадлежащий двум приложениям: `VirtualService/nxs-anomaly is
-part of applications argocd/nxs-anomaly-ce-team-x and nxs-anomaly-ee-team-x`.
-**Переименование — не косметика:** старый объект удаляется, новый создаётся, и на
-это время маршрут пропадает; меняйте имя в окно обслуживания.
-- `networkPolicy.enabled` — default-deny плюс минимальные разрешения (DNS, внутри
-  релиза, вход в API, исходящий трафик приложения). В остальном API и worker
-  недостижимы извне релиза — включая Prometheus. Задайте
-  `networkPolicy.extraIngress` тем, за чем живёт ваш Prometheus (обычно
-  `namespaceSelector` по его namespace); production-preflight отказывается
-  рендериться при `networkPolicy.enabled` + `serviceMonitor.enabled` без
-  `extraIngress`, поскольку эта комбинация молча делает ServiceMonitor неспособным
-  снимать метрики.
-- `serviceMonitor.enabled` — ServiceMonitor для `/metrics` API и worker-а.
-- `prometheusRule.enabled` — правила алертов BETA-021 (`files/alerting-rules.yaml`),
-  включая группу burn-rate по бюджету ошибок (`nxs-anomaly.slo`).
-- `tracing.enabled` + `tracing.endpoint` — трассировка OpenTelemetry в
-  OTLP/HTTP-коллектор, сразу для API и worker-а. Включение без указания endpoint —
-  это ошибка рендера, а не инсталляция, которая молча экспортирует в никуда. См.
-  [docs/TRACING.md](../../../docs/TRACING.md).
-- `rateLimits.webhookRatePerCluster` / `rateLimits.apiRatePerCluster` — общекластерные
-  частоты приёма и обращений к API. Эти два лимитера держат корзины в каждом процессе
-  API, поэтому chart делит указанную величину на `api.replicaCount` до того, как её
-  увидит приложение; иначе масштабирование API молча масштабировало бы и лимиты.
-  Лимитера входа здесь нет — он живёт в PostgreSQL именно затем, чтобы быть
-  глобальным. См. [docs/SECURITY_PROFILE.md](../../../docs/SECURITY_PROFILE.md).
-- По компонентам: `resources`, `podDisruptionBudget`, `topologySpreadConstraints`,
-  `nodeSelector`/`affinity`/`tolerations`.
-
-## Тесты
+Set `CHART_VERSION` to the target version and review your saved values against
+that release's defaults. For the production example:
 
 ```bash
-helm lint deploy/helm/nxs-anomaly --set inlineSecret.enabled=true
+helm upgrade nxs-anomaly oci://ghcr.io/nixys/nxs-anomaly \
+  --version "$CHART_VERSION" --namespace nxs-anomaly \
+  --values production-values.yaml --wait --timeout 5m
+helm test nxs-anomaly --namespace nxs-anomaly
+```
+
+Use `evaluation-values.yaml` instead for the evaluation installation. To uninstall:
+
+```bash
+helm uninstall nxs-anomaly --namespace nxs-anomaly
+```
+
+Externally managed PostgreSQL is unaffected. The bundled StatefulSet's database
+PVC is retained by the current chart; check your storage/reclaim policy and
+remove retained data explicitly only when you no longer need it.
+
+## Testing and troubleshooting
+
+`helm test` runs the chart's connection test. The optional acceptance test
+(`tests.acceptance.enabled=true`) needs an admin API key in the application Secret,
+under `NXS_ANOMALY_ACCEPTANCE_API_KEY` by default. It creates a canary integration,
+checks ingest, a delivery attempt, acknowledgement, resolution and audit history,
+then cleans up. A delivery attempt does not prove that an external recipient
+received a message; test your real notification channel separately.
+
+For pending pods, check scheduling and PVC events with `kubectl describe`. For
+startup failures, check the database DSN, Secret keys and API/worker logs. For
+missing notifications, inspect the alert's delivery attempts and worker logs.
+See [Setup troubleshooting](https://github.com/nixys/nxs-anomaly/blob/main/docs/community/en/SETUP.md#when-something-does-not-work).
+
+Contributors can validate a local checkout with Helm and the `helm-unittest` plugin:
+
+```bash
+helm lint deploy/helm/nxs-anomaly --set inlineSecret.enabled=true --set postgresql.enabled=true
 helm unittest -f 'tests/unit/*_test.yaml' deploy/helm/nxs-anomaly
-# Настоящая install + upgrade проверка на одноразовом kind-кластере (нужны docker+kind):
-bash deploy/helm/nxs-anomaly/tests/e2e/kind-smoke.sh
-# Проверка реального применения NetworkPolicy (ставит Calico — kindnet
-# NetworkPolicy не применяет вовсе — и доказывает, что под из разрешённого
-# namespace достаёт до API/worker, а посторонний namespace заблокирован):
-bash deploy/helm/nxs-anomaly/tests/e2e/kind-networkpolicy.sh
 ```
 
-`KEEP_CLUSTER=1` оставляет kind-кластер поднятым для разбора после любой из них.
+## Community and Enterprise
 
-### Post-install acceptance
+| Need | Community | Enterprise |
+|---|---|---|
+| Ingest, grouping, on-call schedules, escalation and delivery | Included | Included |
+| Web UI, ChatOps, audit history, API and operational metrics | Included | Included |
+| Password authentication and role-based permissions | Included | Included |
+| Corporate OIDC sign-in and team access boundaries | — | Included; configuration required |
+| Lifecycle analytics and on-call quality reports | — | Requires a separately configured analytics pipeline and database |
+| Support | Community issues, best effort | Scope and response terms agreed with Nixys |
 
-`tests.acceptance.enabled=true` добавляет второй `helm test`-под, который
-отвечает на вопрос, ради которого установка вообще делалась: если сейчас придёт
-алерт, разбудят ли кого-нибудь. Он заводит временную canary-интеграцию,
-отправляет через неё настоящий алерт, дожидается **попытки доставки** (это
-единственное ожидание, которое проверяет воркер, а не API — уведомление,
-навсегда застрявшее в `delivery_scheduled`, для `/health` выглядит здоровым),
-делает acknowledge и resolve, проверяет, что оба попали в аудит, и удаляет за
-собой всё созданное.
+Community teams organize routing; team membership does not isolate access to
+objects. Consider Enterprise when multiple teams need separate visibility,
+corporate authentication, or reporting on overdue acknowledgements, night-time
+load and delivery problems.
 
-Две детали не случайны. Canary-дежурный настроен на канал `log`: это настоящий
-канал, проходящий весь конвейер доставки и оставляющий настоящую запись о
-попытке, но не требующий ни egress, ни исключения в SSRF-гейте — иначе провал
-теста сообщал бы мнение сети, а не состояние инсталляции. И уборка висит на
-`trap`, а не в конце happy path: тест, упавший на середине, иначе оставил бы на
-проде живой ingest-эндпоинт.
+**[Discuss an Enterprise evaluation with Nixys](https://nixys.io/contacts/).**
+Share your Community version, deployment method, number of teams and requirements.
+Enterprise uses separate artifacts: changing Community chart values does not
+unlock it. Plan migration with compatible versions and a database backup.
 
-Нужен админский API-ключ в Secret приложения (по умолчанию ключ
-`NXS_ANOMALY_ACCEPTANCE_API_KEY`) — он читается оттуда, а не из values, чтобы не
-попасть в манифест релиза. Выключен по умолчанию: тест пишет в инсталляцию.
+## Support and contributing
 
-```bash
-helm test <release> --filter name=<release>-nxs-anomaly-acceptance
-```
+Maintained by [Nixys](https://nixys.io/). For bugs or Community questions,
+[open an issue](https://github.com/nixys/nxs-anomaly/issues) with the chart/application
+versions, Kubernetes version, reproduction steps and sanitized values/logs.
+See [support scope](https://github.com/nixys/nxs-anomaly/blob/main/SUPPORT.md).
+Report vulnerabilities privately through the
+[security policy](https://github.com/nixys/nxs-anomaly/blob/main/SECURITY.md).
 
-Все три идут в CI на каждом теге (`helm:kind`, `helm:kind-networkpolicy`,
-подъём kind-кластера не укладываются в стандартный 20-минутный таймаут джобы,
-поэтому у каждой свой, — и это единственное место, где настоящая установка,
-Прогнать одну локально перед пушем обычно быстрее, чем дожидаться тега.
+Documentation improvements and code contributions are welcome; read
+[CONTRIBUTING.md](https://github.com/nixys/nxs-anomaly/blob/main/CONTRIBUTING.md).
+Documentation is available in
+[English](https://github.com/nixys/nxs-anomaly/tree/main/docs/community/en) and
+[Russian](https://github.com/nixys/nxs-anomaly/tree/main/docs/community/ru).
+
+## License
+
+Community is distributed under the [Apache License 2.0](https://github.com/nixys/nxs-anomaly/blob/main/LICENSE).
+Enterprise is licensed separately.
