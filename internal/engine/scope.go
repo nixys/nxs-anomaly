@@ -51,6 +51,8 @@ var teamOwnedCollections = map[string]bool{
 	// able to read or edit another team's maintenance plan, so the window
 	// carries its own team like the three above.
 	"maintenance_windows": true,
+	// Installation-wide reports contain every team and require unscoped access.
+	"reports": true,
 }
 
 // integrationScopedCollections are reached through an integration. Notifications
@@ -75,6 +77,9 @@ func (e *Engine) applyScopeFilters(ctx context.Context, collection string, filte
 		return true, nil
 	}
 	switch {
+	case collection == "reports":
+		filters["team_id"] = toAnySlice(actor.TeamIDs)
+		return len(actor.TeamIDs) > 0, nil
 	case teamOwnedCollections[collection]:
 		filters["team_id"] = store.InOrNullFilter{Values: toAnySlice(actor.TeamIDs)}
 		return true, nil
@@ -133,6 +138,14 @@ func (e *Engine) authorizeItem(ctx context.Context, collection string, item map[
 		return nil
 	}
 	switch {
+	case collection == "reports":
+		teamID := utils.StrVal(item, "team_id")
+		if teamID == "" || !actor.MayAccessTeam(teamID) {
+			return errForbiddenTeam(collection)
+		}
+	case collection == "notifications" && utils.StrVal(item, "reason") == "oncall_quality_report":
+		// The email embeds the entire digest; it must not bypass report access.
+		return errForbiddenTeam(collection)
 	case teamOwnedCollections[collection]:
 		if !actor.MayAccessTeam(utils.StrVal(item, "team_id")) {
 			return errForbiddenTeam(collection)

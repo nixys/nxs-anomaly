@@ -6,7 +6,48 @@ semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Fixed
+- **The GitHub release no longer fails importing the chart signing key.**
+  `gpg --export-secret-keys` exports a passphrase-protected key through
+  gpg-agent, which asks pinentry for the passphrase and, with no TTY on the
+  runner, fails with "Inappropriate ioctl for device" and exports nothing. The
+  `HELM_GPG_PRIVATE_KEY` secret already holds the binary keyring Helm needs,
+  so the workflow now decodes it straight to the keyring file.
+
 ### Added
+- **The community Helm chart carries GPG provenance for Artifact Hub.** The
+  existing keyless cosign signature proves *this workflow, from this repo,
+  built it*, but Artifact Hub's "Signed" badge and `helm pull --verify` read
+  Helm's own `.prov` format instead, which cosign doesn't produce. The GitHub
+  release workflow now also signs the packaged chart with a GPG key named in
+  `Chart.yaml`'s `artifacthub.io/signKey`, and the `.prov` rides the same OCI
+  push as an extra layer — no separate publish step. Documented in
+  `packaging/community/SECURITY.md`'s "Helm chart provenance" section,
+  including the key generation/rotation runbook. **Not yet active**: needs the
+  actual key generated (maintainer runbook, not done from CI), the
+  `HELM_GPG_PRIVATE_KEY`/`HELM_GPG_PASSPHRASE` GitHub secrets set, the public
+  key committed to `packaging/community/assets/`, and `signKey` filled in with
+  the real fingerprint — until then the next tag's release job will fail at
+  the "Import the chart signing key" step.
+
+- **On-call quality report: a scheduled digest, not another dashboard.**
+  `nxs-anomaly run-report` (weekly by default, Helm CronJob
+  `templates/enterprise/oncall-report-cronjob.yaml`) builds a per-team — or
+  installation-wide — summary over the trailing 7 days from the same
+  ClickHouse views the analytics dashboards use: missed ACKs, channel/delivery
+  problems, night load, repeat/exhausted escalations and noisy alert sources.
+  Every named offender carries its `alert_group_id`/`episode_id`, so the
+  digest names a case to look up rather than asking to be trusted. Delivered
+  as an email through the normal notification/retry pipeline (no bypass — see
+  `ProcessScheduleShiftNotifications` for the same synthetic-notification
+  shape this reuses), retrievable via `GET /api/v1/reports[/{id}]` and the
+  ChatOps `report` command. Idempotent by (team, period): a manual re-run or
+  an overlapping CronJob execution returns the report already on file instead
+  of sending a second copy. This is also the first path in the product that
+  reads ClickHouse directly — everywhere else it is written by Vector and read
+  only by Grafana. See `docs/enterprise/ru/API.md`'s "Отчёты о качестве
+  дежурств" section.
+
 - **Incident-response analytics: ten dashboards, and the schema that makes them
   honest.** The single 23-panel dashboard is split into one file per question in
   `docs/enterprise/grafana/` — overview, response latency, backlog, noise,
