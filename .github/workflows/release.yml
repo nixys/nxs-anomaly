@@ -325,13 +325,43 @@ jobs:
           grep -Fqx "  repository: ${{ needs.meta.outputs.image }}" deploy/helm/nxs-anomaly/values.yaml
           grep -Fqx "    repository: ${{ needs.meta.outputs.frontend_image }}" deploy/helm/nxs-anomaly/values.yaml
 
-      - name: Package
+      # Chart provenance (Helm's own GPG .prov, not cosign): the one signal
+      # Artifact Hub's "Signed" badge actually reads. Independent of the
+      # keyless cosign signature above — that proves "built by this workflow
+      # from this repo", this proves "this exact chart bytes were blessed by
+      # the key named in Chart.yaml's artifacthub.io/signKey" to a tool that
+      # does not speak Sigstore. See SECURITY.md#helm-chart-provenance for
+      # what generated this key and how to rotate it.
+      #
+      # Helm's OpenPGP signer wants the legacy binary keyring format, not the
+      # keybox (.kbx) modern GnuPG defaults to. The secret already is that
+      # format — SECURITY.md stores `gpg --export-secret-keys | base64` — so it
+      # is decoded straight to the keyring. Importing and re-exporting through
+      # gpg cannot work here: GnuPG 2.x exports a passphrase-protected key via
+      # gpg-agent, which asks pinentry for the passphrase and, with no TTY on
+      # the runner, fails with "Inappropriate ioctl for device" and exports
+      # nothing.
+      - name: Import the chart signing key
+        env:
+          HELM_GPG_PRIVATE_KEY: ${{ secrets.HELM_GPG_PRIVATE_KEY }}
+        run: |
+          set -eu
+          printf '%s' "$HELM_GPG_PRIVATE_KEY" | base64 -d > "$RUNNER_TEMP/nxs-anomaly-helm.secring.gpg"
+          test -s "$RUNNER_TEMP/nxs-anomaly-helm.secring.gpg"
+
+      - name: Package and sign
+        env:
+          HELM_GPG_PASSPHRASE: ${{ secrets.HELM_GPG_PASSPHRASE }}
         run: |
           helm package deploy/helm/nxs-anomaly \
             --version "${{ needs.meta.outputs.version }}" \
             --app-version "${{ needs.meta.outputs.tag }}" \
+            --sign --key "Nixys Team (nxs-anomaly Helm chart signing)" \
+            --keyring "$RUNNER_TEMP/nxs-anomaly-helm.secring.gpg" \
+            --passphrase-file <(printf '%s' "$HELM_GPG_PASSPHRASE") \
             --destination ./dist
           ls -l dist/
+          test -f "dist/nxs-anomaly-${{ needs.meta.outputs.version }}.tgz.prov"
 
       - name: Push and sign
         id: push
@@ -341,6 +371,9 @@ jobs:
           set -eu
           echo "${{ secrets.GITHUB_TOKEN }}" \
             | helm registry login "${{ env.REGISTRY }}" -u "${{ github.actor }}" --password-stdin
+          # helm push reads the .prov sitting next to the .tgz and attaches it
+          # as a second layer of the same OCI artifact automatically — nothing
+          # else names it.
           helm push "dist/nxs-anomaly-${{ needs.meta.outputs.version }}.tgz" \
             "oci://${{ env.REGISTRY }}/${{ needs.meta.outputs.owner }}" 2>&1 | tee push.log
 
@@ -368,6 +401,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [meta, chart]
     steps:
+      - uses: actions/checkout@v7
+
       - uses: azure/setup-helm@v5
         with:
           version: v3.16.4
@@ -375,6 +410,12 @@ jobs:
       - uses: sigstore/cosign-installer@v3
         with:
           cosign-release: v2.4.1
+
+      - name: Import the chart signing public key
+        run: |
+          set -eu
+          gpg --batch --import assets/nxs-anomaly-helm-signing.pub.asc
+          gpg --export > "$RUNNER_TEMP/nxs-anomaly-helm.pubring.gpg"
 
       - name: Verify the published release
         run: |
@@ -410,6 +451,15 @@ jobs:
             cosign verify --certificate-identity-regexp "$IDENTITY" \
               --certificate-oidc-issuer "$ISSUER" \
               "${CHART_REF}@${{ needs.chart.outputs.digest }}" >/dev/null
+            echo "ok"
+
+            echo "== chart provenance (Helm GPG .prov — what Artifact Hub checks) =="
+            # Unlike --untardir above, --destination is not created by helm:
+            # without it the pull fails writing its temp file, after the download.
+            mkdir -p /tmp/chart-verify
+            helm pull "oci://${CHART_REF}" --version "$VER" \
+              --verify --keyring "$RUNNER_TEMP/nxs-anomaly-helm.pubring.gpg" \
+              --destination /tmp/chart-verify
             echo "ok"
 
             echo "== image references the published chart resolves to =="

@@ -52,6 +52,7 @@ var EntityTables = map[string]string{
 	"notification_policy_runs":       "nxs_anomaly_notification_policy_runs",
 	"kafka_outbox":                   "nxs_anomaly_kafka_outbox",
 	"maintenance_windows":            "nxs_anomaly_maintenance_windows",
+	"reports":                        "nxs_anomaly_reports",
 }
 
 // TypedColumns lists extra indexed columns per collection (beyond id and data).
@@ -71,6 +72,7 @@ var TypedColumns = map[string][]string{
 	"teams":                          {"name"},
 	"kafka_outbox":                   {"topic", "created_at"},
 	"maintenance_windows":            {"team_id", "starts_at", "ends_at"},
+	"reports":                        {"team_id", "period_start", "period_end", "generated_at", "format"},
 }
 
 // SortSpec names the column a listing is ordered by. The zero value means the
@@ -94,6 +96,7 @@ var defaultSort = map[string]SortSpec{
 	"alert_groups":  {Field: "last_received_at", Desc: true},
 	"alerts":        {Field: "received_at", Desc: true},
 	"notifications": {Field: "created_at", Desc: true},
+	"reports":       {Field: "generated_at", Desc: true},
 }
 
 // rowTimestampColumns are the columns every entity table carries besides its
@@ -295,6 +298,7 @@ type State struct {
 	GrafanaHeartbeats            map[string]map[string]any
 	KafkaOutbox                  map[string]map[string]any
 	MaintenanceWindows           map[string]map[string]any
+	Reports                      map[string]map[string]any
 
 	// AuditEvents are enrolled by a mutator to be written in the SAME transaction
 	// as the state change, so a committed operation always has its audit record
@@ -324,6 +328,7 @@ func buildCollectionPtrs(s *State) map[string]*map[string]map[string]any {
 		"grafana_heartbeats":             &s.GrafanaHeartbeats,
 		"kafka_outbox":                   &s.KafkaOutbox,
 		"maintenance_windows":            &s.MaintenanceWindows,
+		"reports":                        &s.Reports,
 	}
 }
 
