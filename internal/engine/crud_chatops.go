@@ -215,6 +215,11 @@ func (e *Engine) postChatopsCommand(ctx context.Context, payload map[string]any,
 			// Teams bound the change: a chat may reorder its own people only.
 			loads = append(loads,
 				store.LoadSpec{Collection: "users"}, store.LoadSpec{Collection: "teams"})
+		case "report":
+			// Small collection, no filter: which row is "latest for this
+			// caller's teams" is decided in the switch body, same as
+			// status/alerts decide group visibility there rather than here.
+			loads = append(loads, store.LoadSpec{Collection: "reports"})
 		}
 		// A group command is answered against the team owning the group, and a
 		// group's team is its integration's. The collection is small, and
@@ -330,6 +335,31 @@ func chatopsGroupAccess(state *store.State, channel map[string]any, principal au
 		return false
 	}
 	return true
+}
+
+// An installation digest contains all teams. Never send it to a team channel,
+// even when the requesting administrator can read it privately.
+func chatopsReportAccess(channel map[string]any, principal authz.Actor, reportTeamID string) bool {
+	if reportTeamID == "" && principal.TeamScoped {
+		return false
+	}
+	if !principal.MayAccessTeam(reportTeamID) {
+		return false
+	}
+	if channelTeam := utils.StrVal(channel, "team_id"); channelTeam != "" && reportTeamID != channelTeam {
+		return false
+	}
+	return true
+}
+
+// reportChatSummary is the ChatOps `report` command's reply text: the same
+// PlainText() rendering stored on the row at generation time (see
+// Report.toMap), so a chat and the emailed digest never disagree.
+func reportChatSummary(report map[string]any) string {
+	if text := utils.StrVal(report, "summary_text"); text != "" {
+		return text
+	}
+	return "On-call quality report " + utils.StrVal(report, "id") + " has no summary text."
 }
 
 // dutyTakeDefaultHours is how long an unqualified "duty take" covers. Two hours
@@ -621,6 +651,24 @@ func (e *Engine) executeChatopsCommand(ctx context.Context, state *store.State, 
 	args := parts[1:]
 
 	switch cmd {
+	case "report", "/report":
+		var latest map[string]any
+		for _, rpt := range state.Reports {
+			if !chatopsReportAccess(channel, principal, utils.StrVal(rpt, "team_id")) {
+				continue
+			}
+			if latest == nil || utils.StrVal(rpt, "generated_at") > utils.StrVal(latest, "generated_at") {
+				latest = rpt
+			}
+		}
+		if latest == nil {
+			return map[string]any{"text": "No on-call quality report has been generated yet for your teams."}, nil
+		}
+		return map[string]any{
+			"text":   reportChatSummary(latest),
+			"report": latest,
+		}, nil
+
 	case "status", "/status":
 		var open []map[string]any
 		for _, rec := range state.AlertGroups {
@@ -908,7 +956,8 @@ func (e *Engine) executeChatopsCommand(ctx context.Context, state *store.State, 
 			"ack <group_id>, resolve <group_id>, silence <group_id> [minutes], " +
 			"unack <group_id>, unresolve <group_id>, bulk ack|silence|resolve [minutes], " +
 			"duty on|off, duty take [schedule_id] [hours], " +
-			"priority [username] <high|medium|low>, oncall <schedule_id>"}, nil
+			"priority [username] <high|medium|low>, oncall <schedule_id>, " +
+			"report"}, nil
 	}
 	return nil, fmt.Errorf("unsupported chatops command: %s", cmd)
 }

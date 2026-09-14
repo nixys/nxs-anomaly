@@ -20,8 +20,8 @@ type: application
 # to it and the published image tags are the git tag verbatim (v0.1.29); the chart
 # version cannot, because chart versions must be SemVer. The release job
 # (release:helm-chart) repackages with the same pair.
-version: 0.1.95
-appVersion: "v0.1.95"
+version: 0.1.101
+appVersion: "v0.1.101"
 home: https://github.com/nixys/nxs-anomaly/nxs-anomaly
 sources:
   - https://github.com/nixys/nxs-anomaly/nxs-anomaly
@@ -36,3 +36,11 @@ keywords:
 annotations:
   artifacthub.io/category: monitoring-logging
   artifacthub.io/license: Apache-2.0
+  # The community release (packaging/community/.github/workflows/release.yml)
+  # signs the packaged chart with this key; see
+  # packaging/community/SECURITY.md's "Helm chart provenance" section for the
+  # generation/rotation runbook. The enterprise chart never publishes this
+  # annotation to anyone — Artifact Hub only ever sees the community tree.
+  artifacthub.io/signKey: |
+    fingerprint: D89A6071DDBD8F391414734A64ABC61D62A7FFE1
+    url: https://raw.githubusercontent.com/nixys/nxs-anomaly/main/assets/nxs-anomaly-helm-signing.pub.asc
