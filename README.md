@@ -1,6 +1,6 @@
 # nxs-anomaly Community
 
-[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/nxs-anomaly-community-edition)](https://artifacthub.io/packages/helm/nxs-anomaly-community-edition/nxs-anomaly)
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/nxs-anomaly)](https://artifacthub.io/packages/helm/nxs-anomaly/nxs-anomaly)
 [![Terraform Registry](https://img.shields.io/badge/Terraform-Registry-7B42BC?logo=terraform&logoColor=white)](https://registry.terraform.io/providers/nixys/nxs-anomaly/latest)
 
 ![nxs-anomaly](assets/horizontal.png)

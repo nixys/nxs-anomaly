@@ -23,8 +23,8 @@ icon: https://raw.githubusercontent.com/nixys/nxs-anomaly/main/frontend/logo/log
 # to it and the published image tags are the git tag verbatim (v0.1.29); the chart
 # version cannot, because chart versions must be SemVer. The release job
 # (release:helm-chart) repackages with the same pair.
-version: 0.1.105
-appVersion: "v0.1.105"
+version: 0.1.106
+appVersion: "v0.1.106"
 home: https://github.com/nixys/nxs-anomaly
 sources:
   - https://github.com/nixys/nxs-anomaly
