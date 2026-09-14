@@ -7,6 +7,17 @@ semantic versioning once it reaches 1.0.
 ## [Unreleased]
 
 ### Fixed
+- **The Artifact Hub repository metadata carries the current repository ID.**
+  The renamed `nxs-anomaly` repository was registered under a new ID, so the
+  published `artifacthub-repo.yml` could never earn the Verified publisher mark.
+- **The Artifact Hub badge in the community README points at the live package.**
+  The Artifact Hub repository was renamed from `nxs-anomaly-community-edition` to
+  `nxs-anomaly`; the badge link and its image now use
+  `https://artifacthub.io/packages/helm/nxs-anomaly/nxs-anomaly`.
+- **The GitHub release installs ORAS again.** `oras-project/setup-oras@v2`
+  accepts only the versions listed in its bundled release table, which ends at
+  1.3.3, so pinning 1.3.4 failed the chart job with "official ORAS CLI releases
+  does not contain version 1.3.4" before the Artifact Hub metadata was pushed.
 - **The community Helm chart's home and source links resolve.** The community
   cut rewrote the project URL to `github.com/nixys/nxs-anomaly/nxs-anomaly`,
   which Artifact Hub showed as the package home and which answers 404.
