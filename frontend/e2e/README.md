@@ -15,7 +15,7 @@ The pre-beta browser-coverage scenarios and where each is exercised:
 | Full initial deployment through the UI (team, user, chain, integration) | `setup-flow.spec.ts` |
 | Schedule rotation, override and coverage preview | `schedule-flow.spec.ts` |
 | Provider test verdict, and a permanently-failed delivery surfaced | `delivery-failure.spec.ts` |
-| RBAC (admin-only Audit) and cross-team schedule isolation | `rbac-isolation.spec.ts` |
+| RBAC (admin-only Audit); team isolation when enabled in Enterprise | `rbac-isolation.spec.ts` |
 | Setup wizard steps derived from the live readiness report, and backup reporting clearing its blocker | `setup-readiness.spec.ts` |
 
 `setup-readiness.spec.ts` reports a backup, which changes readiness for the rest of
@@ -29,13 +29,13 @@ cannot perform, so they live in the harness built for them:
 | Scenario | Test | Why not here |
 |---|---|---|
 | Upgrade of an existing install | `deploy/helm/nxs-anomaly/tests/e2e/kind-smoke.sh` (install → upgrade → `helm test`) | needs a real cluster and a version-to-version upgrade, not a browser |
-| Recovery after worker/DB restart | worker: `tests/loadtest` (`worker_kill`, `retry_storm` — 0 loss / 0 dup); DB: `tests/restore_drill.sh` (destroy → restore → alert flow) | needs to kill/restart the API/DB, which Playwright's `webServer` owns and cannot restart mid-spec |
+| Recovery after worker/DB restart | worker: `tests/loadtest` (`worker_kill`, `retry_storm` — no loss; crash recovery can redeliver); DB: `tests/restore_drill.sh` (destroy → restore → alert flow) | needs to kill/restart the API/DB, which Playwright's `webServer` owns and cannot restart mid-spec |
 
 ## Local note
 
 In some sandboxes (e.g. WSL without the browser system libraries and no root to
-install them) Chromium will not launch locally; the browser assertions run in CI
-(`test:e2e`, on the Playwright image). The whole stack (API + PostgreSQL + Vite)
+install them) Chromium will not launch locally; run the browser assertions in the Playwright container shown below.
+Check your edition's CI workflow to see whether browser checks are automated. The whole stack (API + PostgreSQL + Vite)
 still starts locally, so non-browser wiring can be checked with
 `npx playwright test --list`.
 
@@ -50,8 +50,8 @@ then 'Name' also matches 'Username'. Use the `field(scope, label)` helper from
 
 ## Running the suite without a local browser
 
-WSL cannot run the bundled Chromium, but the CI image can, and it needs nothing
-from the host but Docker:
+If Chromium cannot run in your WSL environment, use the Playwright image.
+Run these commands from the repository root:
 
 ```sh
 docker network create nxs-e2e
@@ -60,7 +60,7 @@ docker run -d --name nxs-e2e-pg --network nxs-e2e \
   postgres:17-alpine
 CGO_ENABLED=0 go build -o /tmp/nxs-anomaly-e2e ./cmd/nxs-anomaly   # from the repo root
 
-docker run --rm --network nxs-e2e -v "$PWD/..:/src:ro" \
+docker run --rm --network nxs-e2e -v "$PWD:/src:ro" \
   -v /tmp/nxs-anomaly-e2e:/usr/local/bin/nxs-anomaly-e2e:ro -e CI=true \
   -e NXS_ANOMALY_TEST_DATABASE_URL="postgres://nxs_anomaly:nxs_anomaly@nxs-e2e-pg:5432/nxs_anomaly_e2e?sslmode=disable" \
   -e NXS_ANOMALY_E2E_BINARY=/usr/local/bin/nxs-anomaly-e2e \

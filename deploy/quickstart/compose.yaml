@@ -1,0 +1,70 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nxs_anomaly
+      POSTGRES_USER: nxs_anomaly
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Generate credentials.env first}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U nxs_anomaly -d nxs_anomaly"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    image: ghcr.io/nixys/nxs-anomaly:${NXS_ANOMALY_VERSION:?Set a release tag}
+    restart: unless-stopped
+    env_file: [credentials.env, delivery.env]
+    environment:
+      NXS_ANOMALY_DB_DSN: postgres://nxs_anomaly:${POSTGRES_PASSWORD}@postgres:5432/nxs_anomaly?sslmode=disable
+      NXS_ANOMALY_DB_CONNECT_MAX_WAIT_SECONDS: "60"
+      NXS_ANOMALY_START_SCHEDULER: "false"
+      NXS_ANOMALY_SESSION_COOKIE_SECURE: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${API_PORT:-8080}:8080"
+    healthcheck:
+      test: [CMD, /usr/local/bin/nxs-anomaly, healthcheck, --url, "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  worker:
+    image: ghcr.io/nixys/nxs-anomaly:${NXS_ANOMALY_VERSION:?Set a release tag}
+    restart: unless-stopped
+    command: [/usr/local/bin/nxs-anomaly, run-worker, --poll-interval, "5", --worker-addr, ":8081"]
+    env_file: [credentials.env, delivery.env]
+    environment:
+      NXS_ANOMALY_DB_DSN: postgres://nxs_anomaly:${POSTGRES_PASSWORD}@postgres:5432/nxs_anomaly?sslmode=disable
+      NXS_ANOMALY_DB_CONNECT_MAX_WAIT_SECONDS: "60"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${WORKER_PORT:-8081}:8081"
+    healthcheck:
+      test: [CMD, /usr/local/bin/nxs-anomaly, healthcheck, --url, "http://127.0.0.1:8081/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  frontend:
+    image: ghcr.io/nixys/nxs-anomaly-frontend:${NXS_ANOMALY_VERSION:?Set a release tag}
+    restart: unless-stopped
+    environment:
+      NXS_ANOMALY_API_UPSTREAM: app:8080
+    volumes:
+      - ./frontend.nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${UI_PORT:-3100}:8080"
+
+volumes:
+  pgdata:

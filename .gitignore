@@ -41,3 +41,6 @@ cosign.pub
 # through a browser, and WSL surfaces it as a real file. It carries the download
 # URL, which is neither ours to publish nor anything the build reads.
 *:Zone.Identifier
+
+# Generated Community quickstart credentials and runtime files
+/.local/

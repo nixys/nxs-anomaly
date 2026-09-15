@@ -58,6 +58,11 @@ while '\n\n\n' in text:
 open(dst, 'w', encoding='utf-8').write(text)
 PY
 done
+# Community-specific installation and contributor instructions cannot inherit
+# private registries or CI commands. Keep their authored overrides in the overlay.
+if [ -d "${ROOT_DIR}/packaging/community/docs/community/ru" ]; then
+  cp -a "${ROOT_DIR}/packaging/community/docs/community/ru/." "${DST}/"
+fi
 # Both languages are published side by side; point each document at the other.
 python3 "${ROOT_DIR}/scripts/add-doc-language-switch.py" "${DST}" "${ROOT_DIR}/docs/community/en" "In English"
 

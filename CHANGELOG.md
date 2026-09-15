@@ -7,6 +7,23 @@ semantic versioning once it reaches 1.0.
 ## [Unreleased]
 
 ### Fixed
+- **The web interface can change data in the Compose deployment.** The
+  frontend's nginx forwarded `Host $host`, which drops the port, so every write
+  after sign-in from `http://127.0.0.1:3100` failed the same-origin check with
+  403 "cross-origin request rejected". It now forwards `$http_host`. Any access
+  on a port other than 80/443 was affected, including `kubectl port-forward`.
+- **Invalid input to the management API answers 400 instead of 500.** An unknown
+  notification target type, priority, policy channel, escalation step or route
+  `match_type`, an invalid route regex, and a route list without exactly one
+  default returned "internal error".
+- **A user's timezone is validated.** An unknown IANA name such as `Mars/Base`
+  was stored as given; it is now rejected with 400, as schedules already were.
+- **The community Compose file no longer publishes PostgreSQL on
+  `127.0.0.1:5432`.** Nothing in the stack needs it, and `docker compose up -d`
+  failed on any host already running PostgreSQL.
+- **The community Quickstart works with older curl and explains the last Setup
+  blocker.** The Alertmanager example used `--fail-with-body`, which curl before
+  7.76 rejects; and a finished checklist still shows the backup blocker.
 - **The Artifact Hub repository metadata carries the current repository ID.**
   The renamed `nxs-anomaly` repository was registered under a new ID, so the
   published `artifacthub-repo.yml` could never earn the Verified publisher mark.
@@ -34,6 +51,15 @@ semantic versioning once it reaches 1.0.
   so the workflow now decodes it straight to the keyring file.
 
 ### Added
+- **A Community installation guide with ready-to-use presets.**
+  `docs/community/en/INSTALLATION.md` and its Russian counterpart walk through
+  on-premise (systemd), Docker Compose and Kubernetes installs from one release
+  tag. `deploy/quickstart/` carries the files they use: `prepare.sh` generates
+  credentials into the ignored `.local/` once and refuses to overwrite them, plus
+  Compose, systemd, Helm values, delivery env templates and a minimal Terraform
+  example. The community README is reorganised around this quickstart, and the
+  Compose file loads `.env` in the API and worker, restarts services and waits
+  for health checks.
 - **Artifact Hub shows nxs-anomaly as a verified publisher, with a logo.** The
   community release pushes `artifacthub-repo.yml` to the `artifacthub.io` tag of
   `ghcr.io/nixys/nxs-anomaly`, and the chart names its logo in `icon`. The
@@ -283,6 +309,10 @@ semantic versioning once it reaches 1.0.
   the same time.
 
 ### Changed
+- **Community falls back to English, Enterprise to Russian.** The interface
+  still follows a stored choice and then the browser; only when the browser asks
+  for neither supported language does the edition decide. Community, published
+  for everyone, now opens in English there instead of Russian.
 - **The delivery log is about incidents again.** "Notifications" showed twenty-one rows
   differing only in the recipient, with the incident behind each one reduced to a link
   labelled "Open", a target column of dashes, a retries column of zeros and the same

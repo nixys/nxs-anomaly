@@ -28,10 +28,10 @@ fail=0
 tmp="$(mktemp -d)"
 bash scripts/make-community-docs.sh "${tmp}" >/dev/null
 if diff -rq "${tmp}" docs/community/ru >/dev/null 2>&1; then
-  echo "ok: docs/community/ru matches docs/enterprise/ru through its markers"
+  echo "ok: docs/community/ru matches marked shared sources plus Community overrides"
 else
   echo "FAIL: docs/community/ru is not what the markers produce."
-  echo "      Edit docs/enterprise/ru and regenerate:"
+  echo "      Edit docs/enterprise/ru or packaging/community/docs/community/ru, then regenerate:"
   echo "        bash scripts/make-community-docs.sh"
   diff -rq "${tmp}" docs/community/ru | sed 's/^/    /' | head -20
   fail=1

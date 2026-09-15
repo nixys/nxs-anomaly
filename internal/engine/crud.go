@@ -42,6 +42,10 @@ func (e *Engine) CreateUser(ctx context.Context, payload map[string]any) (map[st
 	if err != nil {
 		return nil, err
 	}
+	timezone, err := parseScheduleTimezone(payload, "UTC")
+	if err != nil {
+		return nil, err
+	}
 	user := map[string]any{
 		"id":          utils.MakeID("usr"),
 		"name":        fmt.Sprintf("%v", payload["name"]),
@@ -54,7 +58,7 @@ func (e *Engine) CreateUser(ctx context.Context, payload map[string]any) (map[st
 		// Mattermost runs as the platform service principal.
 		"slack_id":      utils.StrVal(payload, "slack_id"),
 		"mattermost_id": utils.StrVal(payload, "mattermost_id"),
-		"timezone":      strDefault(utils.StrVal(payload, "timezone"), "UTC"),
+		"timezone":      timezone,
 		// Empty means "no choice recorded": the UI then follows the browser
 		// rather than inventing a language for somebody who never picked one.
 		// A default of ru-RU here would be a claim about a person, not about
@@ -102,6 +106,11 @@ func (e *Engine) UpdateUser(ctx context.Context, userID string, payload map[stri
 	}
 	if _, ok := payload["locale"]; ok {
 		if _, err := SanitizeLocale(payload["locale"]); err != nil {
+			return nil, err
+		}
+	}
+	if _, ok := payload["timezone"]; ok {
+		if _, err := parseScheduleTimezone(payload, "UTC"); err != nil {
 			return nil, err
 		}
 	}

@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1390" viewBox="0 0 1600 1390" role="img" aria-labelledby="title desc">
+<title id="title">nxs-anomaly Community: from alert to response</title>
+<desc id="desc">Monitoring sources send alerts to the API. Source parsing precedes route selection on original labels, optional enrichment or filtering, and deduplication into alert groups. A worker executes the selected escalation chain using on-call schedules or direct recipients, and delivers notifications. Without acknowledgement, configured escalation steps continue. Delivery failures have separate retries and a dead-letter outcome. Acknowledgement stops escalation; manual resolution or source recovery closes the group, even without acknowledgement. PostgreSQL persists configuration, alert state, escalation progress and delivery history. Web UI, REST API and Terraform configure the service.</desc>
+<defs>
+<linearGradient id="gold" x2="1" y2="1"><stop stop-color="#F2D36A"/><stop offset=".5" stop-color="#E6B936"/><stop offset="1" stop-color="#A97812"/></linearGradient>
+<pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#E6B936" stroke-opacity=".045"/></pattern>
+<marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1L11 6L1 11Z" fill="#E6B936"/></marker>
+<marker id="softarrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1L11 6L1 11Z" fill="#A9A397"/></marker>
+<style>
+text {font-family:Inter,"DejaVu Sans",sans-serif}
+.title {font-size:48px;font-weight:400;fill:#F4F1E8}
+.kicker {font-size:21px;font-weight:600;letter-spacing:4px;fill:#E6B936}
+.label {font-size:31px;font-weight:500;fill:#F4F1E8}
+.body {font-size:24px;fill:#C5C2B9}
+.side {font-size:20px;fill:#C5C2B9}
+.sidetitle {font-size:26px;font-weight:500;fill:#F4F1E8}
+.caption {font-size:20px;fill:#C5C2B9}
+.num {font-size:21px;font-weight:700;fill:#0B0B0D}
+.node {fill:#111114;stroke:#E6B936;stroke-width:2}
+.support {fill:#151518;stroke:#6B6555;stroke-width:1.5}
+.flow {fill:none;stroke:#E6B936;stroke-width:3;marker-end:url(#arrow)}
+.link {fill:none;stroke:#A9A397;stroke-width:2;stroke-dasharray:7 7;marker-end:url(#softarrow)}
+</style></defs>
+<rect width="1600" height="1390" fill="#0B0B0D"/><rect width="1600" height="1390" fill="url(#grid)"/>
+<path d="M70 55H1530M70 1335H1530" stroke="#E6B936" stroke-opacity=".35"/>
+<path d="M70 55H280" stroke="url(#gold)" stroke-width="5"/>
+
+<text x="80" y="106" class="kicker">NXS-ANOMALY · COMMUNITY</text>
+<text x="80" y="165" class="title">From monitoring alert to team response</text>
+<path class="support" d="M148 210H1052L1070 228V302L1052 320H148L130 302V228Z"/>
+<text x="164" y="254" class="label">Alertmanager / Grafana / Webhooks</text>
+<text x="164" y="290" class="body">Existing monitoring sends firing and recovery events</text>
+<text x="1150" y="244" class="kicker">CONFIGURATION</text>
+<text x="1150" y="280" class="caption">AND PERSISTENT STATE</text>
+<path class="flow" d="M600 320V365"/>
+<path class="node" d="M148 365H1052L1070 383V572L1052 590H148L130 572V383Z"/>
+<circle cx="173" cy="408" r="22" fill="url(#gold)"/>
+<text x="173" y="415" class="num" text-anchor="middle">01</text>
+<text x="212" y="418" class="label">API · ingest, route and group</text>
+<text x="164" y="461" class="body">Parse source → select a route using the original labels</text>
+<text x="164" y="497" class="body">Optional pipeline: enrich / transform / drop → normalize</text>
+<text x="164" y="533" class="body">Deduplicate into an active alert group; persist its state</text>
+<text x="164" y="566" class="caption">The selected route determines the escalation chain.</text>
+<path class="support" d="M1168 365H1512L1530 383V527L1512 545H1168L1150 527V383Z"/>
+<text x="1176" y="408" class="sidetitle">Response configuration</text>
+<text x="1176" y="443" class="side">Web UI / REST API / Terraform</text>
+<text x="1176" y="472" class="side">Integrations, routes and chains</text>
+<text x="1176" y="501" class="side">Users, targets and schedules</text>
+<path class="link" d="M1150 455H1078"/>
+<path class="flow" d="M600 590V635"/>
+<path class="node" d="M148 635H1052L1070 653V772L1052 790H148L130 772V653Z"/>
+<circle cx="173" cy="678" r="22" fill="url(#gold)"/>
+<text x="173" y="685" class="num" text-anchor="middle">02</text>
+<text x="212" y="688" class="label">Worker · execute the escalation chain</text>
+<text x="164" y="731" class="body">Resolve on-call schedules, overrides or direct recipients</text>
+<text x="164" y="767" class="body">Run configured notify, wait and repeat steps</text>
+<path class="support" d="M1168 615H1512L1530 633V787L1512 805H1168L1150 787V633Z"/>
+<text x="1176" y="658" class="sidetitle">PostgreSQL</text>
+<text x="1176" y="693" class="side">Configuration and schedules</text>
+<text x="1176" y="722" class="side">Alert state and chain progress</text>
+<text x="1176" y="751" class="side">Notifications, attempts, audit</text>
+<path class="link" d="M1070 712H1142"/>
+<path class="link" d="M1150 650H1110V565H1078"/>
+<path class="flow" d="M600 790V835"/>
+<path class="node" d="M148 835H1052L1070 853V972L1052 990H148L130 972V853Z"/>
+<circle cx="173" cy="878" r="22" fill="url(#gold)"/>
+<text x="173" y="885" class="num" text-anchor="middle">03</text>
+<text x="212" y="888" class="label">Worker · deliver notifications</text>
+<text x="164" y="931" class="body">Telegram / Slack / Mattermost / Email / Webhook / Asterisk</text>
+<text x="164" y="967" class="body">Use recipient targets and configured notification policies</text>
+<path class="support" d="M1168 835H1512L1530 853V972L1512 990H1168L1150 972V853Z"/>
+<text x="1176" y="878" class="sidetitle">Delivery failures</text>
+<text x="1176" y="913" class="side">Retry with backoff</text>
+<text x="1176" y="942" class="side">Terminal failure → dead letter</text>
+<text x="1176" y="971" class="side">Inspect attempt history</text>
+<path class="link" d="M1070 915H1142"/>
+<path class="flow" d="M600 990V1045"/>
+<path class="node" d="M148 1045H1052L1070 1063V1177L1052 1195H148L130 1177V1063Z"/>
+<circle cx="173" cy="1088" r="22" fill="url(#gold)"/>
+<text x="173" y="1095" class="num" text-anchor="middle">04</text>
+<text x="212" y="1098" class="label">Response · take ownership</text>
+<text x="164" y="1141" class="body">Acknowledge via web UI, API or supported ChatOps actions</text>
+<text x="164" y="1177" class="body">ACK stops escalation; the incident is not yet resolved</text>
+<path class="support" d="M1168 1045H1512L1530 1063V1177L1512 1195H1168L1150 1177V1063Z"/>
+<text x="1176" y="1088" class="sidetitle">Resolve · close incident</text>
+<text x="1176" y="1123" class="side">Manual action or source recovery</text>
+<text x="1176" y="1152" class="side">ACK is not required first</text>
+<text x="1176" y="1181" class="side">Recovery notices are optional</text>
+<path class="flow" d="M1070 1120H1142"/>
+<path class="flow" d="M130 1115H80V712H122"/>
+<text x="55" y="980" transform="rotate(-90 55 980)" class="caption">No ACK → continue the configured chain</text>
+<text x="130" y="1254" class="side">Silence temporarily suppresses the response. PostgreSQL preserves progress across process restarts.</text>
+<path class="flow" d="M130 1296H192"/>
+<text x="210" y="1303" class="caption">Response flow</text>
+<path class="link" d="M450 1296H512"/>
+<text x="530" y="1303" class="caption">Configuration / state / delivery handling</text>
+<text x="1530" y="1367" class="caption" text-anchor="end">Monitoring collects metrics. nxs-anomaly coordinates the response.</text>
+</svg>

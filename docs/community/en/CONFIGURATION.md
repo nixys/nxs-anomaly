@@ -12,15 +12,13 @@ endpoint reference is in [API.md](API.md).
 Every example uses an API key; the same actions are available in the web interface
 under the corresponding sections.
 
-The same entities can be described declaratively through Terraform — the
-`nxs-anomaly-terraform-provider` provider, the `nxs-anomaly-terraform-module`
-module and the `nxs-anomaly-terraform` root project (see "Related repositories" in
-the [README](../../../README.md)). The provider talks to this same `/api/v1`, so
-everything below remains the source of truth about what gets created and in what
-order; Terraform only spares you from passing IDs around by hand.
+The same entities can be managed with the public
+[Terraform provider nixys/nxs-anomaly](https://registry.terraform.io/providers/nixys/nxs-anomaly/latest).
+See the [connection example](../../../README.md#configure-with-terraform).
+The provider uses the same `/api/v1`; the entity dependencies described below still apply.
 
-Mixing the two approaches on one installation will not work, and that is now
-visible rather than discovered after the fact. An object created by a Terraform
+Use one configuration owner per object. UI-managed and Terraform-managed
+objects can coexist in the same installation. An object created by a Terraform
 request gets a `provisioned_by: "terraform"` field; after that the API answers
 `403` when anybody else changes or deletes it, and the web interface shows a
 "Managed by terraform" badge next to the name and greys out its own edit and
@@ -42,7 +40,7 @@ be touched.
 
 ```bash
 export API=http://localhost:8080
-export KEY=<your NXS_ANOMALY_API_KEY>
+export KEY='REPLACE_WITH_API_KEY'
 alias api='curl -sS -H "X-API-Key: $KEY" -H "Content-Type: application/json"'
 ```
 

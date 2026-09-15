@@ -3,12 +3,13 @@
 *In English: [SETUP.md](../en/SETUP.md)*
 
 Руководство по локальной настройке `nxs-anomaly`.
+Готовые env, systemd, Compose и Kubernetes: [установка](INSTALLATION.md).
 
 Если нужно понять, какие сущности создаются при `seed-demo`, как связаны алерты, группы, цепочки эскалации и уведомления, см. [DOMAIN_MODEL.md](DOMAIN_MODEL.md).
 
 ## Требования
 
-- Go 1.25
+- Go 1.25 — только для сборки из исходников
 - Node.js 22.12+ — только для локальной разработки frontend
 - Docker или доступный экземпляр PostgreSQL 14+
 - DSN PostgreSQL в переменной `NXS_ANOMALY_DB_DSN`
@@ -32,6 +33,7 @@ docker run --rm --name nxs-anomaly-postgres \
 export NXS_ANOMALY_DB_DSN='postgres://nxs_anomaly:nxs_anomaly@127.0.0.1:5432/nxs_anomaly?sslmode=disable'
 export NXS_ANOMALY_BOOTSTRAP_ADMIN_USERNAME=admin
 export NXS_ANOMALY_BOOTSTRAP_ADMIN_PASSWORD='pick a password'
+export NXS_ANOMALY_SESSION_COOKIE_SECURE=false
 
 # Запустить API сервер — миграции применятся автоматически
 go run ./cmd/nxs-anomaly serve
@@ -44,12 +46,16 @@ go run ./cmd/nxs-anomaly serve
 ## Docker Compose
 
 ```bash
-cp .env.example .env   # обязательные POSTGRES_PASSWORD и bootstrap admin — см. .env.example
-docker compose up --build
+cp .env.example .env
+# Укажите NXS_ANOMALY_VERSION из Releases, POSTGRES_PASSWORD и bootstrap admin.
+docker compose up -d --wait --wait-timeout 180
 ```
 
 `.env` не коммитится (`.gitignore`); без него `docker compose up` откажет
 сразу, назвав отсутствующую переменную, а не подставит пароль по умолчанию.
+
+Для сборки образов из исходников используйте `.env.dev.example` и
+`docker compose -f docker-compose.dev.yml up -d --build`.
 
 Сервисы:
 
