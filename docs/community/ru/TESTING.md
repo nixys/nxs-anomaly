@@ -5,7 +5,7 @@
 Проект проверяется на четырёх уровнях: быстрые unit/static checks, интеграция с
 PostgreSQL, браузерные сценарии, затем deployment/DR проверки в kind.
 Список тестовых файлов меняется быстрее документации; источники истины —
-`.gitlab-ci.yml`, `frontend/package.json` и каталоги `*_test.go`, `*.test.tsx`,
+`.github/workflows/ci.yml`, `frontend/package.json` и каталоги `*_test.go`, `*.test.tsx`,
 `frontend/e2e`, `deploy/helm/nxs-anomaly/tests`.
 
 ## Быстрые проверки
@@ -60,7 +60,7 @@ worker, смотрящий в ту же базу, заберёт её уведо
 тесты начинают падать по часам, а не по поведению. Для удалённой базы поднимите
 `NXS_ANOMALY_TEST_TIMEOUT_SCALE` (например, `4`).
 
-Suite применяет все миграции `0001`–`0027` и проверяет реальные транзакции,
+Suite применяет все миграции из `internal/store/migrations/` и проверяет реальные транзакции,
 constraints/индексы, ingest, RBAC, audit, sessions, schedules,
 maintenance, readiness, personal-data export/erase, retention, delivery/retry,
 несколько worker-реплик и перенос trace context.
@@ -114,7 +114,7 @@ Playwright поднимает реальный Go API, PostgreSQL и Vite. Сц�
 - первичная настройка через UI;
 - rotation, override и coverage расписания;
 - успешный provider test и permanently failed delivery;
-- RBAC и cross-team isolation;
+- RBAC и границы Community;
 - setup/readiness и отчёт о резервной копии.
 
 Карта и контейнерный запуск для WSL — `frontend/e2e/README.md`. Suite
@@ -124,7 +124,7 @@ Playwright поднимает реальный Go API, PostgreSQL и Vite. Сц�
 ## Helm, deployment и DR
 
 ```bash
-helm lint deploy/helm/nxs-anomaly
+helm lint deploy/helm/nxs-anomaly --set inlineSecret.enabled=true --set postgresql.enabled=true
 helm unittest -f 'tests/unit/*_test.yaml' deploy/helm/nxs-anomaly
 
 deploy/helm/nxs-anomaly/tests/e2e/kind-smoke.sh
@@ -145,28 +145,22 @@ acceptance hook. Kind-сценарии исполняют install/upgrade, се�
 
 - `internal/server/openapi_contract_test.go` двусторонне сверяет реальные routes
   и `docs/openapi.json`, включая suffix/action routes и authz coverage.
-- `test:security` отдельно запускает production profile, secret refs, redaction,
-  same-origin, подписи и delivery-honesty regressions.
-- `govulncheck`, `gosec`, `golangci-lint`, frontend audit allowlist и dependency
-  freshness — обязательные CI gates.
-- `scripts/check-version.sh` сверяет `VERSION`, chart, OpenAPI и release metadata.
-- `test:docs` проверяет Markdown/документационные инварианты; `test:commitlint` —
-  Conventional Commits.
+- Публичный CI запускает Go build/vet/race, lint, govulncheck, PostgreSQL
+  integration, frontend, документационные и Helm-проверки. Точные команды и
+  версии инструментов определяет workflow.
+- Production profile, secret refs, redaction, same-origin и delivery regressions
+  проверяются соответствующими тестами; дополнительные локальные инструменты
+  безопасности не обязательно являются публичными CI gates.
+- `scripts/check-version.sh` сверяет VERSION, chart и OpenAPI.
 
 ## CI
 
-Pipeline разбит по стоимости, а не в две старые стадии:
-
-1. `static` — docs, fmt, version, commitlint;
-2. `quality` — vet, lint, govulncheck, gosec;
-3. `unit` — Go/race/security/frontend/OpenAPI/reproducible build;
-4. `integration` — PostgreSQL coverage, Playwright, restore/PITR/load;
-5. `cluster` — сериализованные kind-сценарии;
-6. `build` → `package` → `publish` → `sign` → `verify`.
-
-Теговый pipeline публикует два image, OCI Helm chart, CycloneDX SBOM и подписи,
-после чего `release:verify` проверяет публично документированный pull/render и
-образы по digest.
+Публичные workflow: [ci.yml](https://github.com/nixys/nxs-anomaly/blob/main/.github/workflows/ci.yml) и
+[release.yml](https://github.com/nixys/nxs-anomaly/blob/main/.github/workflows/release.yml). Они определяют обязательные
+проверки Community; наличие локального скрипта не означает его запуск в каждом
+публичном CI job. Локально доступны дополнительные browser, kind, load и DR проверки.
+Теговый workflow публикует API/frontend, Helm chart, SBOM и подписи, затем
+проверяет выпущенные артефакты.
 
 ## Минимум перед merge
 
@@ -174,7 +168,7 @@ Pipeline разбит по стоимости, а не в две старые с
 
 ```bash
 git diff --check
-# плюс проверка локальных Markdown-ссылок, описанная в README/CI
+bash scripts/check-docs.sh
 ```
 
 Для Go/backend изменения:

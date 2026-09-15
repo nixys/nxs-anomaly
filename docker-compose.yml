@@ -1,5 +1,6 @@
 services:
   postgres:
+    restart: unless-stopped
     image: postgres:17-alpine
     environment:
       POSTGRES_DB: nxs_anomaly
@@ -11,20 +12,21 @@ services:
       # would not actually hold. `docker compose down -v` removes this volume
       # on purpose — that is the documented way to start over.
       - pgdata:/var/lib/postgresql/data
-    ports:
-      - "127.0.0.1:5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nxs_anomaly"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U nxs_anomaly -d nxs_anomaly"]
       interval: 5s
       timeout: 5s
       retries: 10
 
   app:
-    image: ghcr.io/nixys/nxs-anomaly:${NXS_ANOMALY_VERSION:?set NXS_ANOMALY_VERSION in .env to a release tag, e.g. v0.1.88}
+    restart: unless-stopped
+    env_file: [.env]
+    image: ghcr.io/nixys/nxs-anomaly:${NXS_ANOMALY_VERSION:?set NXS_ANOMALY_VERSION in .env to a release tag, matching the checkout}
     depends_on:
       postgres:
         condition: service_healthy
     environment:
+      NXS_ANOMALY_DB_CONNECT_MAX_WAIT_SECONDS: "60"
       NXS_ANOMALY_DB_DSN: postgres://nxs_anomaly:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env — see .env.example}@postgres:5432/nxs_anomaly?sslmode=disable
       NXS_ANOMALY_START_SCHEDULER: "false"
       # The management API refuses every request without a credential, so the
@@ -40,22 +42,33 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
 
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/nxs-anomaly", "healthcheck", "--url", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   frontend:
-    image: ghcr.io/nixys/nxs-anomaly-frontend:${NXS_ANOMALY_VERSION:?set NXS_ANOMALY_VERSION in .env to a release tag, e.g. v0.1.88}
+    restart: unless-stopped
+    image: ghcr.io/nixys/nxs-anomaly-frontend:${NXS_ANOMALY_VERSION:?set NXS_ANOMALY_VERSION in .env to a release tag, matching the checkout}
     depends_on:
-      - app
+      app:
+        condition: service_healthy
     environment:
       NXS_ANOMALY_API_UPSTREAM: app:8080
     ports:
       - "127.0.0.1:3100:8080"
 
   worker:
-    image: ghcr.io/nixys/nxs-anomaly:${NXS_ANOMALY_VERSION:?set NXS_ANOMALY_VERSION in .env to a release tag, e.g. v0.1.88}
+    restart: unless-stopped
+    env_file: [.env]
+    image: ghcr.io/nixys/nxs-anomaly:${NXS_ANOMALY_VERSION:?set NXS_ANOMALY_VERSION in .env to a release tag, matching the checkout}
     command: ["/usr/local/bin/nxs-anomaly", "run-worker", "--poll-interval", "5", "--worker-addr", ":8081"]
     depends_on:
       postgres:
         condition: service_healthy
     environment:
+      NXS_ANOMALY_DB_CONNECT_MAX_WAIT_SECONDS: "60"
       NXS_ANOMALY_DB_DSN: postgres://nxs_anomaly:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env — see .env.example}@postgres:5432/nxs_anomaly?sslmode=disable
     # /ready reflects actual usefulness (DB reachable and the cycle loop is not
     # stalled), unlike the app's own /health, whose worker_cycles_completed is

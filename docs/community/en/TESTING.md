@@ -5,7 +5,7 @@
 The project is checked at four levels: fast unit and static checks, integration
 against PostgreSQL, browser scenarios, and finally deployment and disaster
 recovery in kind. The list of test files changes faster than documentation does;
-the sources of truth are `.gitlab-ci.yml`, `frontend/package.json` and the
+the sources of truth are `.github/workflows/ci.yml`, `frontend/package.json` and the
 `*_test.go`, `*.test.tsx`, `frontend/e2e` and `deploy/helm/nxs-anomaly/tests`
 directories.
 
@@ -61,7 +61,7 @@ instead of ~0.6 ms, and tests start failing on the clock rather than on
 behaviour. For a remote database raise `NXS_ANOMALY_TEST_TIMEOUT_SCALE` — to `4`,
 say.
 
-The suite applies migrations `0001`–`0027` and exercises real transactions,
+The suite applies migrations from `internal/store/migrations/` and exercises real transactions,
 constraints and indexes, ingest, RBAC, the audit trail, sessions, schedules,
 maintenance windows, readiness, personal-data export and erasure, retention,
 delivery and retry, several worker replicas, and the propagation of trace
@@ -115,7 +115,7 @@ Playwright starts a real Go API, PostgreSQL and Vite. The scenarios:
 - first-time setup through the interface;
 - schedule rotation, overrides and coverage;
 - a successful provider test and a permanently failed delivery;
-- RBAC and cross-team isolation;
+- RBAC and Community edition boundaries;
 - setup, readiness and the backup report.
 
 The map, and how to run it in a container under WSL, are in
@@ -125,7 +125,7 @@ the shared database and has to stay last.
 ## Helm, deployment and disaster recovery
 
 ```bash
-helm lint deploy/helm/nxs-anomaly
+helm lint deploy/helm/nxs-anomaly --set inlineSecret.enabled=true --set postgresql.enabled=true
 helm unittest -f 'tests/unit/*_test.yaml' deploy/helm/nxs-anomaly
 
 deploy/helm/nxs-anomaly/tests/e2e/kind-smoke.sh
@@ -148,30 +148,24 @@ against the migrated schema.
 - `internal/server/openapi_contract_test.go` checks routes against
   `docs/openapi.json` in both directions, including suffix and action routes and
   authorization coverage.
-- A dedicated security job runs the production profile, secret references,
-  redaction, same-origin enforcement, signatures and delivery-honesty
-  regressions.
-- `govulncheck`, `gosec`, `golangci-lint`, the frontend audit allowlist and
-  dependency freshness are all required gates.
-- `scripts/check-version.sh` reconciles `VERSION`, the chart, the OpenAPI
-  document and the release metadata.
-- A documentation job checks the Markdown invariants; a commitlint job enforces
-  Conventional Commits.
+- Public CI runs Go build/vet/race, lint, govulncheck, PostgreSQL integration,
+  frontend checks, documentation checks and Helm checks. See the workflow for
+  exact commands and tool versions.
+- Production-profile, secret-reference, redaction, same-origin and delivery
+  regressions are covered by the matching test suites; additional local security
+  tools do not automatically constitute public CI gates.
+- `scripts/check-version.sh` reconciles `VERSION`, chart and OpenAPI metadata.
 
 ## The pipeline
 
-It is split by cost rather than into two large stages:
+The public workflows are [ci.yml](https://github.com/nixys/nxs-anomaly/blob/main/.github/workflows/ci.yml) and
+[release.yml](https://github.com/nixys/nxs-anomaly/blob/main/.github/workflows/release.yml). Consult them for the exact
+required checks and release permissions; local scripts also support deeper
+integration, browser, load and disaster-recovery checks. A local test command
+being available does not mean it runs in every public CI job.
 
-1. `static` — docs, formatting, version, commitlint;
-2. `quality` — vet, lint, govulncheck, gosec;
-3. `unit` — Go, race, security, frontend, OpenAPI, reproducible build;
-4. `integration` — PostgreSQL coverage, Playwright, restore/PITR/load;
-5. `cluster` — the kind scenarios, serialised;
-6. `build` → `package` → `publish` → `sign` → `verify`.
-
-A tag pipeline publishes two images, an OCI Helm chart, CycloneDX SBOMs and
-signatures, after which the verification job checks the publicly documented pull
-and render, and the images by digest.
+Tagged releases publish API and frontend images, a Helm chart, SBOMs and
+signatures, then verify the published artifacts.
 
 ## The minimum before merging
 
@@ -179,7 +173,7 @@ For a documentation change:
 
 ```bash
 git diff --check
-# plus the local Markdown link check described in the README
+bash scripts/check-docs.sh
 ```
 
 For a Go or backend change:

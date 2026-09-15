@@ -15,7 +15,7 @@ func sanitizePriority(raw any) (string, error) {
 	}
 	p := strings.ToLower(fmt.Sprintf("%v", raw))
 	if !supportedPriorities[p] {
-		return "", fmt.Errorf("unsupported priority: %s", p)
+		return "", errValidation(fmt.Sprintf("unsupported priority: %s", p))
 	}
 	return p, nil
 }
@@ -46,7 +46,7 @@ func sanitizeNotificationTargets(raw any, policy ChannelPolicy) ([]any, error) {
 			t = "log"
 		}
 		if !supportedNotificationTargets[t] {
-			return nil, fmt.Errorf("unsupported notification target type: %s", t)
+			return nil, errValidation(fmt.Sprintf("unsupported notification target type: %s", t))
 		}
 		target := fmt.Sprintf("%v", m["target"])
 		if err := policy.validateTarget(t, target); err != nil {
@@ -136,7 +136,7 @@ func (e *Engine) sanitizeNotificationPolicy(ctx context.Context, raw any) (map[s
 	if ch, err := utils.CoerceStringList(m["channels"]); err == nil && len(ch) > 0 {
 		for _, c := range ch {
 			if !supportedNotificationTargets[c] {
-				return nil, fmt.Errorf("unsupported notification policy channel: %s", c)
+				return nil, errValidation(fmt.Sprintf("unsupported notification policy channel: %s", c))
 			}
 		}
 		anyList := make([]any, len(ch))
@@ -226,7 +226,7 @@ func (e *Engine) sanitizeStep(ctx context.Context, raw any, index int) (map[stri
 	}
 	kind := strings.ToUpper(fmt.Sprintf("%v", m["kind"]))
 	if !supportedSteps[kind] {
-		return nil, fmt.Errorf("unsupported escalation step: %s", kind)
+		return nil, errValidation(fmt.Sprintf("unsupported escalation step: %s", kind))
 	}
 	stepID := utils.StrVal(m, "id")
 	if stepID == "" {
@@ -374,7 +374,7 @@ func sanitizeRoutes(payload map[string]any) ([]any, error) {
 			matchType = "all"
 		}
 		if matchType != "all" && matchType != "labels" && matchType != "regex" {
-			return nil, fmt.Errorf("unsupported route match_type: %s", matchType)
+			return nil, errValidation(fmt.Sprintf("unsupported route match_type: %s", matchType))
 		}
 		isDefault := utils.BoolVal(rm, "is_default", matchType == "all")
 		route := map[string]any{
@@ -404,7 +404,7 @@ func sanitizeRoutes(payload map[string]any) ([]any, error) {
 				return nil, errValidation("regex route requires pattern")
 			}
 			if _, err := regexp.Compile(pattern); err != nil {
-				return nil, fmt.Errorf("invalid route pattern: %w", err)
+				return nil, errValidation(fmt.Sprintf("invalid route pattern: %v", err))
 			}
 			route["pattern"] = pattern
 			route["is_default"] = utils.BoolVal(rm, "is_default", false)
@@ -415,7 +415,7 @@ func sanitizeRoutes(payload map[string]any) ([]any, error) {
 		routes = append(routes, route)
 	}
 	if defaultCount != 1 {
-		return nil, fmt.Errorf("integration must contain exactly one default route")
+		return nil, errValidation("integration must contain exactly one default route")
 	}
 	return routes, nil
 }

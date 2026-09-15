@@ -15,11 +15,13 @@ export const LOCALES = ['ru-RU', 'en-US'] as const;
 export type Locale = (typeof LOCALES)[number];
 
 /**
- * Russian is first because that is the audience this deployment is built for.
- * It is also the fallback when nothing at all is known, so an operator who
- * never touches the switch gets the language the product is being sold in.
+ * The fallback when neither a stored choice nor the browser names a supported
+ * language. It follows the edition's audience: English for Community, which is
+ * published for everyone, and Russian for Enterprise, the language it is sold
+ * in. The community cut strips the marked block, leaving English.
  */
-export const DEFAULT_LOCALE: Locale = 'ru-RU';
+let defaultLocale: Locale = 'en-US';
+export const DEFAULT_LOCALE: Locale = defaultLocale;
 
 const STORAGE_KEY = 'nxs-anomaly.locale';
 

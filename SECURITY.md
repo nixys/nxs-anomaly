@@ -49,15 +49,17 @@ with a CycloneDX SBOM and a **keyless** cosign signature — there is no key to 
 The signature carries the workflow that produced it, tied to this repository and the tag:
 
 ```bash
+RELEASE_TAG='REPLACE_WITH_RELEASE_TAG'
+CHART_VERSION="${RELEASE_TAG#v}"
 cosign verify \
   --certificate-identity-regexp '^https://github.com/nixys/nxs-anomaly/\.github/workflows/release\.yml@refs/tags/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/nixys/nxs-anomaly:<tag>
+  "ghcr.io/nixys/nxs-anomaly:${RELEASE_TAG}"
 
 cosign verify \
   --certificate-identity-regexp '^https://github.com/nixys/nxs-anomaly/\.github/workflows/release\.yml@refs/tags/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/nixys/nxs-anomaly:<chart-version>
+  "ghcr.io/nixys/nxs-anomaly:${CHART_VERSION}"
 ```
 
 Add `verify-attestation --type cyclonedx` in place of `verify` for the SBOM attestation.
@@ -77,7 +79,9 @@ it*; this one proves *the key named in [`Chart.yaml`](deploy/helm/nxs-anomaly/Ch
 
 ```bash
 gpg --import assets/nxs-anomaly-helm-signing.pub.asc
-helm pull oci://ghcr.io/nixys/nxs-anomaly --version <chart-version> --verify
+gpg --export D89A6071DDBD8F391414734A64ABC61D62A7FFE1 > /tmp/nxs-anomaly-helm-keyring.gpg
+helm pull oci://ghcr.io/nixys/nxs-anomaly --version "$CHART_VERSION" \
+  --verify --keyring /tmp/nxs-anomaly-helm-keyring.gpg
 ```
 
 **Generating and rotating the key** (maintainer runbook; do this once, off the runner, and

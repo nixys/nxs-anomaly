@@ -227,8 +227,10 @@ order, once.
 **Upgrade** (Helm; the images and the chart share a version):
 
 ```bash
+CHART_VERSION='REPLACE_WITH_CHART_VERSION'
+VALUES_FILE='/path/to/your/saved-values.yaml'
 helm upgrade nxs-anomaly oci://ghcr.io/nixys/nxs-anomaly \
-  --version <new> -f values-production.yaml --reuse-values
+  --version "$CHART_VERSION" -f "$VALUES_FILE" --reuse-values
 ```
 
 Migrations run at startup. Watch the worker's `/ready` and the delivery metrics.

@@ -22,9 +22,9 @@ Production-конфигурация рекомендует раздельные 
 
 | Артефакт | Community | Enterprise |
 |---|---|---|
-| Бэкенд | `nxs-anomaly` | `nxs-anomaly` |
-| Фронтенд | `nxs-anomaly-frontend` | `nxs-anomaly-frontend` |
-| Helm chart | `nxs-anomaly` | `nxs-anomaly` |
+| Бэкенд | `nxs-anomaly` | `nxs-anomaly-enterprise` |
+| Фронтенд | `nxs-anomaly-frontend` | `nxs-anomaly-frontend-enterprise` |
+| Helm chart | `nxs-anomaly` | `nxs-anomaly-enterprise` |
 
 Community публикуется в GHCR, enterprise — в приватный реестр по учётной записи,
 выдаваемой на инсталляцию. Тег у всех один и тот же: `vX.Y.Z`, он же `appVersion`
@@ -44,13 +44,12 @@ Community публикуется в GHCR, enterprise — в приватный �
 ### Сборка
 
 ```bash
-docker build \
-  --build-arg VERSION=1.2.3 \
-  -t ghcr.io/nixys/<image-project>/nxs-anomaly:v1.2.3 .
-docker push ghcr.io/nixys/<image-project>/nxs-anomaly:v1.2.3
+RELEASE_TAG="v$(cat VERSION)"
+docker build --build-arg VERSION="$RELEASE_TAG" \
+  -t "nxs-anomaly-local:$RELEASE_TAG" .
 ```
 
-Для инъекции версии в бинарник добавить в `Dockerfile` аргумент:
+Версия уже передаётся в бинарник существующим `Dockerfile`:
 
 ```dockerfile
 ARG VERSION=dev
@@ -107,17 +106,23 @@ kubectl create secret generic nxs-anomaly-env \
   --from-literal=NXS_ANOMALY_DB_DSN='postgres://user:pass@pg.prod:5432/nxs_anomaly?sslmode=require'
 helm install nxs-anomaly deploy/helm/nxs-anomaly \
   --set existingSecret.enabled=true --set existingSecret.name=nxs-anomaly-env \
+  --set inlineSecret.enabled=false --set postgresql.enabled=false \
   --set ingress.enabled=true --set ingress.host=nxs-anomaly.example.com
 ```
 
 Проверки чарта: `helm lint`, `helm unittest -f 'tests/unit/*_test.yaml'` и реальный
 install/upgrade smoke в kind — `deploy/helm/nxs-anomaly/tests/e2e/kind-smoke.sh`
-(в CI — job'ы `helm:test` и `helm:kind`).
+(публичный pipeline: `.github/workflows/ci.yml`).
 
 Ручные YAML-манифесты ниже описывают то же «под капотом» — для окружений без Helm
 или для понимания того, что рендерит чарт.
 
 ### Секреты
+
+Манифесты ниже показывают структуру, а не полную установку. Замените
+`REPLACE_WITH_RELEASE_TAG` одним опубликованным тегом API и worker.
+Frontend, первоначальный вход и полный порядок запуска описаны в
+[руководстве установки](INSTALLATION.md).
 
 ```bash
 kubectl create namespace nxs-anomaly
@@ -157,7 +162,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: ghcr.io/nixys/<image-project>/nxs-anomaly:v1.2.3
+          image: ghcr.io/nixys/nxs-anomaly:REPLACE_WITH_RELEASE_TAG
           args: ["serve", "--host", "0.0.0.0", "--port", "8080", "--no-scheduler"]
           ports:
             - name: http
@@ -206,7 +211,7 @@ spec:
     spec:
       containers:
         - name: worker
-          image: ghcr.io/nixys/<image-project>/nxs-anomaly:v1.2.3
+          image: ghcr.io/nixys/nxs-anomaly:REPLACE_WITH_RELEASE_TAG
           args: ["run-worker", "--poll-interval", "5"]
           ports:
             - name: telemetry

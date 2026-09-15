@@ -223,8 +223,10 @@ bash tests/pitr_drill.sh
 **Обновление** (Helm; образы и chart имеют одну версию):
 
 ```bash
-helm upgrade nxs-anomaly oci://ghcr.io/nixys/<helm-project>/nxs-anomaly \
-  --version <новая> -f values-production.yaml --reuse-values
+CHART_VERSION='REPLACE_WITH_CHART_VERSION'
+VALUES_FILE='/path/to/your/saved-values.yaml'
+helm upgrade nxs-anomaly oci://ghcr.io/nixys/nxs-anomaly \
+  --version "$CHART_VERSION" -f "$VALUES_FILE" --reuse-values
 ```
 
 Миграции применяются при старте. Следите за `/ready` worker-а и метриками доставки.

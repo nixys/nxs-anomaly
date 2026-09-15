@@ -1,0 +1,18 @@
+postgresql:
+  enabled: true
+  auth:
+    username: nxs_anomaly
+    database: nxs_anomaly
+    password: "" # Supply with --set-string postgresql.auth.password.
+  persistence:
+    enabled: true
+    storageClass: "" # Supply the cluster's class with --set-string.
+    size: 10Gi
+existingSecret:
+  enabled: true
+  name: nxs-anomaly-env
+inlineSecret:
+  enabled: false
+config:
+  NXS_ANOMALY_SESSION_COOKIE_SECURE: "false"
+  NXS_ANOMALY_DB_CONNECT_MAX_WAIT_SECONDS: "60"

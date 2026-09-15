@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -340,4 +341,49 @@ func TestCreateMobileSessionDeviceOwnership(t *testing.T) {
 		t.Errorf("session token not generated")
 	}
 	_ = did
+}
+
+// Bad input is the caller's mistake, so the API must answer 400, not 500. These
+// used to return plain errors, which writeEngineError maps to "internal error".
+func TestCreateUserRejectsBadInputAsValidation(t *testing.T) {
+	cases := map[string]map[string]any{
+		"priority":            {"name": "Probe", "priority": "bogus"},
+		"notification target": {"name": "Probe", "notification_targets": []any{map[string]any{"type": "bogus", "target": "x"}}},
+		"timezone":            {"name": "Probe", "timezone": "Mars/Base"},
+	}
+	for name, payload := range cases {
+		_, err := crudEngine(newMemStore()).CreateUser(context.Background(), payload)
+		if !errors.Is(err, ErrValidation) {
+			t.Errorf("%s: err = %v, want a validation error", name, err)
+		}
+	}
+}
+
+func TestUpdateUserRejectsUnknownTimezone(t *testing.T) {
+	e := crudEngine(newMemStore())
+	user, err := e.CreateUser(context.Background(), map[string]any{"name": "Probe"})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	_, err = e.UpdateUser(context.Background(), user["id"].(string), map[string]any{"timezone": "Mars/Base"})
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("err = %v, want a validation error", err)
+	}
+}
+
+func TestSanitizersReportBadInputAsValidation(t *testing.T) {
+	e := crudEngine(newMemStore())
+	ctx := context.Background()
+	route := func(r map[string]any) map[string]any { return map[string]any{"routes": []any{r}} }
+	checks := map[string]error{}
+	_, checks["escalation step"] = e.sanitizeStep(ctx, map[string]any{"kind": "BOGUS"}, 0)
+	_, checks["policy channel"] = e.sanitizeNotificationPolicy(ctx, map[string]any{"channels": []any{"bogus"}})
+	_, checks["route match_type"] = sanitizeRoutes(route(map[string]any{"match_type": "bogus"}))
+	_, checks["route pattern"] = sanitizeRoutes(route(map[string]any{"match_type": "regex", "pattern": "(", "is_default": true}))
+	_, checks["default route count"] = sanitizeRoutes(route(map[string]any{"match_type": "labels", "labels": map[string]any{"a": "b"}}))
+	for name, err := range checks {
+		if !errors.Is(err, ErrValidation) {
+			t.Errorf("%s: err = %v, want a validation error", name, err)
+		}
+	}
 }

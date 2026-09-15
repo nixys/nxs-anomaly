@@ -3,6 +3,8 @@
 *Русская версия: [SETUP.md](../ru/SETUP.md)*
 
 Getting `nxs-anomaly` running locally, and the settings you meet on the way.
+For prepared env files, systemd, Compose and Kubernetes, start with
+[Installation](INSTALLATION.md).
 
 ## Requirements
 
@@ -17,11 +19,11 @@ the API, the worker and the web interface:
 
 ```bash
 cp .env.example .env
-# edit .env: NXS_ANOMALY_VERSION (a tag from the Releases page, e.g. v0.1.88),
+# edit .env: NXS_ANOMALY_VERSION (a tag from the Releases page, matching your checkout),
 # POSTGRES_PASSWORD, and the bootstrap admin username/password. Compose refuses
 # to start a container whose required variable is still empty, rather than
 # fall back to a guessable default.
-docker compose up -d
+docker compose up -d --wait --wait-timeout 180
 ```
 
 `.env` is yours to keep local — it is already covered by `.gitignore` — and it
@@ -38,13 +40,13 @@ the missing variable, instead of starting the stack with a blank password.
 Data survives an ordinary `docker compose down` followed by `up` — the
 database lives on the named `pgdata` volume, not inside the container. To
 throw the installation away on purpose, `docker compose down -v` removes that
-volume along with the containers; there is no other supported way to lose it.
+volume along with the containers. Maintain backups for data you need to keep.
 
 Check it answered:
 
 ```bash
 curl http://127.0.0.1:8080/health
-# {"status":"ok","db_ok":true,"edition":"community","version":"v0.1.88",...}
+# {"status":"ok","db_ok":true,"edition":"community","version":"vX.Y.Z",...}
 
 curl http://127.0.0.1:8081/ready
 # the worker's own probe — {"status":"ok","db_ok":true,"worker_cycles_completed":N,...}.
@@ -86,8 +88,9 @@ Then, in another terminal:
 export NXS_ANOMALY_DB_DSN='postgres://nxs_anomaly:nxs_anomaly@127.0.0.1:5432/nxs_anomaly?sslmode=disable'
 export NXS_ANOMALY_BOOTSTRAP_ADMIN_USERNAME=admin
 export NXS_ANOMALY_BOOTSTRAP_ADMIN_PASSWORD='pick a password'
+export NXS_ANOMALY_SESSION_COOKIE_SECURE=false
 
-go run ./cmd/nxs-anomaly serve               # the API — migrations run automatically
+go run ./cmd/nxs-anomaly serve --no-scheduler # the API — migrations run automatically
 go run ./cmd/nxs-anomaly run-worker          # the worker, in another terminal
 ```
 
@@ -214,9 +217,10 @@ Two that are worth knowing by name:
 
 ## Interface language and timezone
 
-The interface ships English and Russian and follows the browser; a person can
-override both language and timezone in their own settings, and the choice is
-stored per user rather than per installation.
+The interface ships English and Russian and follows the browser, falling back to
+English when the browser asks for neither; a person can override both language
+and timezone in their own settings, and the choice is stored per user rather
+than per installation.
 
 ## Smoke test
 

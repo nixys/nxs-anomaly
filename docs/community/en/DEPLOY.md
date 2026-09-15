@@ -51,10 +51,9 @@ be a reinstall that orphans the volumes.
 ### Building
 
 ```bash
-docker build \
-  --build-arg VERSION=1.2.3 \
-  -t ghcr.io/nixys/nxs-anomaly:v1.2.3 .
-docker push ghcr.io/nixys/nxs-anomaly:v1.2.3
+RELEASE_TAG="v$(cat VERSION)"
+docker build --build-arg VERSION="$RELEASE_TAG" \
+  -t "nxs-anomaly-local:$RELEASE_TAG" .
 ```
 
 The version is injected into the binary by the `Dockerfile`:
@@ -117,6 +116,7 @@ kubectl create secret generic nxs-anomaly-env \
   --from-literal=NXS_ANOMALY_DB_DSN='postgres://user:pass@pg.prod:5432/nxs_anomaly?sslmode=require'
 helm install nxs-anomaly deploy/helm/nxs-anomaly \
   --set existingSecret.enabled=true --set existingSecret.name=nxs-anomaly-env \
+  --set inlineSecret.enabled=false --set postgresql.enabled=false \
   --set ingress.enabled=true --set ingress.host=nxs-anomaly.example.com
 ```
 
@@ -126,6 +126,11 @@ and a real install/upgrade smoke in kind —
 
 The manual manifests below describe the same thing underneath, for environments
 without Helm or for understanding what the chart renders.
+
+The manual YAML below is a structural example, not a complete installation.
+Replace `REPLACE_WITH_RELEASE_TAG` with the same published tag for API and worker.
+For frontend, login credentials, TLS and complete deployment commands, use
+[Installation](INSTALLATION.md).
 
 ### Secrets
 
@@ -167,7 +172,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: ghcr.io/nixys/nxs-anomaly:v1.2.3
+          image: ghcr.io/nixys/nxs-anomaly:REPLACE_WITH_RELEASE_TAG
           args: ["serve", "--host", "0.0.0.0", "--port", "8080", "--no-scheduler"]
           ports:
             - name: http
@@ -216,7 +221,7 @@ spec:
     spec:
       containers:
         - name: worker
-          image: ghcr.io/nixys/nxs-anomaly:v1.2.3
+          image: ghcr.io/nixys/nxs-anomaly:REPLACE_WITH_RELEASE_TAG
           args: ["run-worker", "--poll-interval", "5"]
           ports:
             - name: telemetry

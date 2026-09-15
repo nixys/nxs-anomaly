@@ -9,7 +9,7 @@ export default defineConfig({
   server: {
     port: 3100,
     // changeOrigin:false preserves the browser's Host header on the upstream
-    // request, mirroring the production nginx (`proxy_set_header Host $host`).
+    // request, mirroring the production nginx (`proxy_set_header Host $http_host`).
     // The API's same-origin write check compares Origin to Host, so rewriting
     // Host to the target would 403 every session-cookie write (ack/resolve/…).
     // The prefixes must mirror nginx.conf.template exactly. `/integrations/v1`

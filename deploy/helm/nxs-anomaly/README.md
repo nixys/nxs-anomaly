@@ -30,63 +30,44 @@ analytics. This chart installs Community only.
 
 ## Quickstart
 
-This example creates a local evaluation with persistent PostgreSQL and an initial
-administrator. It uses HTTP through a loopback port-forward. You also need Bash
-and OpenSSL for the password generation commands.
-
-Choose a published version from [Releases](https://github.com/nixys/nxs-anomaly/releases).
-Set `CHART_VERSION` below before running the commands: chart versions use `X.Y.Z`,
-without the `v` prefix. Application images use `vX.Y.Z`; leave image tags unset to
-use the matching chart `appVersion`.
+For a new installation with bundled PostgreSQL, choose a chart version from
+[Releases](https://github.com/nixys/nxs-anomaly/releases) **without** the `v` prefix.
+Run in Bash with OpenSSL installed:
 
 ```bash
 CHART_VERSION='REPLACE_WITH_CHART_VERSION'
-umask 077
-cat > evaluation-values.yaml <<EOF_VALUES
-postgresql:
-  enabled: true
-  auth:
-    password: "$(openssl rand -hex 24)"
-inlineSecret:
-  enabled: true
-  data:
-    NXS_ANOMALY_BOOTSTRAP_ADMIN_USERNAME: "admin"
-    NXS_ANOMALY_BOOTSTRAP_ADMIN_PASSWORD: "$(openssl rand -hex 24)"
-config:
-  NXS_ANOMALY_SESSION_COOKIE_SECURE: "false"
-EOF_VALUES
-
+ADMIN_PASSWORD=$(openssl rand -hex 24)
 helm install nxs-anomaly oci://ghcr.io/nixys/nxs-anomaly \
   --version "$CHART_VERSION" --namespace nxs-anomaly --create-namespace \
-  --values evaluation-values.yaml --wait --timeout 5m
-
-kubectl --namespace nxs-anomaly port-forward service/nxs-anomaly-frontend 3100:8080
+  --set postgresql.enabled=true --set inlineSecret.enabled=true \
+  --set-string postgresql.auth.password="$(openssl rand -hex 24)" \
+  --set-string inlineSecret.data.NXS_ANOMALY_BOOTSTRAP_ADMIN_USERNAME=admin \
+  --set-string inlineSecret.data.NXS_ANOMALY_BOOTSTRAP_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
+  --set-string config.NXS_ANOMALY_SESSION_COOKIE_SECURE=false \
+  --wait --timeout 5m
+printf 'Admin password: %s\n' "$ADMIN_PASSWORD"
+kubectl -n nxs-anomaly port-forward service/nxs-anomaly-frontend 3100:8080
 ```
 
-Open [http://localhost:3100](http://localhost:3100). Sign in as `admin` using the
-administrator password saved in `evaluation-values.yaml`. Keep this file private
-and reuse it for this installation; regenerating it does not rotate an existing
-database password. Inline secrets are also stored in Helm release data.
+Open [http://localhost:3100](http://localhost:3100) and sign in as `admin` with
+the printed password. Keep port-forward running.
 
-In **Setup**, create people and notification targets, a team and current on-call
-rotation, an escalation chain and an integration. Configure channel credentials
-for the worker, send a test alert and confirm that a notification reaches its
-recipient and can be acknowledged. The default `log` target only writes to logs.
-See the [first-alert walkthrough](https://github.com/nixys/nxs-anomaly#get-your-first-notification).
+If the cluster has no default StorageClass, add
+`--set-string postgresql.persistence.storageClass=YOUR_STORAGE_CLASS` to the
+Helm command. Save the administrator password; generated credentials also reside
+in Helm release values. This is a first-install example: reuse existing passwords
+when upgrading, since new values do not rotate the password in PostgreSQL.
 
-HTTP cookies are enabled only for this local example. Use HTTPS and keep
-`NXS_ANOMALY_SESSION_COOKIE_SECURE: "true"` for a published installation.
+Continue with [your first notification](https://github.com/nixys/nxs-anomaly#get-your-first-notification).
+Use the production instructions below for external access through HTTPS.
 
 ## Production installation
 
-Provision PostgreSQL, database backups, DNS, an ingress controller and a TLS
-Secret first. The example below assumes an ingress class named `nginx` and a TLS
-Secret named `nxs-anomaly-tls` in the application namespace. Replace the example
-hostnames and credentials with your own.
+Have an external PostgreSQL database with backups, an ingress controller, and
+DNS for your service ready. In namespace `nxs-anomaly`, provision the TLS Secret
+`nxs-anomaly-tls` for your hostname. Use your own ingress class and hostname below.
 
-Create a private `credentials.env` file containing these keys. URL-encode special
-characters in the PostgreSQL username and password; do not put shell quotes
-around values in this file.
+Create a private `credentials.env` file:
 
 ```dotenv
 NXS_ANOMALY_DB_DSN=postgres://nxs_anomaly:REPLACE_WITH_PASSWORD@pg.example.com:5432/nxs_anomaly?sslmode=require
@@ -94,19 +75,11 @@ NXS_ANOMALY_BOOTSTRAP_ADMIN_USERNAME=admin
 NXS_ANOMALY_BOOTSTRAP_ADMIN_PASSWORD=REPLACE_WITH_STRONG_PASSWORD
 ```
 
-Add the notification provider credentials your worker needs; see
-[Configuration](https://github.com/nixys/nxs-anomaly/blob/main/docs/community/en/CONFIGURATION.md).
-The sample DSN requires encrypted transport. For database server identity
-verification, configure `verify-full` with the appropriate trusted CA.
+URL-encode special characters in DSN credentials; env values need no shell quotes.
+Add the [Telegram, SMTP or other provider credentials](https://github.com/nixys/nxs-anomaly/blob/main/docs/community/en/CONFIGURATION.md)
+you need to the same file. API and worker both read this Secret.
 
-```bash
-chmod 600 credentials.env
-kubectl create namespace nxs-anomaly --dry-run=client -o yaml | kubectl apply -f -
-kubectl --namespace nxs-anomaly create secret generic nxs-anomaly-env \
-  --from-env-file=credentials.env
-```
-
-Save the following as `production-values.yaml`:
+Save `production-values.yaml`:
 
 ```yaml
 existingSecret:
@@ -114,31 +87,36 @@ existingSecret:
   name: nxs-anomaly-env
 config:
   NXS_ANOMALY_PROFILE: "production"
-  # Community is one shared access domain; team isolation requires Enterprise.
-  NXS_ANOMALY_TEAM_SCOPING: "false"
+  NXS_ANOMALY_TEAM_SCOPING: "false" # Community uses one shared access domain.
 ingress:
   enabled: true
   className: nginx
   host: alerts.example.com
   tls:
     - secretName: nxs-anomaly-tls
-      hosts:
-        - alerts.example.com
+      hosts: [alerts.example.com]
 ```
 
+Choose a published chart version (without `v`) and install:
+
 ```bash
+CHART_VERSION='REPLACE_WITH_CHART_VERSION'
+chmod 600 credentials.env
+kubectl -n nxs-anomaly create secret generic nxs-anomaly-env \
+  --from-env-file=credentials.env
 helm install nxs-anomaly oci://ghcr.io/nixys/nxs-anomaly \
   --version "$CHART_VERSION" --namespace nxs-anomaly \
   --values production-values.yaml --wait --timeout 5m
 ```
 
-Open your configured HTTPS hostname and complete Setup. The production profile
-requires external datastores and managed secrets, retains secure session cookies
-and the outbound webhook SSRF guard, and checks replica/PDB settings. It does not
-provision database backups, certificates or notification providers. Review the
-[security profile](https://github.com/nixys/nxs-anomaly/blob/main/docs/community/en/SECURITY_PROFILE.md)
-and [capacity guide](https://github.com/nixys/nxs-anomaly/blob/main/docs/community/en/CAPACITY.md)
-before using the service for on-call response.
+Open your HTTPS hostname and sign in with the administrator credentials from
+`credentials.env`. Then [configure your first notification](https://github.com/nixys/nxs-anomaly#get-your-first-notification).
+
+The profile enables secure cookies and the outbound webhook SSRF guard; the chart
+does not provision your database, backups, certificates or notification providers.
+The sample DSN encrypts traffic; use `verify-full` with a trusted CA to also verify
+the database server's identity. Further settings: [security](https://github.com/nixys/nxs-anomaly/blob/main/docs/community/en/SECURITY_PROFILE.md)
+and [capacity](https://github.com/nixys/nxs-anomaly/blob/main/docs/community/en/CAPACITY.md).
 
 ## Configuration reference
 

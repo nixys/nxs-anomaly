@@ -1,0 +1,22 @@
+[Unit]
+Description=nxs-anomaly Community API
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nxs-anomaly
+Group=nxs-anomaly
+EnvironmentFile=/etc/nxs-anomaly/credentials.env
+EnvironmentFile=/etc/nxs-anomaly/delivery.env
+EnvironmentFile=/etc/nxs-anomaly/on-premise.env
+ExecStart=/usr/local/bin/nxs-anomaly serve --host 127.0.0.1 --port 8080 --no-scheduler
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
