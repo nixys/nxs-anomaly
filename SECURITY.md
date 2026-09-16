@@ -15,8 +15,32 @@ degrade a running service while researching.
 
 ## Supported versions
 
-nxs-anomaly is pre-1.0. Security fixes are applied to the latest tagged release and
-`main`. Older tags are not maintained.
+This policy covers nxs-anomaly Community. The first stable release is `v1.0.0`.
+Security fixes are developed on `main` and published in a new stable release.
+Use the latest stable release listed on the [Releases page](https://github.com/nixys/nxs-anomaly/releases).
+
+| Version or branch | Security maintenance |
+|---|---|
+| Latest stable release | Supported; fixes are delivered in a subsequent stable release |
+| Older stable releases | Not maintained; upgrade to the latest stable release |
+| Pre-1.0 releases (`0.x`) | Not maintained |
+| Prereleases | Evaluation only; upgrade to a stable release when available |
+| `main` | Development branch where fixes are integrated; not a supported release |
+
+There are no separately maintained LTS branches or guaranteed backports to older
+release lines. An affected older installation may need an upgrade to receive a fix.
+Published tags and images are not replaced with patched contents under the same version.
+
+Before upgrading, read the release notes and [migration guidance](docs/community/en/MIGRATIONS.md),
+back up PostgreSQL and retain your configuration. Upgrade the API, worker and
+frontend together using matching application versions, then verify notification
+delivery. Database migrations are forward-only; reverting images alone may not
+undo an upgrade.
+
+The Helm chart has its own chart version and identifies the application version
+through `appVersion`. The [Terraform provider](https://github.com/nixys/terraform-provider-nxs-anomaly)
+is released separately; its version number does not need to match the application.
+Check the relevant release notes before changing either component.
 
 ## Hardening — the production profile
 

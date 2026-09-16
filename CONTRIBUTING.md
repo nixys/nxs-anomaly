@@ -1,5 +1,8 @@
 # Contributing
 
+Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before participating.
+It applies to contributors and maintainers and includes private reporting contacts.
+
 ## Commit messages
 
 Use [Conventional Commits](https://www.conventionalcommits.org/): `<type>(<scope>)?: <subject>`.
