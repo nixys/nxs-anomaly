@@ -476,6 +476,12 @@ Delivery reads the same rows through the store and is unaffected.
 | GET | `/api/v1/mobile/dashboard` (the `X-Mobile-Session` header) |
 | POST | `/api/v1/mobile/alert-groups/{id}/acknowledge`, `/resolve` (the `X-Mobile-Session` header) |
 
+A channel's `external_id` is what an inbound command names, so only one channel
+per platform may carry it: a second one answers `409`. Commands from a shared
+chat — a Telegram group, a Slack or Mattermost channel — run only when that chat
+is bound to a channel here, whoever sends them; a one-to-one chat with the bot
+needs no channel, because the person is the boundary.
+
 ### Alert groups
 
 | Method | Path |
@@ -501,7 +507,7 @@ also runs the chain again from the first step.
 | Method | Path |
 |---|---|
 | GET | `/api/v1/alerts`, `/api/v1/notifications` |
-| GET | `/api/v1/delivery-attempts?notification_id=<id>` |
+| GET | `/api/v1/delivery-attempts?notification_id=<id>&limit=&offset=` (paginated like the other lists) |
 | GET | `/api/v1/history?from=&to=&integration=&severity=&status=&channel=&user=&team=` |
 | POST | `/api/v1/routes/debug/{key}` — preview routing and notifications for a payload |
 | POST | `/api/v1/escalations/run` — run a pass over due escalations by hand |

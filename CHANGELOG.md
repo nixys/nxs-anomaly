@@ -4,6 +4,64 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning once it reaches 1.0.
 
+## [1.2.0] — 2026-09-18
+
+### Security
+- **Sign-in attempts are now also budgeted per account.** The per-IP budget can
+  only be as good as the address: a client inside a trusted proxy range picks its
+  own `X-Forwarded-For`, and a new one per attempt meant a new budget per attempt,
+  so password guessing from any private network was unlimited. Failed sign-ins now
+  also spend a per-account budget (ten, refilling at twelve a minute) that no
+  header can vary. `SETUP.md` no longer claims the per-IP limit alone bounds this.
+- **A write authenticated by a session cookie is refused when the browser calls
+  it cross-site**, even without an `Origin` header: `Sec-Fetch-Site: cross-site`
+  (or `same-site`) is now enough to reject. Clients that send neither header —
+  curl, server-side scripts — are unaffected.
+- **A shared chat needs a bound ChatOps channel again.** A known responder could
+  run commands from any Telegram group the bot had been added to, because an
+  unbound chat fell back to acting as that person. The channel is the team
+  boundary, and a room without one now refuses, as the documentation says.
+
+### Fixed
+- **A soft-deleted object answers 404.** `GET /api/v1/integrations/{id}` still
+  returned a deleted integration with 200, so "delete it, then check it is gone" —
+  what the chart's acceptance test does — could never pass. Delivery still reads
+  those rows directly, so notifications already in flight are unaffected.
+- **`GET /api/v1/delivery-attempts` honours `limit` and `offset`.** It always
+  returned the first thousand rows and reported `limit: null`, which made every
+  attempt after them unreachable through the API. It now answers with the same
+  page envelope as the other lists.
+- **The bundled PostgreSQL no longer restarts on every `helm upgrade`.** Its pod
+  template carried `helm.sh/chart` and `app.kubernetes.io/version`, so a chart bump
+  alone produced a new controller revision and cycled the pod holding the data.
+  The bundled datastores now use labels that do not change with the chart version.
+- **A key removed from `inlineSecret.data` is really removed.** The Secret was
+  rendered through `stringData`, which the API server moves into `data`; a dropped
+  key was then deleted from a field the live object no longer had and survived,
+  including across `helm rollback`. A revoked ChatOps token stayed valid. The
+  Secret now renders `data` directly.
+- **Mattermost buttons stop claiming success.** A refused action — an unbound
+  channel, a missing role — was rendered as a settled post with "✓" and an undo
+  button while nothing had happened.
+- **Bad input answers 400, not 500:** a schedule override with `until` before
+  `start_at`, and `/api/v1/history` with an unparsable `from` or `to`.
+- **`POST /api/v1/backups/report` refuses a timestamp in the future.** A mistyped
+  year kept the readiness check green for as long as the typo said.
+- **`handoff_interval: 0` is refused** instead of being silently stored as 1.
+- **A pipeline that rewrites the `severity` label now sets the group's severity**,
+  which used to keep the value the source sent while the label said otherwise.
+- **429 answers carry `Retry-After`** on ingest, the API limiter, ChatOps and
+  sign-in, so a sender knows whether to come back in a second or in ten.
+- **A second ChatOps channel bound to the same chat is refused with 409.** Two
+  rows with the same `platform` and `external_id` are two answers to "which
+  channel is this", and unbinding by deleting one did nothing.
+- **The arrival highlight no longer moves the row.** A newly arrived alert slid
+  in from six pixels above, which moved the row a responder was reaching for and
+  made the click a matter of timing; the highlight is now colour only.
+- **The chart's acceptance test looks for its own delivery attempt** by the
+  canary's notifications instead of scanning an unfiltered page, where on an
+  installation with history it never appeared.
+
 ## [Unreleased]
 
 ### Fixed

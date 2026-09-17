@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "nxs-anomaly native API",
-    "version": "1.1.2",
+    "version": "1.2.0",
     "description": "The native /api/v1 contract for nxs-anomaly (API, worker, frontend). This is the authoritative contract; the Grafana-compatibility surface under /api/internal/v1 is a compatibility shim and is NOT part of this contract. The core payloads — user, team, schedule, escalation chain, integration, alert group, alert, notification, delivery attempt — are modelled field by field, with `required` reflecting exactly the keys the engine writes unconditionally; every one still allows additional properties because the underlying storage is JSONB. Remaining resources use the open `Entity` schema. Drift between this document and the router is gated by internal/server/openapi_contract_test.go, and the frontend compiles against types generated from this file (frontend/src/api/schema.d.ts).",
     "license": {
       "name": "Apache-2.0"
@@ -715,6 +715,9 @@
           },
           "400": {
             "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -752,6 +755,9 @@
             "$ref": "#/components/responses/ChatOpsChannel"
           },
           "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
             "$ref": "#/components/responses/Error"
           }
         }
@@ -823,6 +829,12 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/NotificationId"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
           }
         ],
         "responses": {
@@ -971,6 +983,9 @@
         "responses": {
           "200": {
             "$ref": "#/components/responses/History"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -5415,6 +5430,32 @@
             "description": "По дню на каждый день диапазона, включая дни без событий."
           }
         }
+      },
+      "DeliveryAttemptPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeliveryAttempt"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        }
       }
     },
     "parameters": {
@@ -6057,14 +6098,11 @@
         }
       },
       "DeliveryAttemptList": {
-        "description": "A bare array of delivery attempts",
+        "description": "A paginated list of delivery attempts",
         "content": {
           "application/json": {
             "schema": {
-              "type": "array",
-              "items": {
-                "$ref": "#/components/schemas/DeliveryAttempt"
-              }
+              "$ref": "#/components/schemas/DeliveryAttemptPage"
             }
           }
         }

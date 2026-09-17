@@ -58,6 +58,11 @@ type Server struct {
 	// limiter backed by PostgreSQL rather than a per-process map, so the limit
 	// stays what it says it is regardless of replica count — see rate_limiter.go.
 	loginLimiter limiter
+	// loginAccountLimiter throttles failed password attempts per account. The
+	// per-IP budget cannot bound an attacker who chooses its own address; this
+	// one bounds the guessing itself. Also backed by PostgreSQL, so the budget
+	// is per deployment and not per replica.
+	loginAccountLimiter limiter
 	// oidc is nil when single sign-on is not configured.
 	oidc           *oidcProvider
 	startTime      time.Time
@@ -85,14 +90,15 @@ func New(ctx context.Context, s store.PostgreSQLStore, eng *engine.Engine, cfg C
 		trustedProxies = append(trustedProxies, ipNet)
 	}
 	srv := &Server{
-		eng:            eng,
-		store:          s,
-		metrics:        newMetrics(),
-		cfg:            cfg,
-		startTime:      time.Now(),
-		trustedProxies: trustedProxies,
-		loginLimiter:   newDBRateLimiter(s, "login:", loginRatePerSecond, loginBurst),
-		chatopsInbound: chatopsInboundConfigFromEnv(),
+		eng:                 eng,
+		store:               s,
+		metrics:             newMetrics(),
+		cfg:                 cfg,
+		startTime:           time.Now(),
+		trustedProxies:      trustedProxies,
+		loginLimiter:        newDBRateLimiter(s, "login:", loginRatePerSecond, loginBurst),
+		loginAccountLimiter: newDBRateLimiter(s, "login-account:", loginAccountRatePerSecond, loginAccountBurst),
+		chatopsInbound:      chatopsInboundConfigFromEnv(),
 	}
 	// Wire engine-emitted metrics (delivery latency, dead-letters, breaker skips)
 	// into this server's Prometheus registry.

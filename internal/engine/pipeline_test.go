@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/nixys/nxs-anomaly/internal/storetest"
+	"github.com/nixys/nxs-anomaly/internal/utils"
 )
 
 func mustPipeline(t *testing.T, jsonSrc string) *AlertPipeline {
@@ -215,4 +218,62 @@ func TestStageLimitIsEnforced(t *testing.T) {
 // a test can check which route an alert actually took.
 func (e *Engine) FindIntegrationByKeyForTest(ctx context.Context, key string) (map[string]any, error) {
 	return e.store.FindIntegrationByKey(ctx, key)
+}
+
+// TestPipelineSeverityLabelSetsGroupSeverity: a rule that rewrites the severity
+// label means the severity. Before this the group kept the value the source
+// sent while the label said something else, and the two disagreed everywhere
+// they were shown together. The label: prefix is accepted because the rest of a
+// pipeline addresses labels that way.
+func TestPipelineSeverityLabelSetsGroupSeverity(t *testing.T) {
+	for _, key := range []string{"severity", "label:severity"} {
+		t.Run(key, func(t *testing.T) {
+			eng := New(storetest.New())
+			integration := map[string]any{
+				"id": "int-1",
+				"pipeline": []any{map[string]any{
+					"if":  map[string]any{"field": "label:env", "equals": "prod"},
+					"set": map[string]any{key: "critical"},
+				}},
+			}
+			payload := map[string]any{
+				"title":    "disk full",
+				"severity": "warning",
+				"labels":   map[string]any{"env": "prod"},
+			}
+			dropped, err := eng.applyAlertPipeline(integration, payload)
+			if err != nil || dropped {
+				t.Fatalf("dropped=%v err=%v", dropped, err)
+			}
+			if got := utils.StrVal(payload, "severity"); got != "critical" {
+				t.Errorf("severity = %q, want critical", got)
+			}
+			labels, _ := utils.CoerceLabelMap(payload["labels"])
+			if labels["severity"] != "critical" {
+				t.Errorf("severity label = %q, want critical", labels["severity"])
+			}
+			if _, ok := labels["label:severity"]; ok {
+				t.Error(`a label literally named "label:severity" was created`)
+			}
+		})
+	}
+}
+
+// A rule that does not fire leaves the source's severity alone.
+func TestPipelineLeavesSeverityWhenRuleDoesNotFire(t *testing.T) {
+	eng := New(storetest.New())
+	integration := map[string]any{
+		"id": "int-1",
+		"pipeline": []any{map[string]any{
+			"if":  map[string]any{"field": "label:env", "equals": "prod"},
+			"set": map[string]any{"severity": "critical"},
+		}},
+	}
+	payload := map[string]any{"title": "disk full", "severity": "warning", "labels": map[string]any{"env": "dev"}}
+	if _, err := eng.applyAlertPipeline(integration, payload); err != nil {
+		t.Fatal(err)
+	}
+	if got := utils.StrVal(payload, "severity"); got != "warning" {
+		t.Errorf("severity = %q, want warning", got)
+	}
 }

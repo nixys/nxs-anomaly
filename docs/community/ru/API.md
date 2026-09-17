@@ -463,6 +463,12 @@ editor: расставлять себя в очереди можно самом�
 | GET | `/api/v1/mobile/dashboard` (заголовок `X-Mobile-Session`) |
 | POST | `/api/v1/mobile/alert-groups/{id}/acknowledge`, `/resolve` (заголовок `X-Mobile-Session`) |
 
+`external_id` канала — это то, чем входящая команда себя называет, поэтому на
+платформе его может нести только один канал: второй получает `409`. Команды из
+общего чата — группы Telegram, канала Slack или Mattermost — выполняются только
+если этот чат привязан к каналу здесь, кем бы они ни были отправлены; личному
+чату с ботом канал не нужен, там границей выступает сам человек.
+
 ### Группы алертов
 
 | Метод | Путь |
@@ -488,7 +494,7 @@ Silence с длительностью заканчивается сам: в `sil
 | Метод | Путь |
 |---|---|
 | GET | `/api/v1/alerts`, `/api/v1/notifications` |
-| GET | `/api/v1/delivery-attempts?notification_id=<id>` |
+| GET | `/api/v1/delivery-attempts?notification_id=<id>&limit=&offset=` (с пагинацией, как остальные списки) |
 | GET | `/api/v1/history?from=&to=&integration=&severity=&status=&channel=&user=&team=` |
 | POST | `/api/v1/routes/debug/{key}` — предпросмотр маршрутизации и уведомлений для payload |
 | POST | `/api/v1/escalations/run` — вручную выполнить проход по назревшим эскалациям |

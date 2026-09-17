@@ -37,11 +37,15 @@ func (e *Engine) CreateChatopsChannel(ctx context.Context, payload map[string]an
 		}
 	}
 
-	result, err := e.store.UpdateCollections(ctx, nil, []string{"chatops_channels"},
+	result, err := e.store.UpdateCollections(ctx, []string{"chatops_channels"}, []string{"chatops_channels"},
 		func(state *store.State) (any, error) {
+			platform := strings.ToLower(fmt.Sprintf("%v", payload["platform"]))
+			if err := duplicateChatopsBinding(state, "", platform, utils.StrVal(payload, "external_id")); err != nil {
+				return nil, err
+			}
 			channel := map[string]any{
 				"id":               utils.MakeID("chat"),
-				"platform":         strings.ToLower(fmt.Sprintf("%v", payload["platform"])),
+				"platform":         platform,
 				"name":             fmt.Sprintf("%v", payload["name"]),
 				"team_id":          teamID,
 				"user_id":          userID,
@@ -94,7 +98,10 @@ func (e *Engine) UpdateChatopsChannel(ctx context.Context, channelID string, pay
 			}
 		}
 	}
-	result, err := e.store.UpdateCollectionsFiltered(ctx, loadItems("chatops_channels", channelID), []string{"chatops_channels"},
+	// The whole collection, not just this row: moving a channel's external id
+	// has to see the other channels to know the id is free. There are as many
+	// of these as a team has chat rooms.
+	result, err := e.store.UpdateCollections(ctx, []string{"chatops_channels"}, []string{"chatops_channels"},
 		func(state *store.State) (any, error) {
 			channel := state.ChatopsChannels[channelID]
 			if channel == nil {
@@ -120,6 +127,10 @@ func (e *Engine) UpdateChatopsChannel(ctx context.Context, channelID string, pay
 				channel["webhook_url"] = sv
 			}
 			if v, ok := payload["external_id"]; ok {
+				if err := duplicateChatopsBinding(state, channelID,
+					utils.StrVal(channel, "platform"), fmt.Sprintf("%v", v)); err != nil {
+					return nil, err
+				}
 				channel["external_id"] = fmt.Sprintf("%v", v)
 			}
 			if v, ok := payload["commands_enabled"]; ok {
@@ -1177,6 +1188,28 @@ func (e *Engine) FindUserByChatAccount(ctx context.Context, platform, accountID 
 //
 // Telegram channels historically stored the chat id in "name" — that is what
 // the delivery adapter still sends to — so the name is accepted as a fallback
+// duplicateChatopsBinding refuses a second channel bound to the same chat.
+//
+// The external id is what an inbound command names, so two rows carrying it are
+// two answers to "which channel is this" — and the lookup below simply returns
+// whichever it meets first. Unbinding the chat by deleting one row then does
+// nothing, because the other still matches.
+func duplicateChatopsBinding(state *store.State, selfID, platform, externalID string) error {
+	if strings.TrimSpace(externalID) == "" {
+		return nil
+	}
+	for id, ch := range state.ChatopsChannels {
+		if id == selfID || !strings.EqualFold(utils.StrVal(ch, "platform"), platform) {
+			continue
+		}
+		if utils.StrVal(ch, "external_id") == externalID {
+			return &conflictError{fmt.Sprintf(
+				"%s channel %s is already bound to %q", platform, externalID, utils.StrVal(ch, "name"))}
+		}
+	}
+	return nil
+}
+
 // rather than forcing every existing installation to re-enter it.
 func (e *Engine) FindChatopsChannelByExternalID(ctx context.Context, platform, externalID string) (string, error) {
 	if externalID == "" {

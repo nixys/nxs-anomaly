@@ -8,18 +8,17 @@
  * carry a media query.
  */
 
-/* A row that arrived since the last refresh: it drops in and its background
-   fades back to normal over two and a half seconds — long enough to be noticed
-   by someone reading another part of the screen. */
+/* A row that arrived since the last refresh: its background fades back to
+   normal over two and a half seconds — long enough to be noticed by someone
+   reading another part of the screen.
+
+   Colour only, deliberately. The row used to drop in from six pixels above,
+   which moved the newest alert — the one a responder reaches for first — under
+   the pointer for the whole animation, and made clicking it a matter of timing.
+   A highlight that does not move is just as visible and never loses a click. */
 @keyframes nxsArrive {
   0% {
     background-color: var(--mantine-color-yellow-light);
-    transform: translateY(-6px);
-    opacity: 0;
-  }
-  12% {
-    transform: translateY(0);
-    opacity: 1;
   }
   35% {
     background-color: var(--mantine-color-yellow-light);

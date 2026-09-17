@@ -324,7 +324,12 @@ func (e *Engine) GetItem(ctx context.Context, collection, id string) (map[string
 	if err != nil {
 		return nil, err
 	}
-	if item == nil {
+	// A soft-deleted row is gone as far as the API is concerned. The lists
+	// already hide it; answering 200 to a direct read made "delete it, then
+	// check it is gone" — what the chart's own acceptance test does — impossible
+	// to satisfy. Delivery still reads these rows straight from the store, so an
+	// in-flight notification about a deleted integration is unaffected.
+	if item == nil || softDeleted(item) {
 		return nil, errNotFound(fmt.Sprintf("%s %s not found", collection, id))
 	}
 	if err := e.authorizeItem(ctx, collection, item); err != nil {

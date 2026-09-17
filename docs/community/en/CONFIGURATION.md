@@ -504,7 +504,9 @@ api -X PUT "$API/api/v1/integrations/{id}" -d '{
 - `batch_timeout_seconds` is a quiet window: notifications accumulate until that
   many seconds pass with no new ones. `batch_deadline_seconds` is the hard limit
   after which the batch goes out regardless. Both at zero means batching is off and
-  every notification leaves immediately.
+  every notification leaves immediately. Batching delays notifications and releases
+  them together; it does not merge them into one message. Four notifications to the
+  same person are still four messages, sent after the window rather than during it.
 - `epic_threshold_count` / `epic_threshold_seconds` — if that many alerts arrive
   within the window, `epic_user_id` is notified as well. This guards against "a
   storm is under way and the person on call cannot keep up".

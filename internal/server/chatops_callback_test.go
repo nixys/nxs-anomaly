@@ -236,6 +236,12 @@ func TestTelegramCallbackRequiresSecretToken(t *testing.T) {
 // group chat.
 func tapButtonInChat(t *testing.T, srv *Server, chatID, senderID int64, data string) *httptest.ResponseRecorder {
 	t.Helper()
+	// Telegram names the chat type on every update; a person's own chat with
+	// the bot has the same id as the person.
+	chatType := "supergroup"
+	if chatID == senderID {
+		chatType = "private"
+	}
 	body, err := json.Marshal(map[string]any{
 		"callback_query": map[string]any{
 			"id":   "cbq-1",
@@ -244,7 +250,7 @@ func tapButtonInChat(t *testing.T, srv *Server, chatID, senderID int64, data str
 			"message": map[string]any{
 				"message_id": 555,
 				"text":       "disk full",
-				"chat":       map[string]any{"id": chatID},
+				"chat":       map[string]any{"id": chatID, "type": chatType},
 			},
 		},
 	})
@@ -304,5 +310,22 @@ func TestTelegramCallbackInPrivateChatStillEnforcesRole(t *testing.T) {
 
 	if got := st.Row("alert_groups", "grp-1")["status"]; got != "open" {
 		t.Errorf("a viewer's tap in a private chat changed the group to %v", got)
+	}
+}
+
+// TestTelegramGroupChatNeedsBoundChannel: a shared chat is a team boundary, and
+// the boundary is the ChatOps channel. Without one, a known responder could act
+// on alerts from any group the bot happened to be added to — which is what the
+// documentation says must not happen.
+func TestTelegramGroupChatNeedsBoundChannel(t *testing.T) {
+	srv, st := callbackServer(t)
+	seedTelegramUser(t, st, "usr-bob", "4242", string(authz.RoleResponder))
+
+	w := tapButtonInChat(t, srv, -1001234567, 4242, "ack:grp-1")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	if got := st.Row("alert_groups", "grp-1")["status"]; got != "open" {
+		t.Fatalf("group status = %v, want it untouched by an unbound group chat", got)
 	}
 }

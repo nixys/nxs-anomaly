@@ -453,17 +453,19 @@ func (e *Engine) CreateScheduleOverride(ctx context.Context, schedID string, pay
 			}
 			until, err := utils.ParseDatetime(utils.StrVal(payload, "until"))
 			if err != nil {
-				return nil, fmt.Errorf("invalid until: %w", err)
+				return nil, errValidation(fmt.Sprintf("invalid until: %v", err))
 			}
 			startAt := utils.UTCNow()
 			if v := utils.StrVal(payload, "start_at"); v != "" {
 				startAt, err = utils.ParseDatetime(v)
 				if err != nil {
-					return nil, fmt.Errorf("invalid start_at: %w", err)
+					return nil, errValidation(fmt.Sprintf("invalid start_at: %v", err))
 				}
 			}
+			// Bad input, not a failure: without errValidation these came back as
+			// 500 and looked like an outage to whoever typed the wrong date.
 			if !until.After(startAt) {
-				return nil, fmt.Errorf("until must be after start_at")
+				return nil, errValidation("until must be after start_at")
 			}
 			override := appendScheduleOverride(ctx, sched,
 				userID, startAt, until, utils.StrVal(payload, "reason"), ts)

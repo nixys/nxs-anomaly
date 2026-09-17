@@ -430,7 +430,7 @@ func (srv *Server) routeAPI(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, http.StatusOK, v, err)
 	case method == http.MethodGet && path == "/api/v1/delivery-attempts":
 		notifID := r.URL.Query().Get("notification_id")
-		v, err := eng.GetDeliveryAttempts(ctx, notifID)
+		v, err := eng.GetDeliveryAttempts(ctx, notifID, pageParams(r))
 		writeResult(w, http.StatusOK, v, err)
 	// Audit trail. Admin-only (see requiredAction); newest-first, filterable by
 	// actor, entity and action so "everything this key did" and "everything that

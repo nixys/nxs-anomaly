@@ -631,6 +631,12 @@ func (e *Engine) ReportBackup(ctx context.Context, payload map[string]any) (map[
 		if err != nil {
 			return nil, errValidation("at must be an ISO-8601 timestamp")
 		}
+		// A backup cannot have been taken in the future. Accepting one kept the
+		// readiness check green for as long as the typo said — a mistyped year
+		// used to silence the "no backup" blocker for a decade.
+		if parsed.After(utils.UTCNow().Add(time.Minute)) {
+			return nil, errValidation("at must not be in the future")
+		}
 		at = utils.ToISO(parsed.UTC())
 	}
 	patch := map[string]any{metaLastBackupAt: at}

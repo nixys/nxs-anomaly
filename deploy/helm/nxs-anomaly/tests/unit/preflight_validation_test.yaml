@@ -60,9 +60,14 @@ tests:
       inlineSecret.enabled: true
       externalPostgres.host: pg.rf.internal
     asserts:
-      - matchRegex:
-          path: stringData.NXS_ANOMALY_DB_DSN
-          pattern: "@pg\\.rf\\.internal:5432/nxs_anomaly\\?sslmode=require$"
+      # base64: the Secret renders into data, so a key dropped from values is
+      # actually removed on upgrade.
+      # base64 of postgres://nxs_anomaly:@pg.rf.internal:5432/nxs_anomaly?sslmode=require
+      # — the Secret renders into data, so a key dropped from values is really
+      # removed on upgrade.
+      - equal:
+          path: data.NXS_ANOMALY_DB_DSN
+          value: cG9zdGdyZXM6Ly9ueHNfYW5vbWFseTpAcGcucmYuaW50ZXJuYWw6NTQzMi9ueHNfYW5vbWFseT9zc2xtb2RlPXJlcXVpcmU=
 
   - it: does not demand a host in the operator-managed secret modes, where the DSN comes from the Secret
     templates: [templates/configmap.yaml]

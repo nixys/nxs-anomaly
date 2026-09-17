@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -156,6 +158,7 @@ func TestLoginRejections(t *testing.T) {
 			// A fresh limiter per case: the point here is the rejection, not
 			// the throttle.
 			srv.loginLimiter = newRateLimiter(loginRatePerSecond, loginBurst)
+			srv.loginAccountLimiter = newRateLimiter(loginAccountRatePerSecond, loginAccountBurst)
 			w := login(t, srv, tc.login, tc.password)
 			if w.Code != http.StatusUnauthorized {
 				t.Fatalf("got %d, want 401; body %s", w.Code, w.Body.String())
@@ -275,6 +278,7 @@ func TestChangeOwnPasswordSignsOutEverywhere(t *testing.T) {
 		}
 	}
 	srv.loginLimiter = newRateLimiter(loginRatePerSecond, loginBurst)
+	srv.loginAccountLimiter = newRateLimiter(loginAccountRatePerSecond, loginAccountBurst)
 	if w := login(t, srv, "ada", "a-brand-new-secret"); w.Code != http.StatusOK {
 		t.Fatalf("new password does not work: got %d, body %s", w.Code, w.Body.String())
 	}
@@ -320,6 +324,7 @@ func TestViewerMayChangeOwnPasswordButNotAnyoneElses(t *testing.T) {
 		t.Fatalf("viewer changing own password: got %d, body %s", w.Code, w.Body.String())
 	}
 	srv.loginLimiter = newRateLimiter(loginRatePerSecond, loginBurst)
+	srv.loginAccountLimiter = newRateLimiter(loginAccountRatePerSecond, loginAccountBurst)
 	cookie = sessionCookieFrom(t, login(t, srv, "vera", "vera-new-secret"))
 	w := srv.call(http.MethodPut, "/api/v1/users/usr-admin/password",
 		`{"password":"hijacked-password"}`, withCookie(cookie))
@@ -345,6 +350,7 @@ func TestAdminSetsAndRemovesPassword(t *testing.T) {
 		t.Error("an admin password reset must sign the target out")
 	}
 	srv.loginLimiter = newRateLimiter(loginRatePerSecond, loginBurst)
+	srv.loginAccountLimiter = newRateLimiter(loginAccountRatePerSecond, loginAccountBurst)
 	if w := login(t, srv, "eddie", "reset-by-the-admin"); w.Code != http.StatusOK {
 		t.Fatalf("reset password does not work: got %d", w.Code)
 	}
@@ -353,6 +359,7 @@ func TestAdminSetsAndRemovesPassword(t *testing.T) {
 		t.Fatalf("admin remove password: got %d, body %s", w.Code, w.Body.String())
 	}
 	srv.loginLimiter = newRateLimiter(loginRatePerSecond, loginBurst)
+	srv.loginAccountLimiter = newRateLimiter(loginAccountRatePerSecond, loginAccountBurst)
 	if w := login(t, srv, "eddie", "reset-by-the-admin"); w.Code != http.StatusUnauthorized {
 		t.Fatal("a removed password must stop working")
 	}
@@ -700,6 +707,7 @@ func TestAdminRevokesUserSessions(t *testing.T) {
 	// The password is untouched: this lever and a password reset are different
 	// responses to different situations.
 	srv.loginLimiter = newRateLimiter(loginRatePerSecond, loginBurst)
+	srv.loginAccountLimiter = newRateLimiter(loginAccountRatePerSecond, loginAccountBurst)
 	if w := login(t, srv, "eddie", testPassword); w.Code != http.StatusOK {
 		t.Error("revoking sessions must not remove the ability to sign in again")
 	}
@@ -829,4 +837,62 @@ func TestLoginLimiterChargesFailuresNotSuccesses(t *testing.T) {
 	if w := login(t, srv, "ada", testPassword); w.Code != http.StatusTooManyRequests {
 		t.Errorf("after the budget was spent by failures, sign-in returned %d, want 429", w.Code)
 	}
+}
+
+// TestLoginLimitedPerAccountAcrossAddresses covers the escape hatch the per-IP
+// budget leaves open: a client inside a trusted proxy range picks its own
+// X-Forwarded-For, so a fresh address per attempt means a fresh budget per
+// attempt. The account being guessed is the one thing it cannot vary.
+func TestLoginLimitedPerAccountAcrossAddresses(t *testing.T) {
+	srv, _ := newSessionServer(t)
+	srv.loginLimiter = newRateLimiter(loginRatePerSecond, loginBurst)
+	srv.loginAccountLimiter = newRateLimiter(loginAccountRatePerSecond, loginAccountBurst)
+	srv.trustedProxies = trustedRange(t, "10.0.0.0/8")
+
+	fromNewAddress := func(n int) func(*http.Request) {
+		return func(r *http.Request) {
+			r.RemoteAddr = "10.1.2.3:4444"
+			r.Header.Set("X-Forwarded-For", fmt.Sprintf("203.0.113.%d", n))
+		}
+	}
+	throttled := false
+	for i := 1; i <= loginAccountBurst+2; i++ {
+		w := srv.call(http.MethodPost, "/api/v1/auth/login",
+			`{"login":"ada","password":"wrong-password-here"}`, fromNewAddress(i))
+		if w.Code == http.StatusTooManyRequests {
+			throttled = true
+			break
+		}
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d: got %d, body %s", i, w.Code, w.Body.String())
+		}
+	}
+	if !throttled {
+		t.Fatal("guessing one account from a new address each time was never throttled")
+	}
+	// A different account still has its own budget: the limit must slow down
+	// guessing, not turn one attacker into a service-wide outage.
+	if w := srv.call(http.MethodPost, "/api/v1/auth/login",
+		`{"login":"roscoe","password":"wrong-password-here"}`, fromNewAddress(99)); w.Code == http.StatusTooManyRequests {
+		t.Error("another account was locked out by attempts against ada")
+	}
+}
+
+// TestLoginAccountBudgetIsCaseInsensitive: logins are matched without regard to
+// case, so the budget must be too — otherwise "Ada" and "ada" are two budgets.
+func TestLoginAccountBudgetIsCaseInsensitive(t *testing.T) {
+	if got := loginAccountKey("  Ada "); got != "ada" {
+		t.Fatalf("got %q, want %q", got, "ada")
+	}
+}
+
+// trustedRange parses one CIDR for tests that need clientIP to believe a
+// forwarded address.
+func trustedRange(t *testing.T, cidr string) []*net.IPNet {
+	t.Helper()
+	_, n, err := net.ParseCIDR(cidr)
+	if err != nil {
+		t.Fatalf("parse %s: %v", cidr, err)
+	}
+	return []*net.IPNet{n}
 }

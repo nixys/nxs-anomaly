@@ -132,7 +132,7 @@ func (srv *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	ip := srv.clientIP(r)
 	if srv.apiLimiter != nil && !srv.apiLimiter.allow(ip) {
-		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
+		writeRateLimited(w, 1, "rate limit exceeded")
 		return
 	}
 	// Everything downstream — the engine's audit records and the attribution

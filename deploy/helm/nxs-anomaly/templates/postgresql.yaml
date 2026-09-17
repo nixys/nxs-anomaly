@@ -30,7 +30,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "nxs-anomaly.componentLabels" (dict "ctx" . "component" $component) | nindent 8 }}
+        {{- include "nxs-anomaly.datastorePodLabels" (dict "ctx" . "component" $component) | nindent 8 }}
     spec:
       securityContext:
         fsGroup: 70

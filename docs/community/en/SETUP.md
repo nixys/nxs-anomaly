@@ -211,10 +211,15 @@ Two that are worth knowing by name:
   loopback and link-local addresses. On by default under the production profile
   and in the Helm chart's values; the binary's own default is off.
 - `NXS_ANOMALY_TRUSTED_PROXIES` — CIDRs whose `X-Forwarded-For` is believed. The
-  client is the nearest address that is not a trusted proxy, so a client cannot
-  choose its own. The sign-in rate limit is per client address: behind a proxy that
-  is not trusted every user shares one limit, and a few wrong passwords lock
-  everyone out. The Helm chart trusts the private ranges by default.
+  client is the nearest address that is not a trusted proxy. The sign-in rate limit
+  is per client address: behind a proxy that is not trusted every user shares one
+  limit, and a few wrong passwords lock everyone out. The Helm chart trusts the
+  private ranges by default — which also means a client that is itself inside one
+  of those ranges (a VPN, the office network, another pod) chooses the address it
+  is limited by. That is why failed sign-ins also spend a budget per account, ten
+  attempts refilling at twelve a minute, which no header can vary. Narrow this
+  list to the proxies you actually run if clients reach the API from a private
+  network.
 - `NXS_ANOMALY_EGRESS_ALLOWLIST` — hostnames and CIDRs delivery may reach at all.
 - `NXS_ANOMALY_REOPEN_ACKED_ON_NEW_ALERT=true` — a new alert on an acknowledged
   group takes it back to `open` and runs the chain from step zero. Off by

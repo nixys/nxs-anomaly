@@ -328,14 +328,21 @@ func compileStage(m map[string]any) (pipelineStage, error) {
 		}
 		st.pairs = make(map[string]string, len(spec))
 		for k, v := range spec {
-			if strings.TrimSpace(k) == "" {
+			// Both spellings: these stages take label names, but the rest of a
+			// pipeline addresses labels as label:<name>, and someone writing
+			// "label:severity" here used to get a label literally called that.
+			name := strings.TrimPrefix(strings.TrimSpace(k), "label:")
+			if name == "" {
 				return st, fmt.Errorf("%s has an empty label name", st.kind)
 			}
-			st.pairs[k] = fmt.Sprintf("%v", v)
+			st.pairs[name] = fmt.Sprintf("%v", v)
 		}
 
 	case "remove":
 		names, err := utils.CoerceStringList(m["remove"])
+		for i, n := range names {
+			names[i] = strings.TrimPrefix(strings.TrimSpace(n), "label:")
+		}
 		if err != nil || len(names) == 0 {
 			return st, fmt.Errorf("remove must be a non-empty list of label names")
 		}
@@ -590,6 +597,7 @@ func (e *Engine) applyAlertPipeline(integration, payload map[string]any) (bool, 
 	}
 
 	labels, _ := utils.CoerceLabelMap(payload["labels"])
+	severityLabelBefore := labels["severity"]
 	doc := &pipelineDoc{
 		title:    utils.StrVal(payload, "title"),
 		message:  utils.StrVal(payload, "message"),
@@ -612,6 +620,14 @@ func (e *Engine) applyAlertPipeline(integration, payload map[string]any) (bool, 
 	}
 	if doc.severity != "" {
 		payload["severity"] = doc.severity
+	}
+	// A pipeline that rewrites the severity *label* means the severity, not just
+	// the label: the source field it would otherwise lose to is exactly what the
+	// rule was written to correct. Without this the group kept the severity the
+	// source sent while the label said something else, and the two disagreed
+	// everywhere they were shown side by side.
+	if after := doc.labels["severity"]; after != "" && after != severityLabelBefore {
+		payload["severity"] = after
 	}
 	payload["labels"] = labelsAny(doc.labels)
 	return false, nil

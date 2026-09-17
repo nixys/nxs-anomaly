@@ -15,7 +15,7 @@ func (srv *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	defer func() { srv.metrics.ingestDuration.WithLabelValues("webhook").Observe(time.Since(t0).Seconds()) }()
 	key := r.PathValue("key")
 	if srv.webhookLimiter != nil && !srv.webhookLimiter.allow(key) {
-		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
+		writeRateLimited(w, 1, "rate limit exceeded")
 		return
 	}
 	body, raw, ok := readJSONWithRaw(w, r)
@@ -45,7 +45,7 @@ func (srv *Server) handleAlertmanager(w http.ResponseWriter, r *http.Request) {
 	defer func() { srv.metrics.ingestDuration.WithLabelValues("alertmanager").Observe(time.Since(t0).Seconds()) }()
 	key := r.PathValue("key")
 	if srv.webhookLimiter != nil && !srv.webhookLimiter.allow(key) {
-		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
+		writeRateLimited(w, 1, "rate limit exceeded")
 		return
 	}
 	body, ok := readJSON(w, r)
@@ -69,7 +69,7 @@ func (srv *Server) handlePagerDuty(w http.ResponseWriter, r *http.Request) {
 	defer func() { srv.metrics.ingestDuration.WithLabelValues("pagerduty").Observe(time.Since(t0).Seconds()) }()
 	key := r.PathValue("key")
 	if srv.webhookLimiter != nil && !srv.webhookLimiter.allow(key) {
-		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
+		writeRateLimited(w, 1, "rate limit exceeded")
 		return
 	}
 	body, ok := readJSON(w, r)
@@ -91,7 +91,7 @@ func (srv *Server) handleVictorOps(w http.ResponseWriter, r *http.Request) {
 	defer func() { srv.metrics.ingestDuration.WithLabelValues("victorops").Observe(time.Since(t0).Seconds()) }()
 	key := r.PathValue("key")
 	if srv.webhookLimiter != nil && !srv.webhookLimiter.allow(key) {
-		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
+		writeRateLimited(w, 1, "rate limit exceeded")
 		return
 	}
 	body, ok := readJSON(w, r)
@@ -115,7 +115,7 @@ func (srv *Server) handleGrafanaAlerting(w http.ResponseWriter, r *http.Request)
 	}()
 	key := r.PathValue("key")
 	if srv.webhookLimiter != nil && !srv.webhookLimiter.allow(key) {
-		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
+		writeRateLimited(w, 1, "rate limit exceeded")
 		return
 	}
 	body, ok := readJSON(w, r)
@@ -139,7 +139,7 @@ func (srv *Server) handleOpenSearch(w http.ResponseWriter, r *http.Request) {
 	defer func() { srv.metrics.ingestDuration.WithLabelValues("opensearch").Observe(time.Since(t0).Seconds()) }()
 	key := r.PathValue("key")
 	if srv.webhookLimiter != nil && !srv.webhookLimiter.allow(key) {
-		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
+		writeRateLimited(w, 1, "rate limit exceeded")
 		return
 	}
 	body, ok := readJSON(w, r)
@@ -165,7 +165,7 @@ func (srv *Server) handleElasticsearch(w http.ResponseWriter, r *http.Request) {
 	}()
 	key := r.PathValue("key")
 	if srv.webhookLimiter != nil && !srv.webhookLimiter.allow(key) {
-		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
+		writeRateLimited(w, 1, "rate limit exceeded")
 		return
 	}
 	body, ok := readJSON(w, r)
@@ -191,7 +191,7 @@ func (srv *Server) handleLegacyPool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if srv.webhookLimiter != nil && !srv.webhookLimiter.allow(key) {
-		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
+		writeRateLimited(w, 1, "rate limit exceeded")
 		return
 	}
 	body, ok := readJSON(w, r)
