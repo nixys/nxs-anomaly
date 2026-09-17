@@ -369,6 +369,9 @@ func (e *Engine) advanceEscalationShard(ctx context.Context, now time.Time, ts s
 				if !ok {
 					continue
 				}
+				if g.SilenceExpired(now) {
+					g.EndSilence(ts)
+				}
 				if g.Status() != model.StatusOpen {
 					continue
 				}

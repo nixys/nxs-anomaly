@@ -98,7 +98,7 @@ func (e *Engine) CreateIntegration(ctx context.Context, payload map[string]any) 
 	if err != nil {
 		return nil, err
 	}
-	return result.(map[string]any), nil
+	return hideIntegrationSecret(result.(map[string]any)), nil
 }
 
 func (e *Engine) UpdateIntegration(ctx context.Context, integID string, payload map[string]any) (map[string]any, error) {
@@ -241,7 +241,7 @@ func (e *Engine) UpdateIntegration(ctx context.Context, integID string, payload 
 		return nil, err
 	}
 	e.invalidateTemplateCache(integID)
-	return result.(map[string]any), nil
+	return hideIntegrationSecret(result.(map[string]any)), nil
 }
 
 func (e *Engine) RotateIntegrationKey(ctx context.Context, integID string) (map[string]any, error) {
@@ -273,5 +273,5 @@ func (e *Engine) RotateIntegrationKey(ctx context.Context, integID string) (map[
 	if err != nil {
 		return nil, err
 	}
-	return result.(map[string]any), nil
+	return hideIntegrationSecret(result.(map[string]any)), nil
 }

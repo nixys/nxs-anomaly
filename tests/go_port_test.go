@@ -3,6 +3,7 @@ package tests
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -2222,10 +2223,24 @@ func TestScheduleCoverageDriftAndShiftNotifications(t *testing.T) {
 		t.Errorf("shift notification carries a group: %v", got)
 	}
 
-	// Drift 1: delete a participant. The schedule must lose them, and the slot
-	// must be reported as a gap rather than looking covered.
+	// Drift 1: a participant leaves. Deleting someone still on the rotation is
+	// refused (the slot would page nobody); taking them off the rotation is the
+	// explicit way, and the schedule keeps the rest.
+	if _, err := eng.DeleteEntity(ctx, "users", utils.StrVal(bob, "id")); !errors.Is(err, engine.ErrConflict) {
+		t.Fatalf("delete user on the rotation = %v, want a conflict", err)
+	}
+	if _, err := eng.UpdateSchedule(ctx, schedID, map[string]any{
+		"rotation": map[string]any{
+			"start_at":         utils.ToISO(time.Now().UTC().Add(-90 * time.Minute)),
+			"handoff_interval": 1,
+			"handoff_unit":     "hours",
+			"participant_ids":  []any{alice["id"]},
+		},
+	}); err != nil {
+		t.Fatalf("remove participant: %v", err)
+	}
 	if _, err := eng.DeleteEntity(ctx, "users", utils.StrVal(bob, "id")); err != nil {
-		t.Fatalf("delete user: %v", err)
+		t.Fatalf("delete user after removing them from the rotation: %v", err)
 	}
 	stored, err := eng.GetItem(ctx, "schedules", schedID)
 	if err != nil {

@@ -16,6 +16,11 @@ spec:
         {{- include "nxs-anomaly.componentLabels" (dict "ctx" . "component" $component) | nindent 8 }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if .Values.inlineSecret.enabled }}
+        # Environment is read once at start: a changed inline Secret has to roll
+        # the pods, as a changed ConfigMap does.
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
     spec:
       {{- include "nxs-anomaly.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ include "nxs-anomaly.serviceAccountName" . }}
@@ -51,6 +56,15 @@ spec:
           env:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          # The port opens before the database is awaited and /live answers from
+          # the first second, so startup only has to cover the process starting;
+          # waiting for PostgreSQL or a migration shows as not-ready, not dead.
+          startupProbe:
+            httpGet:
+              path: /live
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /health

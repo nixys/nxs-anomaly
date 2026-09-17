@@ -478,6 +478,10 @@ func (m *memStore) LastAlertReceivedAt(_ context.Context, integrationID string) 
 		if utils.StrVal(row, "integration_id") != integrationID {
 			continue
 		}
+		if labels, _ := row["labels"].(map[string]any); utils.StrVal(labels, "alertname") == "SourceSilent" &&
+			utils.StrVal(labels, "integration_id") == integrationID {
+			continue
+		}
 		at, err := utils.ParseDatetime(utils.StrVal(row, "received_at"))
 		if err != nil {
 			continue

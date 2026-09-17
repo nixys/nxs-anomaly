@@ -109,13 +109,12 @@ func RunWorker(ctx context.Context, s store.PostgreSQLStore, eng *engine.Engine,
 	mux.HandleFunc("/ready", wr.handleReady)
 	mux.HandleFunc("/metrics", wr.handleMetrics)
 
-	httpSrv := &http.Server{
-		Addr:              cfg.WorkerAddr,
-		Handler:           mux,
-		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
-		ReadTimeout:       cfg.ReadTimeout,
-		WriteTimeout:      cfg.WriteTimeout,
-		IdleTimeout:       cfg.IdleTimeout,
+	fd := cfg.WorkerFrontdoor
+	if fd == nil {
+		var err error
+		if fd, err = OpenFrontdoor(cfg.WorkerAddr, cfg, "", ""); err != nil {
+			return err
+		}
 	}
 
 	shutdownTimeout := cfg.ShutdownTimeout
@@ -134,17 +133,12 @@ func RunWorker(ctx context.Context, s store.PostgreSQLStore, eng *engine.Engine,
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
 
-	errCh := make(chan error, 1)
-	go func() {
-		slog.Info("worker telemetry endpoint starting", "addr", cfg.WorkerAddr)
-		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			errCh <- err
-		}
-	}()
+	fd.SetHandler(mux)
+	slog.Info("worker telemetry endpoint started", "addr", cfg.WorkerAddr)
 
 	var runErr error
 	select {
-	case runErr = <-errCh:
+	case runErr = <-fd.Err():
 	case <-stop:
 	case <-ctx.Done():
 	}
@@ -163,7 +157,7 @@ func RunWorker(ctx context.Context, s store.PostgreSQLStore, eng *engine.Engine,
 
 	shutCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
-	if err := httpSrv.Shutdown(shutCtx); err != nil && runErr == nil {
+	if err := fd.Shutdown(shutCtx); err != nil && runErr == nil {
 		runErr = err
 	}
 	return runErr

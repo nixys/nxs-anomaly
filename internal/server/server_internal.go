@@ -24,21 +24,29 @@ import (
 )
 
 func readJSON(w http.ResponseWriter, r *http.Request) (map[string]any, bool) {
+	m, _, ok := readJSONWithRaw(w, r)
+	return m, ok
+}
+
+// readJSONWithRaw also returns the body bytes exactly as received, for checks
+// that are defined over them — a request signature is computed by the sender
+// over what it sent, not over any re-encoding of it.
+func readJSONWithRaw(w http.ResponseWriter, r *http.Request) (map[string]any, []byte, bool) {
 	body := http.MaxBytesReader(w, r.Body, maxRequestBody)
 	data, err := io.ReadAll(body)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "request body too large"})
-		return nil, false
+		return nil, nil, false
 	}
 	if len(data) == 0 {
-		return map[string]any{}, true
+		return map[string]any{}, data, true
 	}
 	var m map[string]any
 	if err := json.Unmarshal(data, &m); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid JSON: " + err.Error()})
-		return nil, false
+		return nil, nil, false
 	}
-	return m, true
+	return m, data, true
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
@@ -62,6 +70,10 @@ func writeEngineError(w http.ResponseWriter, err error, keyVals ...any) {
 	}
 	if errors.Is(err, engine.ErrForbidden) {
 		writeJSON(w, http.StatusForbidden, map[string]any{"error": err.Error()})
+		return
+	}
+	if errors.Is(err, engine.ErrConflict) {
+		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
 		return
 	}
 	args := append([]any{"err", err, "request_id", w.Header().Get("X-Request-ID")}, keyVals...)
@@ -117,13 +129,41 @@ func isValidation(err error) bool {
 	return errors.Is(err, engine.ErrValidation)
 }
 
+// clientIP returns the address of the client as far as trusted proxies vouch
+// for it.
+//
+// X-Forwarded-For is walked from the right. Each proxy appends the address it
+// received the request from, so the entries a trusted proxy added are the
+// right-hand ones, while everything to their left may have been written by the
+// client itself. The nearest address that is not a trusted proxy is the client.
+// Taking the leftmost entry let any client choose its own address — and put
+// every user behind one proxy into one sign-in rate bucket when it was not
+// trusted at all.
 func (srv *Server) clientIP(r *http.Request) string {
-	host := r.RemoteAddr
-	if idx := strings.LastIndex(host, ":"); idx != -1 {
-		host = host[:idx]
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
 	}
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" && srv.isTrustedProxy(host) {
-		return strings.TrimSpace(strings.SplitN(fwd, ",", 2)[0])
+	if !srv.isTrustedProxy(host) {
+		return host
+	}
+	var hops []string
+	for _, header := range r.Header.Values("X-Forwarded-For") {
+		for _, part := range strings.Split(header, ",") {
+			if part = strings.TrimSpace(part); part != "" {
+				hops = append(hops, part)
+			}
+		}
+	}
+	for i := len(hops) - 1; i >= 0; i-- {
+		if !srv.isTrustedProxy(hops[i]) {
+			return hops[i]
+		}
+	}
+	if len(hops) > 0 {
+		// Every hop is a trusted proxy: the request started inside the trusted
+		// network, and the first hop is as close to its origin as we can see.
+		return hops[0]
 	}
 	return host
 }

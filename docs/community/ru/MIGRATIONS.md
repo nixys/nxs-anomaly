@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS nxs_anomaly_schema_migrations (
 | `0026_maintenance_windows` | Таблица `nxs_anomaly_maintenance_windows` + индекс по `ends_at`. Плановые работы: интеграции, перечисленные в окне, в его границах записывают алерты, но не пейджат — группа создаётся сразу `silenced`, а dead-man switch по ним молчит. Expand-only, ничего вне фичи таблицу не читает, поэтому откат на предыдущий релиз просто перестаёт её смотреть. См. `internal/engine/maintenance.go`. |
 | `0027_retention_indexes` | Индексы под retention-свип: частичный по `updated_at` терминальных notifications, по `created_at` попыток доставки и web-сессий, плюс индекс по `actor_id` в аудите. Свип задаёт один и тот же вопрос («самые старые N строк старше отсечки») каждый цикл воркера — без индексов это seq scan самых больших таблиц раз в несколько секунд, ровно на той инсталляции, где они велики потому, что retention только что включили. Индекс по актору обслуживает и псевдонимизацию при удалении пользователя. См. `internal/store/store_retention.go` и [DATA_INVENTORY.md](DATA_INVENTORY.md). |
 | `0028_oncall_quality_reports` | Хранение отчётов качества дежурств: период, команда, дата генерации, версия формата и JSON-дайджест; индекс `(team_id, generated_at)`. |
+| `0029_silence_expiry` | Истечение ограниченного по времени silence: у заглушённых групп с `silenced_until` он записывается в `next_run_at`, и worker возвращает их в `open`. До этого silence и окно обслуживания не истекали. |
 
 ## Связь с кодом store
 

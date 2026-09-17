@@ -108,7 +108,7 @@ func (e *Engine) deliverNotificationViaAdapter(ctx context.Context, ntf map[stri
 
 	case "email":
 		text := renderNotificationText(ntf, payload, e.getNotificationTemplate(ctx, utils.StrVal(payload, "integration_id"), "email"))
-		status, errMsg, providerResp := sendEmail(target, text, e.deliveryCfg.SMTP)
+		status, errMsg, providerResp := sendEmail(target, emailSubject(payload), text, e.deliveryCfg.SMTP)
 		if status == "delivered" {
 			return delivered(strDefault(providerResp, "smtp"), 0, "")
 		}
@@ -369,7 +369,10 @@ func (e *Engine) executeCreateIssue(state *store.State, g model.AlertGroup, step
 	trackerType := strDefault(utils.StrVal(step, "tracker_type"), "redmine")
 	url := utils.StrVal(step, "url")
 
-	ntf := buildNotification(g, "", "issue", url, "create issue via "+trackerType, timestamp, "")
+	// One issue per group and tracker: a REPEAT of the chain must not file the
+	// same incident again.
+	issueKey := fmt.Sprintf("%s::issue:%s:create issue via %s", g.ID(), url, trackerType)
+	ntf := buildNotification(g, "", "issue", url, "create issue via "+trackerType, timestamp, issueKey)
 	ntf.ScheduleDelivery(map[string]any{
 		"tracker_type": trackerType,
 		"token":        utils.StrVal(step, "token"),     // inline only; already in chain config
@@ -421,7 +424,7 @@ func (e *Engine) deliverIssue(ctx context.Context, payload map[string]any) (stat
 
 // sendDeadLetterEvent fires a non-blocking POST to DeadLetterWebhookURL when a
 // notification transitions to permanently "failed". Must be called in a goroutine.
-func (e *Engine) sendDeadLetterEvent(ntf map[string]any) {
+func (e *Engine) sendDeadLetterEvent(ctx context.Context, ntf map[string]any) {
 	// Runs in its own goroutine; a panic here must not crash the worker.
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -451,7 +454,7 @@ func (e *Engine) sendDeadLetterEvent(ntf map[string]any) {
 		return
 	}
 	// Bound the fire-and-forget POST by the configured webhook timeout.
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(e.deliveryCfg.WebhookTimeoutSeconds)*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(e.deliveryCfg.WebhookTimeoutSeconds)*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, dlURL, bytes.NewReader(data))
 	if err != nil {

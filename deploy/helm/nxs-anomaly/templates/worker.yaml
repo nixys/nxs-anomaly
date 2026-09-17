@@ -16,6 +16,11 @@ spec:
         {{- include "nxs-anomaly.componentLabels" (dict "ctx" . "component" $component) | nindent 8 }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if .Values.inlineSecret.enabled }}
+        # Environment is read once at start: a changed inline Secret has to roll
+        # the pods, as a changed ConfigMap does.
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
     spec:
       {{- include "nxs-anomaly.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ include "nxs-anomaly.serviceAccountName" . }}
@@ -50,6 +55,13 @@ spec:
                 name: {{ include "nxs-anomaly.fullname" . }}-config
             - secretRef:
                 name: {{ include "nxs-anomaly.secretName" . }}
+          # See api.yaml: /live answers while the database is awaited.
+          startupProbe:
+            httpGet:
+              path: /live
+              port: telemetry
+            periodSeconds: 2
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /ready

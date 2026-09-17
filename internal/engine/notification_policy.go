@@ -125,7 +125,7 @@ func (e *Engine) startPolicyRun(state *store.State, g model.AlertGroup, user map
 	// One in-flight run per (group, user, escalation firing): a later NOTIFY of
 	// the same user (a REPEAT, or a second chain step) re-arms with a new key
 	// rather than stacking a duplicate run.
-	escKey := fmt.Sprintf("%d:%d:%s", g.CurrentStep(), g.RepeatCount(), normalizePolicyName(policyName))
+	escKey := g.EscalationKey() + ":" + normalizePolicyName(policyName)
 	for _, raw := range state.NotificationPolicyRuns {
 		if utils.StrVal(raw, "alert_group_id") == groupID &&
 			utils.StrVal(raw, "user_id") == userID &&
@@ -300,16 +300,12 @@ func (e *Engine) SendTestNotification(ctx context.Context, userID, channel strin
 		return nil, errNotFound(fmt.Sprintf("user %s not found", userID))
 	}
 	if channel == "" {
-		if steps := userPolicySteps(user, "default"); len(steps) > 0 {
-			channel = steps[0].Channel
-		} else {
-			channel = "log"
-		}
+		channel = firstConfiguredChannel(user)
 	}
 	if !policyChannels[channel] {
 		return nil, errValidation(fmt.Sprintf("unsupported test channel %q", channel))
 	}
-	target, ok := resolveChannelTarget(user, channel, "")
+	target, ok := resolveChannelTarget(user, channel, configuredAddress(user, channel))
 	if !ok {
 		return map[string]any{
 			"user_id":    userID,
@@ -412,4 +408,43 @@ func (e *Engine) MigrateUserTargetsToDefaultPolicy(ctx context.Context) (int, er
 		return 0, err
 	}
 	return migrated, nil
+}
+
+// firstConfiguredChannel is what a test without a named channel exercises: the
+// first step of the default policy, else the first notification target. It
+// used to fall back to log, which reports "delivered" and tests nothing.
+func firstConfiguredChannel(user map[string]any) string {
+	if steps := userPolicySteps(user, "default"); len(steps) > 0 {
+		return steps[0].Channel
+	}
+	for _, raw := range anyList(user["notification_targets"]) {
+		if t, ok := raw.(map[string]any); ok {
+			if ch := utils.StrVal(t, "type"); ch != "" {
+				return ch
+			}
+		}
+	}
+	return "log"
+}
+
+// configuredAddress is the address the user's own configuration gives a
+// channel — a notification target, else a policy step. A webhook has no profile
+// field, so without this the test reported every webhook user as unconfigured
+// while real pages to the same URL were being delivered.
+func configuredAddress(user map[string]any, channel string) string {
+	for _, raw := range anyList(user["notification_targets"]) {
+		if t, ok := raw.(map[string]any); ok && utils.StrVal(t, "type") == channel {
+			if addr := utils.StrVal(t, "target"); addr != "" {
+				return addr
+			}
+		}
+	}
+	for _, name := range []string{"default", "important"} {
+		for _, step := range userPolicySteps(user, name) {
+			if step.Channel == channel && step.Target != "" {
+				return step.Target
+			}
+		}
+	}
+	return ""
 }

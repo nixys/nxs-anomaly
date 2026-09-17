@@ -25,10 +25,11 @@ func TestTelegramSilenceButtonSilencesForTheDurationItNames(t *testing.T) {
 	if group["silenced_until"] == nil || group["silenced_until"] == "" {
 		t.Error("silenced_until is empty; a silence with no end never lifts")
 	}
-	// next_run_at is what the worker reads to escalate. A silence that leaves it
-	// set would keep paging the person who just asked it to stop.
-	if group["next_run_at"] != nil {
-		t.Errorf("next_run_at = %v, want escalation stopped", group["next_run_at"])
+	// next_run_at is what the worker reads. It must point at the end of the
+	// silence: earlier would keep paging the person who just asked it to stop,
+	// nil would never lift the silence.
+	if group["next_run_at"] != group["silenced_until"] {
+		t.Errorf("next_run_at = %v, want the end of the silence %v", group["next_run_at"], group["silenced_until"])
 	}
 }
 

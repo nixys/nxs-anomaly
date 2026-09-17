@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -126,9 +127,25 @@ func CoerceLabelMap(v any) (map[string]string, error) {
 	}
 	result := make(map[string]string, len(m))
 	for k, val := range m {
-		result[k] = fmt.Sprintf("%v", val)
+		result[k] = scalarString(val)
 	}
 	return result, nil
+}
+
+// scalarString renders a decoded JSON value as text. JSON numbers decode as
+// float64, and %v prints those in %g form, so a label of 1000000 became
+// "1e+06" — a different string from what the source sent, in labels that
+// group, route and are shown to people.
+func scalarString(v any) string {
+	switch x := v.(type) {
+	case nil:
+		return ""
+	case float64:
+		return strconv.FormatFloat(x, 'f', -1, 64)
+	case float32:
+		return strconv.FormatFloat(float64(x), 'f', -1, 32)
+	}
+	return fmt.Sprintf("%v", v)
 }
 
 // EnsureRequired checks that all keys are present and non-empty in data.
@@ -165,7 +182,7 @@ func StrVal(m map[string]any, key string) string {
 	if !ok || v == nil {
 		return ""
 	}
-	return fmt.Sprintf("%v", v)
+	return scalarString(v)
 }
 
 // IntVal safely gets an int value from a map.

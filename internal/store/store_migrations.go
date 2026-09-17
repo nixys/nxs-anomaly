@@ -18,6 +18,14 @@ func (s *pgStore) initialize(ctx context.Context) error {
 	}
 	defer conn.Release()
 
+	// Waiting for the lock is waiting for another replica's migrations, which may
+	// legitimately take longer than statement_timeout. Under the timeout this
+	// replica gave up after 30s and exited, and restarted into the same wait.
+	// The session default is restored before the connection goes back to the pool.
+	if _, err := conn.Exec(ctx, "SET statement_timeout = 0"); err != nil {
+		return fmt.Errorf("disable statement_timeout for init lock: %w", err)
+	}
+	defer conn.Exec(context.WithoutCancel(ctx), "RESET statement_timeout") //nolint:errcheck
 	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock(72544000)"); err != nil {
 		return fmt.Errorf("acquire init lock: %w", err)
 	}

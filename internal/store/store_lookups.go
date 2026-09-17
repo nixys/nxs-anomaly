@@ -17,12 +17,16 @@ import (
 // would mean writing that row on every single ingest, which is the hottest path
 // in the service. The answer is already in the alerts table, and
 // nxs_anomaly_alerts_integration_received_idx is (integration_id, received_at
-// desc) — exactly this query's shape, so it is an index-only lookup.
+// desc) — exactly this query's shape. The silence alert the heartbeat raises on
+// this integration is excluded: it is the service talking, not the source, and
+// counting it closed the silence on the next pass.
 func (s *pgStore) LastAlertReceivedAt(ctx context.Context, integrationID string) (time.Time, bool, error) {
 	var at *time.Time
 	err := s.pool.QueryRow(ctx,
 		`SELECT received_at FROM nxs_anomaly_alerts
 		 WHERE integration_id = $1 AND received_at IS NOT NULL
+		   AND NOT (COALESCE(data->'labels'->>'alertname', '') = 'SourceSilent'
+		            AND COALESCE(data->'labels'->>'integration_id', '') = $1)
 		 ORDER BY received_at DESC LIMIT 1`, integrationID).Scan(&at)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return time.Time{}, false, nil
@@ -95,7 +99,7 @@ func (s *pgStore) FindActiveAlertGroup(ctx context.Context, integrationID, dedup
 // oldest first so a backlog larger than the batch limit cannot starve groups.
 func (s *pgStore) ListDueAlertGroups(ctx context.Context, nowISO string) ([]map[string]any, error) {
 	rows, err := s.pool.Query(ctx,
-		"SELECT data FROM nxs_anomaly_alert_groups WHERE next_run_at <= $1 AND status NOT IN ('resolved','silenced') ORDER BY next_run_at LIMIT $2",
+		"SELECT data FROM nxs_anomaly_alert_groups WHERE next_run_at <= $1 AND status <> 'resolved' ORDER BY next_run_at LIMIT $2",
 		nowISO, workerBatchLimit)
 	if err != nil {
 		return nil, err
@@ -186,7 +190,7 @@ func (s *pgStore) ClaimRetryableNotifications(ctx context.Context, workerID, now
 	rows, err := s.pool.Query(ctx,
 		`UPDATE nxs_anomaly_notifications SET
 		    status='retrying',
-		    data = data || jsonb_build_object('status','retrying','claimed_at',$1::text,'claimed_by',$2::text)
+		    data = data || jsonb_build_object('status','retrying','claimed_at',$4::text,'claimed_by',$2::text)
 		 WHERE id IN (
 		    SELECT id FROM nxs_anomaly_notifications
 		    WHERE status='retry_scheduled' AND next_retry_at <= $1
@@ -195,7 +199,7 @@ func (s *pgStore) ClaimRetryableNotifications(ctx context.Context, workerID, now
 		    FOR UPDATE SKIP LOCKED
 		 )
 		 RETURNING data`,
-		nowISO, workerID, workerBatchLimit)
+		nowISO, workerID, workerBatchLimit, nowISO)
 	if err != nil {
 		return nil, err
 	}

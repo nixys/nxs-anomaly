@@ -38,6 +38,48 @@ func TestSelectRouteRegexMatch(t *testing.T) {
 	}
 }
 
+// The documented example: an anchored pattern on the alert name.
+func TestSelectRouteRegexIsAnchoredOnTitleAndLabels(t *testing.T) {
+	for _, tc := range []struct {
+		name, pattern string
+		payload       map[string]any
+	}{
+		{"title", "^Disk(Space|Inodes)", map[string]any{"title": "DiskSpaceLow on db-01"}},
+		{"label value", "^Disk(Space|Inodes)", map[string]any{"title": "Inodes 95%", "labels": map[string]any{"alertname": "DiskInodesLow"}}},
+		{"label name=value", "^kind=Disk$", map[string]any{"title": "x", "labels": map[string]any{"kind": "Disk"}}},
+	} {
+		integration := map[string]any{
+			"routes": []any{
+				map[string]any{"id": "default", "match_type": "all", "is_default": true},
+				map[string]any{"id": "disk", "match_type": "regex", "pattern": tc.pattern},
+			},
+		}
+		route, err := selectRoute(integration, tc.payload)
+		if err != nil || route["id"] != "disk" {
+			t.Errorf("%s: route = %v err=%v, want disk", tc.name, route["id"], err)
+		}
+	}
+}
+
+// Annotations, the message and field names are not what a route is about.
+func TestSelectRouteRegexIgnoresTheRestOfThePayload(t *testing.T) {
+	integration := map[string]any{
+		"routes": []any{
+			map[string]any{"id": "default", "match_type": "all", "is_default": true},
+			map[string]any{"id": "prod", "match_type": "regex", "pattern": "prod"},
+		},
+	}
+	route, err := selectRoute(integration, map[string]any{
+		"title":       "cpu",
+		"message":     "see production dashboard",
+		"labels":      map[string]any{"env": "staging"},
+		"annotations": map[string]any{"runbook": "how to reproduce"},
+	})
+	if err != nil || route["id"] != "default" {
+		t.Errorf("route = %v err=%v, want default: nothing in the title or labels says prod", route["id"], err)
+	}
+}
+
 func TestSelectRouteDefaultFallback(t *testing.T) {
 	integration := map[string]any{
 		"routes": []any{

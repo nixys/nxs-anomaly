@@ -60,6 +60,12 @@ type Config struct {
 	// /metrics. Separate from Addr so an API and a worker can run in one pod
 	// without a port clash. Defaults to :8081.
 	WorkerAddr string
+
+	// Frontdoor and WorkerFrontdoor are listeners opened before the store, so
+	// /live answers while the process waits for the database. Nil opens one
+	// when the service starts.
+	Frontdoor       *Frontdoor
+	WorkerFrontdoor *Frontdoor
 	// WorkerStallTimeout is how long the worker may go without completing a
 	// cycle before /ready reports it degraded. Zero means derive it from the
 	// poll interval (see defaultWorkerStallTimeout).

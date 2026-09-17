@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -71,6 +72,44 @@ func nilIfEmpty(s string) any {
 		return nil
 	}
 	return s
+}
+
+// nilIfUnsetTime is nilIfEmpty for timestamps that sources also mark unset with
+// Go's zero time (Alertmanager and Grafana send endsAt "0001-01-01T00:00:00Z"
+// for a firing alert).
+func nilIfUnsetTime(s string) any {
+	if strings.HasPrefix(s, "0001-01-01") {
+		return nil
+	}
+	return nilIfEmpty(s)
+}
+
+// labelSetFingerprint identifies an alert by its labels, independent of order.
+func labelSetFingerprint(labels map[string]string) string {
+	if len(labels) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(labels))
+	for name := range labels {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	h := sha256.New()
+	for _, name := range names {
+		h.Write([]byte(name))
+		h.Write([]byte{0})
+		h.Write([]byte(labels[name]))
+		h.Write([]byte{0})
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))[:16]
+}
+
+func copyStringMap(m map[string]string) map[string]string {
+	out := make(map[string]string, len(m)+1)
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
 }
 
 func strDefault(s, def string) string {

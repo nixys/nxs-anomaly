@@ -135,6 +135,14 @@ config:
   NXS_ANOMALY_PROFILE: ""
   NXS_ANOMALY_BLOCK_PRIVATE_WEBHOOKS: "true"
   NXS_ANOMALY_SESSION_COOKIE_SECURE: "true"
+  # Proxies whose X-Forwarded-For the API believes. The bundled frontend (and an
+  # ingress controller in front of it) reach the API from pod addresses, so
+  # without this every sign-in looks like it comes from the frontend pod and one
+  # person guessing passwords locks everyone out of the web UI. The API takes
+  # the nearest address that is not in these ranges, so a client cannot pick
+  # its own. Narrow it to your pod and ingress CIDRs if clients also connect
+  # from private networks directly.
+  NXS_ANOMALY_TRUSTED_PROXIES: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10,127.0.0.0/8,fc00::/7,::1/128"
   # How long serve/run-worker keep retrying a database that is not accepting
   # connections yet, before giving up and exiting.
   #

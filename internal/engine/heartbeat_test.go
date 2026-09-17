@@ -164,6 +164,12 @@ func TestSilenceIsReportedOnceNotEveryCycle(t *testing.T) {
 		if count := utils.IntVal(g, "alert_count"); count != 1 {
 			t.Errorf("alert_count = %d after three cycles, want 1", count)
 		}
+		// The silence alert is itself an alert of this integration. Counting it
+		// as the source talking again closed the group on the next pass and
+		// raised a fresh one an interval later — a page every interval.
+		if got := utils.StrVal(g, "status"); got != "open" {
+			t.Errorf("group status = %q after three cycles of silence, want open", got)
+		}
 	}
 }
 

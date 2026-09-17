@@ -123,25 +123,10 @@ func (e *Engine) notificationTargetsForUser(state *store.State, g model.AlertGro
 
 	var targets []map[string]any
 	for _, ch := range channels {
-		if explicit, ok := targetsByType[ch]; ok {
-			targets = append(targets, map[string]any{"type": ch, "target": utils.StrVal(explicit, "target")})
-			continue
-		}
-		switch ch {
-		case "log":
-			targets = append(targets, map[string]any{"type": "log", "target": ""})
-		case "email":
-			if email := utils.StrVal(user, "email"); email != "" {
-				targets = append(targets, map[string]any{"type": "email", "target": email})
-			}
-		case "telegram":
-			if tgID := utils.StrVal(user, "telegram_id"); tgID != "" {
-				targets = append(targets, map[string]any{"type": "telegram", "target": tgID})
-			}
-		case "call":
-			if phone := utils.StrVal(user, "phone"); phone != "" {
-				targets = append(targets, map[string]any{"type": "call", "target": phone})
-			}
+		// A target entry without an address ({"type": "telegram"}) means the
+		// address on the profile, exactly as when the channel has no entry.
+		if addr, ok := resolveChannelTarget(user, ch, utils.StrVal(targetsByType[ch], "target")); ok {
+			targets = append(targets, map[string]any{"type": ch, "target": addr})
 		}
 	}
 	if len(targets) == 0 {
@@ -202,7 +187,7 @@ func (e *Engine) attachNotificationBatch(state *store.State, g model.AlertGroup,
 // fanoutChatopsNotifications sends notifications to chatops channels the user belongs to.
 func (e *Engine) fanoutChatopsNotifications(state *store.State, g model.AlertGroup, user map[string]any, reason, timestamp string, seen map[string]struct{}) {
 	userID := utils.StrVal(user, "id")
-	stepKey := fmt.Sprintf("%d:%d", g.CurrentStep(), g.RepeatCount())
+	stepKey := g.EscalationKey()
 	groupID := g.ID()
 
 	for _, ch := range state.ChatopsChannels {
@@ -279,7 +264,7 @@ func (e *Engine) fanoutChatopsNotifications(state *store.State, g model.AlertGro
 func (e *Engine) fanoutMobileNotifications(state *store.State, g model.AlertGroup, user map[string]any, reason, timestamp string, seen map[string]struct{}) {
 	userID := utils.StrVal(user, "id")
 	groupID := g.ID()
-	stepKey := fmt.Sprintf("%d:%d", g.CurrentStep(), g.RepeatCount())
+	stepKey := g.EscalationKey()
 
 	for _, device := range state.MobileDevices {
 		if utils.StrVal(device, "user_id") != userID {
@@ -350,6 +335,11 @@ func addNotification(state *store.State, n model.Notification, seen map[string]s
 // team-scopeable, and taking the group here means no call site can forget it —
 // this is the single place the engine constructs a notification.
 func buildNotification(g model.AlertGroup, userID, channel, target, reason, timestamp, idempotencyKey string) model.Notification {
+	if idempotencyKey == "" {
+		// Keyed on the escalation step execution, not just the recipient: a
+		// REPEAT or a restarted chain is a new page, a re-processed cycle is not.
+		idempotencyKey = fmt.Sprintf("%s:%s:%s:%s:%s:%s", g.ID(), g.EscalationKey(), userID, channel, target, reason)
+	}
 	n := model.NewNotification(g.ID(), g.IntegrationID(), userID, channel, target, reason, timestamp, idempotencyKey)
 	// The analytics context travels with the notification, because the delivery
 	// worker will not have the group in hand when it reports the attempt. Read,
@@ -449,9 +439,9 @@ func (e *Engine) notifyGroupResolved(state *store.State, g model.AlertGroup, tim
 		}
 		for _, target := range e.notificationTargetsForUser(state, g, user) {
 			channel := utils.StrVal(target, "type")
-			// Keyed on the group and channel rather than the escalation step: a
-			// group resolves once, so this is the whole key there is.
-			idemKey := fmt.Sprintf("%s:%s:%s:resolved", g.ID(), userID, channel)
+			// Keyed on the episode and channel rather than the escalation step: an
+			// episode resolves once, and a reopened group is a new episode.
+			idemKey := fmt.Sprintf("%s:%s:%s:%s:resolved", g.ID(), g.EpisodeID(), userID, channel)
 			ntf := buildNotification(g, userID, channel, utils.StrVal(target, "target"),
 				resolveNotificationReason, timestamp, idemKey)
 			ntf.ScheduleDelivery(notificationPayload(g, user, resolveNotificationReason))

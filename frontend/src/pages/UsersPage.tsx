@@ -684,7 +684,7 @@ function TestChannelButton({
   const send = async () => {
     setBusy(true);
     try {
-      const res = await api.post<{ status: string; provider_status?: string; error?: string }>(
+      const res = await api.post<{ status: string; provider_status?: string; error?: string; detail?: string }>(
         `/api/v1/users/${userId}/test-notification`,
         { channel },
       );
@@ -692,7 +692,7 @@ function TestChannelButton({
       notifications.show({
         color: ok ? 'green' : res.status === 'skipped' ? 'yellow' : 'red',
         title: t('users.testResult', { channel: channelLabel(channel), status: statusLabel(res.status) }),
-        message: res.error || res.provider_status || t('users.noProviderDetail'),
+        message: res.error || res.detail || res.provider_status || t('users.noProviderDetail'),
       });
     } catch (err) {
       notifications.show({

@@ -178,6 +178,7 @@ var advisoryLockCallSiteNames = []string{
 	"advance_policy_runs",
 	"create_maintenance_window", "update_maintenance_window",
 	"generate_oncall_report",
+	"record_delivery_failures",
 }
 
 // TestAdvisoryLockRegistryIsFullyExercised keeps the list above honest in the

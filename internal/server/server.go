@@ -12,7 +12,6 @@ package server
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net"
@@ -144,23 +143,17 @@ func New(ctx context.Context, s store.PostgreSQLStore, eng *engine.Engine, cfg C
 		srv.apiLimiter = newRateLimiter(cfg.APIRate, cfg.APIRate)
 	}
 
-	httpSrv := &http.Server{
-		Addr:              cfg.Addr,
-		Handler:           srv.handler(),
-		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
-		ReadTimeout:       cfg.ReadTimeout,
-		WriteTimeout:      cfg.WriteTimeout,
-		IdleTimeout:       cfg.IdleTimeout,
-	}
-	if cfg.TLSCert != "" && cfg.TLSKey != "" {
-		tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
-		cert, err := tls.LoadX509KeyPair(cfg.TLSCert, cfg.TLSKey)
-		if err != nil {
-			return fmt.Errorf("load TLS key pair: %w", err)
+	// The listener is normally already open — cmdServe opens it before the
+	// store so /live answers while the database and migrations are awaited.
+	fd := cfg.Frontdoor
+	if fd == nil {
+		var err error
+		if fd, err = OpenFrontdoor(cfg.Addr, cfg, cfg.TLSCert, cfg.TLSKey); err != nil {
+			return err
 		}
-		tlsCfg.Certificates = []tls.Certificate{cert}
-		httpSrv.TLSConfig = tlsCfg
 	}
+	fd.SetHandler(srv.handler())
+	slog.Info("server started", "addr", cfg.Addr)
 
 	shutdownTimeout := cfg.ShutdownTimeout
 	if shutdownTimeout <= 0 {
@@ -205,22 +198,8 @@ func New(ctx context.Context, s store.PostgreSQLStore, eng *engine.Engine, cfg C
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
 
-	errCh := make(chan error, 1)
-	go func() {
-		slog.Info("server starting", "addr", cfg.Addr)
-		var err error
-		if httpSrv.TLSConfig != nil {
-			err = httpSrv.ListenAndServeTLS("", "")
-		} else {
-			err = httpSrv.ListenAndServe()
-		}
-		if err != nil && err != http.ErrServerClosed {
-			errCh <- err
-		}
-	}()
-
 	select {
-	case err := <-errCh:
+	case err := <-fd.Err():
 		return err
 	case <-stop:
 	case <-ctx.Done():
@@ -231,7 +210,7 @@ func New(ctx context.Context, s store.PostgreSQLStore, eng *engine.Engine, cfg C
 	}
 	shutCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
-	return httpSrv.Shutdown(shutCtx)
+	return fd.Shutdown(shutCtx)
 }
 
 // runGaugeRefreshLoop keeps the process gauges current on a replica that runs no

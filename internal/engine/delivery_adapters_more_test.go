@@ -156,10 +156,10 @@ func TestToAlertmanagerPayload(t *testing.T) {
 }
 
 func TestSendEmailGuardBranches(t *testing.T) {
-	if s, _, _ := sendEmail("a@x.io", "hi", SMTPConfig{}); s != "failed" {
+	if s, _, _ := sendEmail("a@x.io", "subj", "hi", SMTPConfig{}); s != "failed" {
 		t.Errorf("empty host should fail: %q", s)
 	}
-	if s, _, _ := sendEmail("", "hi", SMTPConfig{Host: "smtp.x.io", Port: 25}); s != "failed" {
+	if s, _, _ := sendEmail("", "subj", "hi", SMTPConfig{Host: "smtp.x.io", Port: 25}); s != "failed" {
 		t.Errorf("empty recipient should fail: %q", s)
 	}
 }

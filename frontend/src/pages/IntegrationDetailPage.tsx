@@ -95,13 +95,17 @@ function OverviewTab({ integration }: { integration: Integration }) {
   const rotate = useRotateKey();
   const [name, setName] = useState(integration.name);
   const [groupBy, setGroupBy] = useState((integration.group_by ?? []).join(', '));
-  const [secret, setSecret] = useState(integration.webhook_secret ?? '');
+  // The API never returns the secret, only whether one is set. The field holds
+  // a replacement: left empty it changes nothing, so saving the name cannot
+  // wipe a secret the form was never shown.
+  const [secret, setSecret] = useState('');
+  const secretSet = Boolean(integration.webhook_secret_set);
   const { t } = useI18n();
 
   useEffect(() => {
     setName(integration.name);
     setGroupBy((integration.group_by ?? []).join(', '));
-    setSecret(integration.webhook_secret ?? '');
+    setSecret('');
   }, [integration]);
 
   const save = () =>
@@ -113,9 +117,10 @@ function OverviewTab({ integration }: { integration: Integration }) {
           .split(',')
           .map((part) => part.trim())
           .filter(Boolean),
-        webhook_secret: secret,
+        ...(secret !== '' ? { webhook_secret: secret } : {}),
       },
     });
+  const removeSecret = () => update.mutate({ id: integration.id, body: { webhook_secret: null } });
 
   return (
     <Stack gap="md">
@@ -134,10 +139,30 @@ function OverviewTab({ integration }: { integration: Integration }) {
           />
           <TextInput
             label={t('integration.webhookSecret')}
-            description={t('integration.webhookSecretDescription')}
+            description={
+              secretSet
+                ? t('integration.webhookSecretConfigured')
+                : t('integration.webhookSecretDescription')
+            }
+            placeholder={secretSet ? t('integration.webhookSecretKeep') : undefined}
             value={secret}
             onChange={(event) => setSecret(event.currentTarget.value)}
           />
+          {secretSet && (
+            <Group>
+              <Button
+                variant="subtle"
+                color="red"
+                size="xs"
+                leftSection={<IconTrash size={14} />}
+                onClick={removeSecret}
+                loading={update.isPending}
+                disabled={Boolean(integration.provisioned_by)}
+              >
+                {t('integration.webhookSecretRemove')}
+              </Button>
+            </Group>
+          )}
           <Group justify="flex-end">
             <Button
               leftSection={<IconDeviceFloppy size={16} />}
