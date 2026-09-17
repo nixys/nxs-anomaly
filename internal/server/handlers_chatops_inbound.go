@@ -96,7 +96,7 @@ func (srv *Server) handleSlackCommand(w http.ResponseWriter, r *http.Request) {
 	}
 	command := strings.TrimSpace(form.Get("command") + " " + form.Get("text"))
 	srv.dispatchChatopsCommand(w, r, "slack", form.Get("channel_id"), form.Get("user_name"),
-		form.Get("user_id"), command)
+		form.Get("user_id"), command, slackSharedChat(form.Get("channel_name")))
 }
 
 // handleSlackInteractive accepts a tap on a Slack message button.
@@ -139,7 +139,8 @@ func (srv *Server) handleSlackInteractive(w http.ResponseWriter, r *http.Request
 			Name string `json:"username"`
 		} `json:"user"`
 		Channel struct {
-			ID string `json:"id"`
+			ID   string `json:"id"`
+			Name string `json:"name"`
 		} `json:"channel"`
 		// What the message being acted on says, so the verdict can be appended
 		// to the alert rather than replace it.
@@ -170,7 +171,7 @@ func (srv *Server) handleSlackInteractive(w http.ResponseWriter, r *http.Request
 		return
 	}
 	out := srv.runChatopsCommand(r.Context(), "slack", interaction.Channel.ID, interaction.User.Name,
-		interaction.User.ID, command)
+		interaction.User.ID, command, slackSharedChat(interaction.Channel.Name))
 	if out.err != nil {
 		// A refusal changes nothing, so the message keeps its buttons and only
 		// the person who tapped is told why.
@@ -228,8 +229,12 @@ func (srv *Server) handleMattermostAction(w http.ResponseWriter, r *http.Request
 		return
 	}
 	out := srv.runChatopsCommand(r.Context(), "mattermost", action.ChannelID, action.UserName,
-		action.UserID, command)
-	if out.err != nil {
+		action.UserID, command, true)
+	// A refusal is not only an error from the engine: a command that was
+	// declined — an unbound channel, a missing role — comes back with a status
+	// of its own and changed nothing. Rendering that as a settled post put a "✓"
+	// and an "undo" button under an action that never happened.
+	if out.err != nil || out.status != http.StatusOK {
 		// A refusal changes nothing, so the post keeps its buttons and only the
 		// person who tapped is told why.
 		writeJSON(w, http.StatusOK, map[string]any{"ephemeral_text": out.text})
@@ -285,7 +290,7 @@ func (srv *Server) handleMattermostCommand(w http.ResponseWriter, r *http.Reques
 		command = "help"
 	}
 	srv.dispatchChatopsCommand(w, r, "mattermost", form.Get("channel_id"), form.Get("user_name"),
-		form.Get("user_id"), command)
+		form.Get("user_id"), command, mattermostSharedChat(form.Get("channel_name")))
 }
 
 // handleTelegramCommand accepts a Telegram bot update.
@@ -322,7 +327,8 @@ func (srv *Server) handleTelegramCommand(w http.ResponseWriter, r *http.Request)
 				Username string `json:"username"`
 			} `json:"from"`
 			Chat struct {
-				ID any `json:"id"`
+				ID   any    `json:"id"`
+				Type string `json:"type"`
 			} `json:"chat"`
 		} `json:"message"`
 		CallbackQuery *struct {
@@ -336,7 +342,8 @@ func (srv *Server) handleTelegramCommand(w http.ResponseWriter, r *http.Request)
 				MessageID int64  `json:"message_id"`
 				Text      string `json:"text"`
 				Chat      struct {
-					ID any `json:"id"`
+					ID   any    `json:"id"`
+					Type string `json:"type"`
 				} `json:"chat"`
 			} `json:"message"`
 		} `json:"callback_query"`
@@ -352,6 +359,7 @@ func (srv *Server) handleTelegramCommand(w http.ResponseWriter, r *http.Request)
 			chatID:      telegramID(cq.Message.Chat.ID),
 			messageID:   cq.Message.MessageID,
 			messageText: cq.Message.Text,
+			sharedChat:  telegramSharedChat(cq.Message.Chat.Type),
 			fromID:      telegramID(cq.From.ID),
 			fromHandle:  cq.From.Username,
 		})
@@ -361,7 +369,8 @@ func (srv *Server) handleTelegramCommand(w http.ResponseWriter, r *http.Request)
 		telegramID(update.Message.Chat.ID),
 		update.Message.From.Username,
 		telegramID(update.Message.From.ID),
-		strings.TrimSpace(update.Message.Text))
+		strings.TrimSpace(update.Message.Text),
+		telegramSharedChat(update.Message.Chat.Type))
 }
 
 // telegramCallback is one tapped inline button.
@@ -373,6 +382,26 @@ type telegramCallback struct {
 	messageText string // what that message says, so a verdict can be appended to it
 	fromID      string
 	fromHandle  string
+	sharedChat  bool // the button sits in a group, not in the bot's own chat
+}
+
+// telegramSharedChat reports whether a Telegram chat is one other people read.
+// An update without a type is treated as shared: the safe reading of "unknown"
+// is the one that still requires a bound channel.
+func telegramSharedChat(chatType string) bool {
+	return strings.ToLower(strings.TrimSpace(chatType)) != "private"
+}
+
+// slackSharedChat / mattermostSharedChat do the same from the channel name each
+// platform puts in its slash-command payload; both name a one-to-one chat
+// explicitly, and everything else is a room.
+func slackSharedChat(channelName string) bool {
+	return strings.TrimSpace(channelName) != "directmessage"
+}
+
+func mattermostSharedChat(channelName string) bool {
+	name := strings.TrimSpace(channelName)
+	return name != "directmessage" && !strings.Contains(name, "__")
 }
 
 // handleTelegramCallback runs a tapped button as the ChatOps command it stands
@@ -394,7 +423,7 @@ func (srv *Server) handleTelegramCallback(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "text": "unsupported callback action"})
 		return
 	}
-	out := srv.runChatopsCommand(r.Context(), "telegram", cb.chatID, cb.fromHandle, cb.fromID, command)
+	out := srv.runChatopsCommand(r.Context(), "telegram", cb.chatID, cb.fromHandle, cb.fromID, command, cb.sharedChat)
 	srv.answerTelegramCallback(r.Context(), cb.id, out.text)
 	// Paging replaces the listing in place. Sending a new message per tap would
 	// bury the chat under near-identical lists, and the one worth reading would
@@ -532,8 +561,8 @@ func telegramID(v any) string {
 // again. Telegram additionally ignores any body that is not a method call, so
 // the old JSON error object reached nobody — a typo answered with silence, and
 // the update was redelivered until Telegram gave up on it.
-func (srv *Server) dispatchChatopsCommand(w http.ResponseWriter, r *http.Request, platform, externalID, chatHandle, platformUserID, command string) {
-	out := srv.runChatopsCommand(r.Context(), platform, externalID, chatHandle, platformUserID, command)
+func (srv *Server) dispatchChatopsCommand(w http.ResponseWriter, r *http.Request, platform, externalID, chatHandle, platformUserID, command string, sharedChat bool) {
+	out := srv.runChatopsCommand(r.Context(), platform, externalID, chatHandle, platformUserID, command, sharedChat)
 	if out.err != nil || out.status != http.StatusOK {
 		writeJSON(w, http.StatusOK, chatopsErrorReply(platform, externalID, out))
 		return
@@ -576,7 +605,11 @@ type chatopsOutcome struct {
 }
 
 // runChatopsCommand resolves the sender, the channel and runs the command.
-func (srv *Server) runChatopsCommand(parent context.Context, platform, externalID, chatHandle, platformUserID, command string) chatopsOutcome {
+//
+// sharedChat says the command arrived in a room other people can read. That is
+// the difference between a personal button and a team channel, and it decides
+// whether an unbound chat may run anything at all.
+func (srv *Server) runChatopsCommand(parent context.Context, platform, externalID, chatHandle, platformUserID, command string, sharedChat bool) chatopsOutcome {
 	if command == "" {
 		return chatopsOutcome{text: "empty command", status: http.StatusBadRequest}
 	}
@@ -604,7 +637,11 @@ func (srv *Server) runChatopsCommand(parent context.Context, platform, externalI
 		// claims falls back to the platform service principal, and running
 		// unbound commands as that would give any chat the bot was added to
 		// the right to acknowledge alerts.
-		if principal.Kind != authz.KindUser || principal.ID == "" {
+		// A shared chat needs a channel even when the sender is known here: the
+		// channel is the team boundary, and without it anyone who adds the bot
+		// to a room gets a place to act on alerts from. A one-to-one chat with
+		// the bot has no such boundary to lose.
+		if sharedChat || principal.Kind != authz.KindUser || principal.ID == "" {
 			// Named explicitly: an operator wiring this up needs to know the
 			// channel is unknown here, not that "something went wrong".
 			return chatopsOutcome{
@@ -741,7 +778,7 @@ func (srv *Server) allowChatopsInbound(w http.ResponseWriter, r *http.Request, p
 	if srv.webhookLimiter.allow("chatops:" + platform + ":" + srv.clientIP(r)) {
 		return true
 	}
-	writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
+	writeRateLimited(w, 1, "rate limit exceeded")
 	return false
 }
 

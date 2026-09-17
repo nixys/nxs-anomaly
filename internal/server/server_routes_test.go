@@ -16,11 +16,12 @@ import (
 func newTestServer() (*Server, *storetest.Store) {
 	st := storetest.New()
 	return &Server{
-		eng:          engine.New(st),
-		store:        st,
-		metrics:      newMetrics(),
-		startTime:    time.Now(),
-		loginLimiter: newDBRateLimiter(st, "login:", loginRatePerSecond, loginBurst),
+		eng:                 engine.New(st),
+		store:               st,
+		metrics:             newMetrics(),
+		startTime:           time.Now(),
+		loginLimiter:        newDBRateLimiter(st, "login:", loginRatePerSecond, loginBurst),
+		loginAccountLimiter: newDBRateLimiter(st, "login-account:", loginAccountRatePerSecond, loginAccountBurst),
 	}, st
 }
 

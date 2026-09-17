@@ -31,6 +31,30 @@ const (
 	loginBurst         = 5
 )
 
+// loginAccountRatePerSecond / loginAccountBurst throttle failed sign-ins per
+// account, whatever address they come from. The per-IP budget above is the
+// first line, but it can only be as trustworthy as the address: a client that
+// is itself inside a trusted proxy range picks its own X-Forwarded-For, and a
+// new one per attempt means a new budget per attempt. This second budget has no
+// such escape, because the account being guessed is the one thing the attacker
+// cannot vary.
+//
+// The numbers are looser than the per-IP ones on purpose. A budget per account
+// is also a way to lock a named person out, so it must refill fast enough that
+// the lockout is a delay rather than an outage — twelve attempts a minute is
+// far more than a human mistyping and far less than a useful guessing rate.
+const (
+	loginAccountRatePerSecond = 0.2 // twelve attempts per minute sustained
+	loginAccountBurst         = 10
+)
+
+// loginAccountKey normalises what the user typed into the key both the budget
+// and a second attempt will agree on. Logins are matched case-insensitively, so
+// "Admin" and "admin" must not get a budget each.
+func loginAccountKey(login string) string {
+	return strings.ToLower(strings.TrimSpace(login))
+}
+
 // isAuthPublicPath reports whether a path is one of the endpoints that must be
 // reachable without credentials. Sign-in obviously cannot require being signed
 // in; sign-out and the method list are here too, so a client holding a stale or
@@ -103,13 +127,17 @@ func (srv *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// in during a busy morning. The password-change handler below already limits
 	// only the failing branch; this makes sign-in consistent with it.
 	if !srv.loginLimiter.allow(ip) {
-		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "too many sign-in attempts"})
+		writeRateLimited(w, 10, "too many sign-in attempts")
 		return
 	}
 	loginSucceeded := false
+	account := ""
 	defer func() {
 		if loginSucceeded {
 			srv.loginLimiter.refund(ip)
+			if account != "" {
+				srv.loginAccountLimiter.refund(account)
+			}
 		}
 	}()
 	body, ok := readJSON(w, r)
@@ -123,6 +151,11 @@ func (srv *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	password := utils.StrVal(body, "password")
 	if login == "" || password == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "login and password are required"})
+		return
+	}
+	account = loginAccountKey(login)
+	if !srv.loginAccountLimiter.allow(account) {
+		writeRateLimited(w, 10, "too many sign-in attempts")
 		return
 	}
 
@@ -278,6 +311,15 @@ func checkSameOriginWrite(r *http.Request) error {
 	}
 	origin := r.Header.Get("Origin")
 	if origin == "" || origin == "null" {
+		// No Origin does not mean "not a browser". Fetch metadata says where the
+		// request came from even when Origin is absent, and a browser that
+		// labels a write cross-site has no business carrying this cookie —
+		// whatever Referer it sends. Clients that send neither header (curl,
+		// a server-side script) are unaffected.
+		switch strings.ToLower(r.Header.Get("Sec-Fetch-Site")) {
+		case "cross-site", "same-site":
+			return errors.New("cross-origin request rejected")
+		}
 		return nil
 	}
 	u, err := url.Parse(origin)
@@ -464,7 +506,7 @@ func (srv *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Reques
 	}
 	if !found || !authz.VerifyPassword(current, hash) {
 		if !srv.loginLimiter.allow(srv.clientIP(r)) {
-			writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "too many attempts"})
+			writeRateLimited(w, 10, "too many attempts")
 			return
 		}
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "current password is incorrect"})

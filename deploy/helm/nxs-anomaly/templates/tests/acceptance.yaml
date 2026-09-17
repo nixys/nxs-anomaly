@@ -132,7 +132,14 @@ data:
     say "waiting for a delivery attempt"
     deadline=$(( $(date +%s) + TIMEOUT ))
     while :; do
-      attempts="$(api GET "/api/v1/delivery-attempts?limit=50" || echo '')"
+      # Filtered by this canary's notifications, not by page size: on an
+      # installation with history the first page is somebody else's traffic and
+      # the canary's own attempt never appears in it.
+      notifs="$(api GET "/api/v1/notifications?limit=50&alert_group_id=${GROUP_ID}" || echo '')"
+      attempts=""
+      for _nid in $(printf '%s' "${notifs}" | grep -o '"id":"ntf[^"]*"' | cut -d'"' -f4); do
+        attempts="${attempts}$(api GET "/api/v1/delivery-attempts?notification_id=${_nid}" || echo '')"
+      done
       if printf '%s' "${attempts}" | grep -q "\"target\":\"${TAG}\""; then break; fi
       [ "$(date +%s)" -ge "${deadline}" ] && fail "no delivery attempt for ${TAG} within ${TIMEOUT}s; the worker is probably not processing. Last response: ${attempts}"
       sleep 2

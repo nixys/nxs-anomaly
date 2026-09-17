@@ -909,6 +909,7 @@ export interface paths {
             responses: {
                 201: components["responses"]["ChatOpsChannel"];
                 400: components["responses"]["Error"];
+                409: components["responses"]["Error"];
             };
         };
         delete?: never;
@@ -956,6 +957,7 @@ export interface paths {
             responses: {
                 200: components["responses"]["ChatOpsChannel"];
                 400: components["responses"]["Error"];
+                409: components["responses"]["Error"];
             };
         };
         post?: never;
@@ -1055,6 +1057,8 @@ export interface paths {
             parameters: {
                 query?: {
                     notification_id?: components["parameters"]["NotificationId"];
+                    limit?: components["parameters"]["Limit"];
+                    offset?: components["parameters"]["Offset"];
                 };
                 header?: never;
                 path?: never;
@@ -1240,6 +1244,7 @@ export interface paths {
             requestBody?: never;
             responses: {
                 200: components["responses"]["History"];
+                400: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -3616,6 +3621,12 @@ export interface components {
             /** @description По дню на каждый день диапазона, включая дни без событий. */
             trend: components["schemas"]["InsightsTrendBucket"][];
         };
+        DeliveryAttemptPage: {
+            items: components["schemas"]["DeliveryAttempt"][];
+            total: number;
+            limit: number;
+            offset: number;
+        };
     };
     responses: {
         /** @description A single object */
@@ -3969,13 +3980,13 @@ export interface components {
                 "application/json": components["schemas"]["NotificationPage"];
             };
         };
-        /** @description A bare array of delivery attempts */
+        /** @description A paginated list of delivery attempts */
         DeliveryAttemptList: {
             headers: {
                 [name: string]: unknown;
             };
             content: {
-                "application/json": components["schemas"]["DeliveryAttempt"][];
+                "application/json": components["schemas"]["DeliveryAttemptPage"];
             };
         };
         /** @description Feature availability for this installation */

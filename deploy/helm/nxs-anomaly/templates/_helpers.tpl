@@ -52,6 +52,19 @@ Per-component labels. Call with (dict "ctx" . "component" "api").
 app.kubernetes.io/component: {{ .component }}
 {{- end -}}
 
+{{/*
+Pod labels for the bundled datastores. Deliberately without helm.sh/chart and
+app.kubernetes.io/version: a StatefulSet pod template that carries them gets a
+new controller revision on every chart bump, so an upgrade that changes nothing
+about the database still restarts the pod holding the data. Stateless workloads
+keep the full set — they roll on a new image anyway.
+*/}}
+{{- define "nxs-anomaly.datastorePodLabels" -}}
+{{ include "nxs-anomaly.componentSelectorLabels" . }}
+app.kubernetes.io/managed-by: {{ .ctx.Release.Service }}
+app.kubernetes.io/part-of: nxs-anomaly
+{{- end -}}
+
 {{- define "nxs-anomaly.componentSelectorLabels" -}}
 {{ include "nxs-anomaly.selectorLabels" .ctx }}
 app.kubernetes.io/component: {{ .component }}

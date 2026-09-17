@@ -381,6 +381,18 @@ func segment(path string, n int) string {
 	return ""
 }
 
+// writeRateLimited answers a throttled request. The Retry-After header is the
+// point: without it a sender has no idea whether to come back in a second or a
+// minute, and the ones that guess wrong either hammer the endpoint or drop the
+// alert.
+func writeRateLimited(w http.ResponseWriter, retryAfterSeconds int, message string) {
+	if retryAfterSeconds < 1 {
+		retryAfterSeconds = 1
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(retryAfterSeconds))
+	writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": message})
+}
+
 func pageParams(r *http.Request) map[string]any {
 	q := r.URL.Query()
 	params := map[string]any{

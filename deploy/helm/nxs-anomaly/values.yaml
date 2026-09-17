@@ -461,8 +461,9 @@ tests:
   # `helm upgrade` should mean "paging still works", not "the process started".
   acceptance:
     enabled: false
-    # Key in the application Secret holding an admin API key (format
-    # "<key>:admin", the same one NXS_ANOMALY_API_KEYS carries). Read from the
+    # Key in the application Secret holding an admin API key. The value is the
+    # key itself — not the "<key>:role" form NXS_ANOMALY_API_KEYS uses, which is
+    # how the list is written, not how a caller authenticates. Read from the
     # Secret rather than from values so it never appears in the release manifest.
     apiKeySecretKey: NXS_ANOMALY_ACCEPTANCE_API_KEY
     # Budget for each of the two waits (the alert group, then the delivery

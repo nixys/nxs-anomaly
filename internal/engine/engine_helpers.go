@@ -361,3 +361,13 @@ func anyToStringSlice(raw any) []string {
 	}
 	return out
 }
+
+// softDeleted reports whether a row carries a deletion timestamp. Collections
+// without soft delete never have the field, so this is false for them.
+func softDeleted(item map[string]any) bool {
+	v, ok := item["deleted_at"]
+	if !ok || v == nil {
+		return false
+	}
+	return utils.StrVal(item, "deleted_at") != ""
+}

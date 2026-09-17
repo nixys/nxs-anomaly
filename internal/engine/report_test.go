@@ -216,7 +216,7 @@ func TestReportsDoNotExposeOtherTeamsThroughGlobalDigest(t *testing.T) {
 	if _, err := eng.GetItem(scopedHistoryCtx("team-a"), "notifications", "digest"); !isForbidden(err) {
 		t.Fatalf("digest notification leaks: %v", err)
 	}
-	if _, err := eng.GetDeliveryAttempts(scopedHistoryCtx("team-a"), "digest"); !isForbidden(err) {
+	if _, err := eng.GetDeliveryAttempts(scopedHistoryCtx("team-a"), "digest", nil); !isForbidden(err) {
 		t.Fatalf("digest attempts leak: %v", err)
 	}
 	if _, err := eng.GetItem(context.Background(), "reports", "report-"); err != nil {

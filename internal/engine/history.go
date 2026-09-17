@@ -22,11 +22,18 @@ func (e *Engine) GetHistory(ctx context.Context, filters map[string]any) (map[st
 	if v := utils.StrVal(filters, "status"); v != "" {
 		sqlFilters["status"] = v
 	}
-	if v := utils.StrVal(filters, "from"); v != "" {
-		sqlFilters["from_at"] = v
-	}
-	if v := utils.StrVal(filters, "to"); v != "" {
-		sqlFilters["to_at"] = v
+	// The window is checked here rather than left to PostgreSQL: an unparsable
+	// timestamp reaching the query came back as 500, which reads as "the service
+	// is broken" for what is a typo in a query string.
+	for param, column := range map[string]string{"from": "from_at", "to": "to_at"} {
+		v := utils.StrVal(filters, param)
+		if v == "" {
+			continue
+		}
+		if _, err := utils.ParseDatetime(v); err != nil {
+			return nil, errValidation(fmt.Sprintf("invalid %s: must be an ISO-8601 timestamp", param))
+		}
+		sqlFilters[column] = v
 	}
 	if v := utils.StrVal(filters, "channel"); v != "" {
 		sqlFilters["channel"] = v
@@ -149,8 +156,13 @@ func (e *Engine) GetHistory(ctx context.Context, filters map[string]any) (map[st
 	return map[string]any{"count": len(items), "total": total, "items": items}, nil
 }
 
-// GetDeliveryAttempts returns delivery attempts, optionally filtered by notification_id.
-func (e *Engine) GetDeliveryAttempts(ctx context.Context, notificationID string) (map[string]any, error) {
+// GetDeliveryAttempts returns a page of delivery attempts, optionally filtered
+// by notification_id.
+//
+// The page is not cosmetic here: attempts are the highest-volume rows in the
+// deployment, and a feed that always answered with the first thousand made
+// everything after them unreachable through the API.
+func (e *Engine) GetDeliveryAttempts(ctx context.Context, notificationID string, params map[string]any) (map[string]any, error) {
 	// Delivery attempts have no team of their own; they inherit the notification's.
 	// A scoped caller must therefore name a notification: the unfiltered feed
 	// would be every attempt in the deployment, which is exactly the leak this
@@ -174,14 +186,13 @@ func (e *Engine) GetDeliveryAttempts(ctx context.Context, notificationID string)
 	if notificationID != "" {
 		filters["notification_id"] = notificationID
 	}
-	items, total, err := e.store.ListCollectionPage(ctx, "notification_delivery_attempts", filters, 1000, 0, store.SortSpec{})
+	limit := clampInt(intFromAny(params["limit"], 100), 1, 1000)
+	offset := maxInt(intFromAny(params["offset"], 0), 0)
+	items, total, err := e.store.ListCollectionPage(ctx, "notification_delivery_attempts", filters, limit, offset, store.SortSpec{})
 	if err != nil {
 		return nil, err
 	}
-	if items == nil {
-		items = []map[string]any{}
-	}
-	return map[string]any{"items": items, "total": total}, nil
+	return pageEnvelope(items, total, limit, offset), nil
 }
 
 // DebugRoute simulates route selection and notification preview without ingesting.

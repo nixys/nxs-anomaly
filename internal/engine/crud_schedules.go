@@ -35,6 +35,13 @@ func (e *Engine) parseScheduleRotation(ctx context.Context, raw any) (*rotation,
 	if !ok {
 		return nil, errValidation("rotation must be an object")
 	}
+	// parseRotation clamps a non-positive interval to one so that reading an
+	// old schedule never fails. On the way in that silence is wrong: "hand over
+	// every 0 weeks" is a mistake, and accepting it as "every 1 week" builds a
+	// rotation nobody asked for.
+	if v, ok := m["handoff_interval"]; ok && v != nil && utils.IntVal(m, "handoff_interval") <= 0 {
+		return nil, errValidation("handoff_interval must be a positive number")
+	}
 	rot, err := parseRotation(m)
 	if err != nil {
 		return nil, errValidation(err.Error())
