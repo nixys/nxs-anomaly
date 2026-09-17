@@ -318,8 +318,10 @@ api -X PUT "$API/api/v1/integrations/{id}" -d '{
 ```
 
 - `match_type: labels` — совпадение по всем указанным меткам;
-- `match_type: regex` — по заголовку/меткам, шаблон компилируется при записи,
-  так что синтаксическая ошибка вернёт 400 сразу, а не при первом алерте;
+- `match_type: regex` — по заголовку алерта, значению каждой метки и каждой метке
+  в виде `имя=значение` (аннотации и сообщение не участвуют), поэтому `^Disk`
+  привязывается к началу заголовка или значения метки; шаблон компилируется при
+  записи, так что синтаксическая ошибка вернёт 400 сразу, а не при первом алерте;
 - `match_type: all` — принимает всё.
 
 **Ровно один маршрут должен быть `is_default: true`.** Ни ноль, ни два: без
@@ -507,24 +509,44 @@ api -X PUT "$API/api/v1/integrations/{id}" -d '{
 api -X PUT "$API/api/v1/users/{id}" -d '{
   "notification_policies": {
     "default": [
-      {"channel": "telegram", "wait_minutes": 0},
-      {"channel": "email",    "wait_minutes": 5},
-      {"channel": "call",     "wait_minutes": 10}
+      {"channel": "telegram", "wait_minutes": 5},
+      {"channel": "email",    "wait_minutes": 10},
+      {"channel": "call",     "wait_minutes": 0}
     ],
     "important": [
-      {"channel": "call",     "wait_minutes": 0},
-      {"channel": "telegram", "wait_minutes": 2}
+      {"channel": "call",     "wait_minutes": 2},
+      {"channel": "telegram", "wait_minutes": 0}
     ]
   }
 }'
 ```
 
 - Это **opt-in**: без `notification_policies` поведение не меняется.
+- `wait_minutes` — пауза **после** шага перед следующим. В примере сначала
+  Telegram, через 5 минут email, ещё через 10 минут звонок.
 - Шаги с `wait_minutes: 0` уходят подряд в одном цикле.
 - Прогон **останавливается, как только группу подтвердили или закрыли** — в этом
   весь смысл fallback-а.
 - Какую политику применить, решает шаг: `{"kind": "NOTIFY_USER", "notify_policy":
   "important"}`. Пустая `important` откатывается на `default`.
+
+### Почта (SMTP)
+
+Письма отправляются через SMTP-сервер, настроенный у API и worker:
+
+| Переменная | По умолчанию | Назначение |
+|---|---|---|
+| `NXS_ANOMALY_SMTP_HOST` | — | SMTP-сервер; без него канал `email` получает `skipped` / `not_configured` |
+| `NXS_ANOMALY_SMTP_PORT` | `465` | Порт |
+| `NXS_ANOMALY_SMTP_USE_TLS` | `true` | `true` — TLS с первого байта (порт 465); `false` — обычное соединение со STARTTLS, если сервер его предлагает (порт 587 или 25) |
+| `NXS_ANOMALY_SMTP_USERNAME`, `NXS_ANOMALY_SMTP_PASSWORD` | — | Учётные данные; без имени пользователя аутентификация не выполняется |
+| `NXS_ANOMALY_SMTP_SENDER` | имя пользователя | Адрес отправителя (конверт и `From`) |
+| `NXS_ANOMALY_SMTP_FROM` | `Nixys Alerter` | Отображаемое имя в `From` |
+
+Пароль храните в Secret, а не в values. Тема письма — `[severity] заголовок`
+(`[RESOLVED] …` для уведомления о закрытии), поэтому почтовый клиент группирует
+письма по инцидентам; тело — UTF-8. Прежде чем полагаться на канал, проверьте его
+кнопкой тестового уведомления в карточке пользователя.
 
 ## 8. ChatOps
 

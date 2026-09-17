@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "nxs-anomaly native API",
-    "version": "1.0.1",
+    "version": "1.1.2",
     "description": "The native /api/v1 contract for nxs-anomaly (API, worker, frontend). This is the authoritative contract; the Grafana-compatibility surface under /api/internal/v1 is a compatibility shim and is NOT part of this contract. The core payloads — user, team, schedule, escalation chain, integration, alert group, alert, notification, delivery attempt — are modelled field by field, with `required` reflecting exactly the keys the engine writes unconditionally; every one still allows additional properties because the underlying storage is JSONB. Remaining resources use the open `Entity` schema. Drift between this document and the router is gated by internal/server/openapi_contract_test.go, and the frontend compiles against types generated from this file (frontend/src/api/schema.d.ts).",
     "license": {
       "name": "Apache-2.0"
@@ -924,8 +924,12 @@
         "responses": {
           "200": {
             "$ref": "#/components/responses/Object"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
           }
-        }
+        },
+        "description": "Refused with 409 while escalation chains, schedules (rotation, current or future shifts and overrides) or integration routes still page through the object; the error names each of them."
       }
     },
     "/api/v1/escalations/run": {
@@ -1556,8 +1560,12 @@
         "responses": {
           "200": {
             "$ref": "#/components/responses/Object"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
           }
-        }
+        },
+        "description": "Refused with 409 while escalation chains, schedules (rotation, current or future shifts and overrides) or integration routes still page through the object; the error names each of them."
       }
     },
     "/api/v1/schedules/{id}/on-call": {
@@ -1780,8 +1788,12 @@
         "responses": {
           "200": {
             "$ref": "#/components/responses/Object"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
           }
-        }
+        },
+        "description": "Refused with 409 while escalation chains, schedules (rotation, current or future shifts and overrides) or integration routes still page through the object; the error names each of them."
       }
     },
     "/api/v1/users": {
@@ -1923,8 +1935,12 @@
           },
           "403": {
             "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
           }
-        }
+        },
+        "description": "Refused with 409 while escalation chains, schedules (rotation, current or future shifts and overrides) or integration routes still page through the object; the error names each of them."
       }
     },
     "/api/v1/users/{id}/duty-off": {
@@ -4073,7 +4089,7 @@
       },
       "Integration": {
         "type": "object",
-        "description": "An ingest endpoint and its routing. `webhook_secret` is never returned in clear text on read paths.",
+        "description": "An ingest endpoint and its routing. `webhook_secret` is never returned in clear text (an `env:` reference is shown as is); `webhook_secret_set` says whether one is configured. `key` and `routing_key` are masked for roles that cannot edit configuration.",
         "required": [
           "id",
           "name",
@@ -4088,6 +4104,7 @@
           "templates",
           "team_id",
           "webhook_secret",
+          "webhook_secret_set",
           "kafka_topic",
           "created_at",
           "updated_at"
@@ -4155,6 +4172,10 @@
               "string",
               "null"
             ]
+          },
+          "webhook_secret_set": {
+            "type": "boolean",
+            "description": "Whether an HMAC secret is configured."
           },
           "kafka_topic": {
             "type": [

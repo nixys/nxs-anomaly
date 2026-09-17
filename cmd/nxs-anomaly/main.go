@@ -154,6 +154,15 @@ func cmdServe(args []string) {
 	shutdownTracing, _ := tracing.Init(ctx, server.Version)
 	defer tracing.Shutdown(shutdownTracing)
 
+	// Listen before waiting for the database and migrations, so a liveness
+	// probe sees a live process rather than a closed port.
+	fd, err := server.OpenFrontdoor(cfg.Addr, cfg, cfg.TLSCert, cfg.TLSKey)
+	if err != nil {
+		slog.Error("listen failed", "addr", cfg.Addr, "err", err)
+		os.Exit(1)
+	}
+	cfg.Frontdoor = fd
+
 	s, err := store.NewPostgreSQLStore(ctx)
 	if err != nil {
 		slog.Error("store init failed", "err", err)
@@ -184,6 +193,24 @@ func cmdRunWorker(args []string) {
 	shutdownTracing, _ := tracing.Init(ctx, server.Version)
 	defer tracing.Shutdown(shutdownTracing)
 
+	cfg := server.ConfigFromEnv()
+	if *pollInterval != 5 {
+		cfg.PollInterval = time.Duration(*pollInterval) * time.Second
+	}
+	if *workerAddr != "" {
+		cfg.WorkerAddr = *workerAddr
+	}
+	if !*once {
+		// Listen before waiting for the database and migrations, so a liveness
+		// probe sees a live process rather than a closed port.
+		fd, err := server.OpenFrontdoor(cfg.WorkerAddr, cfg, "", "")
+		if err != nil {
+			slog.Error("listen failed", "addr", cfg.WorkerAddr, "err", err)
+			os.Exit(1)
+		}
+		cfg.WorkerFrontdoor = fd
+	}
+
 	s, err := store.NewPostgreSQLStore(ctx)
 	if err != nil {
 		slog.Error("store init failed", "err", err)
@@ -206,13 +233,6 @@ func cmdRunWorker(args []string) {
 		return
 	}
 
-	cfg := server.ConfigFromEnv()
-	if *pollInterval != 5 {
-		cfg.PollInterval = time.Duration(*pollInterval) * time.Second
-	}
-	if *workerAddr != "" {
-		cfg.WorkerAddr = *workerAddr
-	}
 	if err := server.RunWorker(ctx, s, eng, cfg); err != nil {
 		slog.Error("worker error", "err", err)
 		os.Exit(1)

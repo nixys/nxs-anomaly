@@ -67,7 +67,7 @@ The fields everything downstream understands:
 | `title` | the headline | `title` → `labels.alertname` → `labels.summary` → `Incoming alert` |
 | `message` | the body | empty |
 | `status` | `firing` / `resolved` | `status` → `labels.status` → `firing` |
-| `severity` | severity | `severity` → `labels.severity` → `unknown` |
+| `severity` | severity, one of `critical` / `error` / `warning` / `info` / `debug` / `unknown` | `severity` → `labels.severity` → `unknown`; synonyms (`crit`, `P1`, `high`, `warn`, `sev3`, …) map to their level, any other word to `unknown`, and the spelling the source sent is kept in the `severity_raw` label |
 | `labels` | a flat `string → string` map | `{}` |
 | `annotations` | a flat map, not used in routing | `{}` |
 | `dedupe_key` | the grouping key | computed, see §3 |
@@ -94,8 +94,8 @@ lock on the integration. An invalid envelope is rejected whole.
 | `title` | `annotations.summary` → `annotations.description` → `labels.alertname` → `receiver` |
 | `message` | `annotations.description` → `annotations.message` → `title` |
 | `status` | `alert.status` → `envelope.status` → `labels.status` → `firing` |
-| `severity` | `labels.severity` → `envelope.status` → `unknown` |
-| `dedupe_key` | `fingerprint` → `groupKey` → `alertmanager_group:<groupLabels>` |
+| `severity` | `labels.severity` → `unknown` |
+| `dedupe_key` | `fingerprint`, or a fingerprint of the alert's label set when the sender omits it → `groupKey` → `alertmanager_group:<groupLabels>` |
 | `starts_at` / `ends_at` / `generator_url` | `startsAt` / `endsAt` / `generatorURL` |
 
 The whole envelope — receiver, groupLabels, commonLabels, commonAnnotations,
@@ -107,9 +107,9 @@ externalURL, truncatedAlerts — is kept in `payload.alertmanager`.
 |---|---|
 | `title` / `message` | `payload.summary` → `client` |
 | `status` | `resolved` when `event_action = resolve`, otherwise `firing` |
-| `severity` | `payload.severity`, but anything outside `critical`/`warning`/`info` becomes `warning` |
+| `severity` | `payload.severity` (`critical`, `error`, `warning`, `info`) → `warning` |
 | `labels` | all of `payload.custom_details` plus `component`, `group`, `class`; `payload.source` becomes the `host` label |
-| `dedupe_key`, `fingerprint` | `dedup_key` |
+| `dedupe_key`, `fingerprint` | `dedup_key`; a trigger without one gets a generated key, returned in the response for the later `resolve`. `acknowledge` and `resolve` require it (400 otherwise) |
 
 ### 2.4. VictorOps / Splunk On-Call
 

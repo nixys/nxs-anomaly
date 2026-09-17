@@ -618,6 +618,18 @@ func scheduleGaps(schedule map[string]any, from, to time.Time, known map[string]
 	return gaps
 }
 
+// scheduleOverlaps returns the intervals in which more than one person is on
+// call at once.
+func scheduleOverlaps(schedule map[string]any, from, to time.Time, known map[string]bool) []scheduleSegment {
+	var overlaps []scheduleSegment
+	for _, seg := range applyRoster(scheduleTimeline(schedule, from, to), known) {
+		if len(seg.UserIDs) > 1 {
+			overlaps = append(overlaps, seg)
+		}
+	}
+	return overlaps
+}
+
 // ScheduleOnCallAt reports who is on call in a stored schedule at an instant.
 // Exported for the Grafana compatibility layer, which holds schedule rows but
 // not the engine's internals.

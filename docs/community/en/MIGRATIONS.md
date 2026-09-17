@@ -91,6 +91,7 @@ A version is the file name without its `.sql` extension:
 | `0026_maintenance_windows` | `nxs_anomaly_maintenance_windows` plus an index on `ends_at`. Planned work: integrations listed in a window still record alerts inside its bounds but do not page — the group is created `silenced`, and the dead-man switch stays quiet for them. Expand-only, and nothing outside the feature reads the table, so rolling back to an earlier release simply stops looking at it. |
 | `0027_retention_indexes` | Indexes for the retention sweep: a partial one on `updated_at` of terminal notifications, ones on `created_at` of delivery attempts and web sessions, and one on `actor_id` in the audit trail. The sweep asks the same question — "the oldest N rows past the cutoff" — every worker cycle; without indexes that is a sequential scan of the largest tables every few seconds, on exactly the installation where they are large because retention was just switched on. The actor index also serves pseudonymisation when a user is deleted. See [DATA_INVENTORY.md](DATA_INVENTORY.md). |
 | `0028_oncall_quality_reports` | Persist on-call quality reports: team, period, generation time, format version and JSON digest; index on `(team_id, generated_at)`. |
+| `0029_silence_expiry` | Make time-limited silences end: silenced groups with `silenced_until` get it as `next_run_at`, so the worker returns them to open. Before this, a silence or maintenance window never expired. |
 
 ## The connection to the store code
 
@@ -114,7 +115,7 @@ projection of the hot-path fields.
 1. Create the next file in order:
 
 ```text
-internal/store/migrations/0028_short_description.sql
+internal/store/migrations/0030_short_description.sql
 ```
 
 2. Make the operations idempotent where you can:

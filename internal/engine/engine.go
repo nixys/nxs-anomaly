@@ -115,6 +115,8 @@ var advisoryLock = map[string]int64{
 	"create_maintenance_window": 72544241,
 	"update_maintenance_window": 72544242,
 	"generate_oncall_report":    72544243,
+	// delivery outcomes written back to the group timeline
+	"record_delivery_failures": 72544244,
 }
 
 // Engine is the OnCall business logic engine.
@@ -449,6 +451,10 @@ func (e *Engine) DeleteEntity(ctx context.Context, collection, id string) (map[s
 		// pointing at the old one — an escalation chain naming a schedule, an
 		// integration naming a chain — would be pointing at nothing.
 		return nil, err
+	} else if existing != nil {
+		if err := e.deleteBlockedByReferences(ctx, collection, id); err != nil {
+			return nil, err
+		}
 	}
 	var item map[string]any
 	var err error

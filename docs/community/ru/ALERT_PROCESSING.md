@@ -67,7 +67,7 @@ HTTP-запрос на /integrations/v1/<source>/{key}
 | `title` | заголовок | `title` → `labels.alertname` → `labels.summary` → `Incoming alert` |
 | `message` | тело | пусто |
 | `status` | `firing` / `resolved` | `status` → `labels.status` → `firing` |
-| `severity` | важность | `severity` → `labels.severity` → `unknown` |
+| `severity` | важность: `critical` / `error` / `warning` / `info` / `debug` / `unknown` | `severity` → `labels.severity` → `unknown`; синонимы (`crit`, `P1`, `high`, `warn`, `sev3`, …) приводятся к своему уровню, любое другое слово — к `unknown`, а написание источника сохраняется в метке `severity_raw` |
 | `labels` | плоская карта `string → string` | `{}` |
 | `annotations` | плоская карта, в маршрутизации не участвует | `{}` |
 | `dedupe_key` | ключ группировки | вычисляется, см. §3 |
@@ -94,8 +94,8 @@ HTTP-запрос на /integrations/v1/<source>/{key}
 | `title` | `annotations.summary` → `annotations.description` → `labels.alertname` → `receiver` |
 | `message` | `annotations.description` → `annotations.message` → `title` |
 | `status` | `alert.status` → `envelope.status` → `labels.status` → `firing` |
-| `severity` | `labels.severity` → `envelope.status` → `unknown` |
-| `dedupe_key` | `fingerprint` → `groupKey` → `alertmanager_group:<groupLabels>` |
+| `severity` | `labels.severity` → `unknown` |
+| `dedupe_key` | `fingerprint`, а если отправитель его не передал — отпечаток набора меток алерта → `groupKey` → `alertmanager_group:<groupLabels>` |
 | `starts_at` / `ends_at` / `generator_url` | `startsAt` / `endsAt` / `generatorURL` |
 
 Конверт целиком (receiver, groupLabels, commonLabels, commonAnnotations,
@@ -107,9 +107,9 @@ externalURL, truncatedAlerts) сохраняется в `payload.alertmanager`.
 |---|---|
 | `title` / `message` | `payload.summary` → `client` |
 | `status` | `resolved`, если `event_action = resolve`, иначе `firing` |
-| `severity` | `payload.severity`, но всё вне `critical`/`warning`/`info` становится `warning` |
+| `severity` | `payload.severity` (`critical`, `error`, `warning`, `info`) → `warning` |
 | `labels` | `payload.custom_details` целиком + `component`, `group`, `class`; `payload.source` → лейбл `host` |
-| `dedupe_key`, `fingerprint` | `dedup_key` |
+| `dedupe_key`, `fingerprint` | `dedup_key`; trigger без него получает сгенерированный ключ, он возвращается в ответе для последующего `resolve`. Для `acknowledge` и `resolve` ключ обязателен (иначе 400) |
 
 ### 2.4. VictorOps / Splunk On-Call
 

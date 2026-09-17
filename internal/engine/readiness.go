@@ -552,6 +552,24 @@ func (e *Engine) checkScheduleCoverage(ctx context.Context) readinessCheck {
 			warning = append(warning, entry+" (no chain uses it)")
 		}
 	}
+	// Two people on call at once is not a hole, but it is rarely meant: two
+	// weekly shifts a week apart both recur every week, and a "rotation" written
+	// that way pages both people forever. Coverage looked perfect.
+	if schedules, err := e.refCollection(ctx, "schedules"); err == nil {
+		if users, err := e.refCollection(ctx, "users"); err == nil {
+			known := knownUserIDs(users)
+			now := utils.UTCNow()
+			for _, sched := range schedules {
+				if e.authorizeItem(ctx, "schedules", sched) != nil || !utils.BoolVal(sched, "enabled", true) {
+					continue
+				}
+				if n := len(scheduleOverlaps(sched, now, now.Add(coverageCheckWindow), known)); n > 0 {
+					warning = append(warning, fmt.Sprintf("%s: more than one person on call at the same time (%d interval(s) in the next week)",
+						strDefault(utils.StrVal(sched, "name"), utils.StrVal(sched, "id")), n))
+				}
+			}
+		}
+	}
 	sort.Strings(blocking)
 	sort.Strings(warning)
 
@@ -563,7 +581,7 @@ func (e *Engine) checkScheduleCoverage(ctx context.Context) readinessCheck {
 	}
 	if len(warning) > 0 {
 		c.Severity = ReadinessWarning
-		c.Detail = "these schedules have holes that no chain depends on right now."
+		c.Detail = "these schedules have holes that no chain depends on right now, or put several people on call at once."
 		c.Items = warning
 		return c
 	}
@@ -580,7 +598,7 @@ func (e *Engine) checkBackup(meta map[string]any, metaErr error, now time.Time) 
 	raw := utils.StrVal(meta, metaLastBackupAt)
 	if raw == "" {
 		c.Severity = ReadinessBlocker
-		c.Detail = "no backup has ever been reported — see docs/BACKUP_RESTORE.md for how the backup job reports one."
+		c.Detail = "no backup has ever been reported — see BACKUP_RESTORE.md in the documentation for how the backup job reports one."
 		return c
 	}
 	at, err := utils.ParseDatetime(raw)
@@ -862,7 +880,7 @@ func (e *Engine) checkDataRetention(_ context.Context) readinessCheck {
 	if p.Unset() {
 		c.Severity = ReadinessWarning
 		c.Detail = "no retention horizon is set for the audit trail, notifications, delivery attempts or web sessions: " +
-			"they are kept indefinitely, including the personal data they carry. See docs/DATA_INVENTORY.md."
+			"they are kept indefinitely, including the personal data they carry. See DATA_INVENTORY.md in the documentation."
 		return c
 	}
 	c.Severity = ReadinessOK

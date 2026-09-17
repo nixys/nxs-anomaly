@@ -316,8 +316,10 @@ func (s *pgStore) SoftDeleteItem(ctx context.Context, collection, id string) (ma
 	// Update both the typed column and the JSONB data field.
 	var dataJSON []byte
 	err := s.pool.QueryRow(ctx,
-		fmt.Sprintf(`UPDATE %s SET deleted_at=$1::timestamptz, data=jsonb_set(data, '{deleted_at}', to_jsonb($1::text)) WHERE id=$2 RETURNING data`, table),
-		now, id,
+		fmt.Sprintf(`UPDATE %s SET deleted_at=$1::timestamptz, data=jsonb_set(data, '{deleted_at}', to_jsonb($3::text)) WHERE id=$2 RETURNING data`, table),
+		// $3 repeats now as text: reusing $1 made PostgreSQL type it timestamptz
+		// and render the JSON copy as "2026-09-16 13:30:21+00", not RFC 3339.
+		now, id, now,
 	).Scan(&dataJSON)
 	if err != nil {
 		if isNotFound(err) {
@@ -385,8 +387,8 @@ func (s *pgStore) deleteAudited(ctx context.Context, collection, id string, ev A
 	if soft {
 		now := utils.ToISO(utils.UTCNow())
 		err = tx.QueryRow(ctx,
-			fmt.Sprintf(`UPDATE %s SET deleted_at=$1::timestamptz, data=jsonb_set(data, '{deleted_at}', to_jsonb($1::text)) WHERE id=$2 RETURNING data`, table),
-			now, id).Scan(&dataJSON)
+			fmt.Sprintf(`UPDATE %s SET deleted_at=$1::timestamptz, data=jsonb_set(data, '{deleted_at}', to_jsonb($3::text)) WHERE id=$2 RETURNING data`, table),
+			now, id, now).Scan(&dataJSON)
 	} else {
 		err = tx.QueryRow(ctx,
 			fmt.Sprintf("DELETE FROM %s WHERE id=$1 RETURNING data", table), id).Scan(&dataJSON)

@@ -18,11 +18,11 @@ func (srv *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
 		return
 	}
-	body, ok := readJSON(w, r)
+	body, raw, ok := readJSONWithRaw(w, r)
 	if !ok {
 		return
 	}
-	if err := srv.verifyWebhookSig(r, key, body); err != nil {
+	if err := srv.verifyWebhookSig(r, key, raw); err != nil {
 		if err == errWebhookSigInvalid {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		} else {

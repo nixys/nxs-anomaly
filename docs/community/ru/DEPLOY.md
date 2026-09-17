@@ -173,6 +173,12 @@ spec:
             - secretRef:
                 name: nxs-anomaly-providers
                 optional: true
+          startupProbe:
+            httpGet:
+              path: /live     # /live отвечает с первой секунды, пока ждём БД и миграции
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /health   # includes a DB ping; pod removed from Service if DB is down
@@ -222,6 +228,12 @@ spec:
             - secretRef:
                 name: nxs-anomaly-providers
                 optional: true
+          startupProbe:
+            httpGet:
+              path: /live
+              port: telemetry
+            periodSeconds: 2
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /ready         # DB reachable AND worker cycles are completing

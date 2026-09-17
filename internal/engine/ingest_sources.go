@@ -15,6 +15,17 @@ func (e *Engine) IngestPagerDuty(ctx context.Context, integrationKey string, pay
 	}
 	eventAction := strings.ToLower(strDefault(utils.StrVal(payload, "event_action"), "trigger"))
 	dedupKey := utils.StrVal(payload, "dedup_key")
+	if dedupKey == "" {
+		// Events v2: acknowledge and resolve address an event by its key, and a
+		// trigger without one gets a key generated and returned — the sender keeps
+		// it to close the event later. Answering "" left it nothing to resolve with.
+		if eventAction != "trigger" {
+			return nil, errValidation("dedup_key is required for event_action " + eventAction)
+		}
+		dedupKey = utils.MakeID("pd")
+		payload = copyMap(payload)
+		payload["dedup_key"] = dedupKey
+	}
 
 	if eventAction == "acknowledge" {
 		integration, err := e.store.FindIntegrationByKey(ctx, integrationKey)
@@ -39,11 +50,7 @@ func (e *Engine) IngestPagerDuty(ctx context.Context, integrationKey string, pay
 	if _, err := e.IngestAlert(ctx, integrationKey, normalized); err != nil {
 		return nil, err
 	}
-	resultKey := dedupKey
-	if resultKey == "" {
-		resultKey = utils.StrVal(normalized, "dedupe_key")
-	}
-	return map[string]any{"status": "success", "message": "Event processed", "dedup_key": resultKey}, nil
+	return map[string]any{"status": "success", "message": "Event processed", "dedup_key": dedupKey}, nil
 }
 
 func normalizePagerDutyAlert(payload map[string]any) map[string]any {
@@ -68,11 +75,9 @@ func normalizePagerDutyAlert(payload map[string]any) map[string]any {
 	if eventAction == "resolve" {
 		status = "resolved"
 	}
-	pdSeverity := strings.ToLower(strDefault(utils.StrVal(pdPayload, "severity"), "warning"))
-	severity := pdSeverity
-	if pdSeverity != "critical" && pdSeverity != "warning" && pdSeverity != "info" {
-		severity = "warning"
-	}
+	// Events v2 severities are critical, error, warning and info — all levels
+	// this service models, so they pass through. "error" used to become warning.
+	severity := strings.ToLower(strDefault(utils.StrVal(pdPayload, "severity"), "warning"))
 	title := pickFirst([]string{utils.StrVal(pdPayload, "summary"), utils.StrVal(payload, "client")}, "PagerDuty alert")
 	dedupKey := utils.StrVal(payload, "dedup_key")
 
@@ -253,6 +258,10 @@ func normalizeGrafanaAlertingAlert(envelope, alert map[string]any) map[string]an
 	}
 
 	fingerprint := utils.StrVal(alert, "fingerprint")
+	if fingerprint == "" {
+		// Same as Alertmanager: one alert, one identity, not the whole group's.
+		fingerprint = labelSetFingerprint(labels)
+	}
 	groupKey := utils.StrVal(envelope, "groupKey")
 	title := pickFirst([]string{
 		annotations["summary"],

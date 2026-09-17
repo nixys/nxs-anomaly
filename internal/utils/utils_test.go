@@ -113,6 +113,14 @@ func TestCoerceLabelMap(t *testing.T) {
 	if got["a"] != "x" || got["b"] != "2" {
 		t.Fatalf("CoerceLabelMap = %#v", got)
 	}
+	// JSON numbers arrive as float64; %v printed large ones as 1e+06.
+	nums, _ := CoerceLabelMap(map[string]any{"big": float64(1000000), "frac": 0.25, "none": nil})
+	if nums["big"] != "1000000" || nums["frac"] != "0.25" || nums["none"] != "" {
+		t.Fatalf("numeric labels = %#v, want 1000000, 0.25 and empty", nums)
+	}
+	if got := StrVal(map[string]any{"hits": float64(2500000)}, "hits"); got != "2500000" {
+		t.Fatalf("StrVal(2500000) = %q", got)
+	}
 	if got, err := CoerceLabelMap(nil); err != nil || len(got) != 0 {
 		t.Fatalf("nil input: got %#v, err %v", got, err)
 	}

@@ -114,10 +114,17 @@ func (e *Engine) prepareAlert(ctx context.Context, integration, payload map[stri
 		labels["summary"],
 	}, "Incoming alert")
 
-	severity := pickFirst([]string{
-		utils.StrVal(payload, "severity"),
-		labels["severity"],
-	}, "unknown")
+	severity := "unknown"
+	if raw := pickFirst([]string{utils.StrVal(payload, "severity"), labels["severity"]}, ""); raw != "" {
+		// One vocabulary for every source: sorting, filters, routing on the
+		// stored severity and the UI badge all speak critical/error/warning/
+		// info/debug. The spelling the source used is kept as a label.
+		severity = store.SeverityLevel(raw)
+		if severity != raw {
+			labels = copyStringMap(labels)
+			labels["severity_raw"] = raw
+		}
+	}
 
 	dedupeKey := utils.StrVal(payload, "dedupe_key")
 	if dedupeKey == "" {
@@ -357,8 +364,8 @@ func (e *Engine) ingestOneLocked(state *store.State, integration map[string]any,
 		"payload":        p.payload,
 		"annotations":    annotationsAny(p.payload["annotations"]),
 		"fingerprint":    utils.StrVal(p.payload, "fingerprint"),
-		"starts_at":      nilIfEmpty(utils.StrVal(p.payload, "starts_at")),
-		"ends_at":        nilIfEmpty(utils.StrVal(p.payload, "ends_at")),
+		"starts_at":      nilIfUnsetTime(utils.StrVal(p.payload, "starts_at")),
+		"ends_at":        nilIfUnsetTime(utils.StrVal(p.payload, "ends_at")),
 		"generator_url":  nilIfEmpty(utils.StrVal(p.payload, "generator_url")),
 		"source":         strDefault(utils.StrVal(p.payload, "source"), strDefault(utils.StrVal(integration, "source_type"), "webhook")),
 		"received_at":    ts,
@@ -677,6 +684,14 @@ func normalizeAlertmanagerAlert(envelope, alert map[string]any) map[string]any {
 			strDefault(labels["status"], "firing")),
 	))
 	fingerprint := utils.StrVal(alert, "fingerprint")
+	if fingerprint == "" {
+		// Alertmanager identifies an alert by its label set; senders that speak
+		// its format without a fingerprint get the same identity computed here.
+		// Falling back to the envelope's groupKey put every alert of the group
+		// into one incident, so resolving one instance closed it and the next
+		// still-firing instance opened a new one.
+		fingerprint = labelSetFingerprint(labels)
+	}
 	groupKey := utils.StrVal(envelope, "groupKey")
 
 	title := pickFirst([]string{
@@ -696,10 +711,8 @@ func normalizeAlertmanagerAlert(envelope, alert map[string]any) map[string]any {
 		"title":   title,
 		"message": pickFirst([]string{annotations["description"], annotations["message"]}, title),
 		"status":  status,
-		"severity": pickFirst([]string{
-			labels["severity"],
-			utils.StrVal(envelope, "status"),
-		}, "unknown"),
+		// The envelope status (firing/resolved) is not a severity.
+		"severity":      pickFirst([]string{labels["severity"]}, "unknown"),
 		"labels":        labelsAny(labels),
 		"annotations":   strMapAny(annotations),
 		"starts_at":     nilIfEmpty(utils.StrVal(alert, "startsAt")),

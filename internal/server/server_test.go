@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -58,11 +57,13 @@ func (s *stubStore) FindIntegrationByKey(ctx context.Context, key string) (map[s
 // no integration, no secret, valid signature, invalid signature, and store error.
 func TestVerifyWebhookSig(t *testing.T) {
 	const secret = "test-secret"
-	body := map[string]any{"key": "value"}
-	raw, _ := json.Marshal(body)
+	// Signed exactly as sent: key order, spacing, '<' and a large integer are
+	// all things a re-encoding of the parsed body would change.
+	raw := []byte(`{"title": "a < b", "dedupe_key": "k", "labels": {"count": 1000000}}`)
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(raw)
-	validSig := "sha256=" + fmt.Sprintf("%x", mac.Sum(nil))
+	digest := fmt.Sprintf("%x", mac.Sum(nil))
+	validSig := "sha256=" + digest
 
 	tests := []struct {
 		name        string
@@ -84,6 +85,22 @@ func TestVerifyWebhookSig(t *testing.T) {
 			name:        "valid signature",
 			integration: map[string]any{"id": "int-1", "webhook_secret": secret},
 			sigHeader:   validSig,
+		},
+		{
+			name:        "valid signature without prefix",
+			integration: map[string]any{"id": "int-1", "webhook_secret": secret},
+			sigHeader:   digest,
+		},
+		{
+			name:        "signature that is not hex",
+			integration: map[string]any{"id": "int-1", "webhook_secret": secret},
+			sigHeader:   "sha256=zz",
+			wantSigErr:  true,
+		},
+		{
+			name:        "missing signature",
+			integration: map[string]any{"id": "int-1", "webhook_secret": secret},
+			wantSigErr:  true,
 		},
 		{
 			name:        "invalid signature",
@@ -111,7 +128,7 @@ func TestVerifyWebhookSig(t *testing.T) {
 			if tc.sigHeader != "" {
 				r.Header.Set("X-Hub-Signature-256", tc.sigHeader)
 			}
-			err := srv.verifyWebhookSig(r, "some-key", body)
+			err := srv.verifyWebhookSig(r, "some-key", raw)
 			switch {
 			case tc.wantSigErr:
 				if err != errWebhookSigInvalid {
@@ -136,12 +153,28 @@ func TestClientIPTrustedProxy(t *testing.T) {
 	_, loopback, _ := net.ParseCIDR("127.0.0.1/8")
 	srv := &Server{trustedProxies: []*net.IPNet{loopback}}
 
-	// Trusted proxy: first value from X-Forwarded-For should be returned.
+	// Trusted proxy: the nearest hop that is not a trusted proxy is the client.
+	// The leftmost entry is whatever the client chose to send.
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.RemoteAddr = "127.0.0.1:5000"
 	r.Header.Set("X-Forwarded-For", "10.0.0.1, 10.0.0.2")
-	if got := srv.clientIP(r); got != "10.0.0.1" {
-		t.Fatalf("trusted proxy: clientIP = %q, want 10.0.0.1", got)
+	if got := srv.clientIP(r); got != "10.0.0.2" {
+		t.Fatalf("trusted proxy: clientIP = %q, want 10.0.0.2", got)
+	}
+
+	// A client cannot pick its own address by sending X-Forwarded-For.
+	spoof := httptest.NewRequest(http.MethodGet, "/", nil)
+	spoof.RemoteAddr = "127.0.0.1:5000"
+	spoof.Header.Set("X-Forwarded-For", "6.6.6.6, 203.0.113.9, 127.0.0.2")
+	if got := srv.clientIP(spoof); got != "203.0.113.9" {
+		t.Fatalf("spoofed chain: clientIP = %q, want 203.0.113.9", got)
+	}
+
+	// IPv6 remote address with a port.
+	v6 := httptest.NewRequest(http.MethodGet, "/", nil)
+	v6.RemoteAddr = "[2001:db8::1]:5000"
+	if got := srv.clientIP(v6); got != "2001:db8::1" {
+		t.Fatalf("ipv6: clientIP = %q, want 2001:db8::1", got)
 	}
 
 	// Untrusted proxy: X-Forwarded-For must be ignored.

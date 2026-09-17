@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/nixys/nxs-anomaly/internal/authz"
 	"github.com/nixys/nxs-anomaly/internal/store"
@@ -439,6 +440,28 @@ func (g AlertGroup) StartEpisode() string {
 	return id
 }
 
+// EscalationPass counts how many times the chain was restarted from the top
+// within the group's current episode (unacknowledge, an expired silence).
+func (g AlertGroup) EscalationPass() int { return utils.IntVal(g.d.Extra, "escalation_pass") }
+
+// RestartEscalation runs the chain again from step 0 without starting a new
+// episode, and marks the restart as a new pass so its notifications are not
+// taken for duplicates of the first pass.
+func (g AlertGroup) RestartEscalation(ts string) {
+	g.d.CurrentStep = 0
+	g.d.RepeatCount = 0
+	g.d.Extra["escalation_pass"] = g.EscalationPass() + 1
+	g.d.Extra["next_run_at"] = ts
+}
+
+// EscalationKey identifies one execution of the current chain step: episode,
+// pass, step and repeat. Notification idempotency keys are built on it, so a
+// re-processed cycle is deduplicated while a REPEAT, a restart or a new episode
+// pages again.
+func (g AlertGroup) EscalationKey() string {
+	return fmt.Sprintf("%s:%d:%d:%d", g.EpisodeID(), g.EscalationPass(), g.d.CurrentStep, g.d.RepeatCount)
+}
+
 // Logs returns the group's embedded log slice, or nil if unset.
 func (g AlertGroup) Logs() []any { return g.d.Logs }
 
@@ -584,10 +607,30 @@ func (g AlertGroup) Unacknowledge(ts string, actor authz.Actor) error {
 	g.d.Status = StatusOpen
 	g.d.Extra["acknowledged_at"] = nil
 	g.d.Extra["acknowledged_by"] = nil
-	g.d.Extra["next_run_at"] = ts
+	// The acknowledgement stopped the chain wherever it was — often at its end —
+	// so resuming from there would page nobody. The chain runs again from the top.
+	g.RestartEscalation(ts)
 	g.d.UpdatedAt = ts
-	g.AppendLogBy(actor, "unacknowledged", "Alert group unacknowledged by operator", nil)
+	g.AppendLogBy(actor, "unacknowledged", "Alert group unacknowledged by "+actor.Describe(), nil)
 	return nil
+}
+
+// SilenceExpired reports whether a time-limited silence has run out at now.
+func (g AlertGroup) SilenceExpired(now time.Time) bool {
+	if g.Status() != StatusSilenced {
+		return false
+	}
+	until, err := utils.ParseDatetime(utils.StrVal(g.d.Extra, "silenced_until"))
+	return err == nil && !until.After(now)
+}
+
+// EndSilence returns a group whose silence expired to open and runs the chain
+// again from the top: the alert is still unresolved, so it pages as if new.
+func (g AlertGroup) EndSilence(ts string) {
+	g.d.Status = StatusOpen
+	g.RestartEscalation(ts)
+	g.d.UpdatedAt = ts
+	g.AppendLog("silence_expired", "Silence expired; escalation restarted", nil)
 }
 
 // ReopenOnNewAlert returns an acknowledged group to open when a new alert
@@ -636,7 +679,13 @@ func (g AlertGroup) Silence(ts, silencedUntil, message string, durationMinutes i
 	g.d.Extra["silenced_at"] = ts
 	g.d.Extra["silenced_by"] = actorRef(actor)
 	g.d.Extra["silenced_until"] = silencedUntil
-	g.d.Extra["next_run_at"] = nil
+	// A time-limited silence is due when it ends: the worker picks the group up
+	// at silenced_until and returns it to open. An indefinite one never is.
+	if silencedUntil != "" {
+		g.d.Extra["next_run_at"] = silencedUntil
+	} else {
+		g.d.Extra["next_run_at"] = nil
+	}
 	g.d.UpdatedAt = ts
 	g.AppendLogBy(actor, "silenced", message, map[string]any{"duration_minutes": durationMinutes})
 	return nil

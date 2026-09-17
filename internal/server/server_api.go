@@ -3,7 +3,7 @@ package server
 import (
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/json"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strings"
@@ -523,7 +523,10 @@ func (srv *Server) routeAPI(w http.ResponseWriter, r *http.Request) {
 
 // ---- helpers ----
 
-func (srv *Server) verifyWebhookSig(r *http.Request, integrationKey string, rawBody map[string]any) error {
+// verifyWebhookSig checks an HMAC-SHA256 signature over the request body bytes
+// as received. The header value is the hex digest, with or without a "sha256="
+// prefix.
+func (srv *Server) verifyWebhookSig(r *http.Request, integrationKey string, rawBody []byte) error {
 	integration, err := srv.store.FindIntegrationByKey(r.Context(), integrationKey)
 	if err != nil {
 		return fmt.Errorf("lookup integration: %w", err)
@@ -536,18 +539,21 @@ func (srv *Server) verifyWebhookSig(r *http.Request, integrationKey string, rawB
 	if secret == "" {
 		return nil
 	}
-	raw, err := json.Marshal(rawBody)
-	if err != nil {
-		return nil
-	}
 	sigHeader := r.Header.Get("X-Hub-Signature-256")
 	if sigHeader == "" {
 		sigHeader = r.Header.Get("X-Anomaly-Signature")
 	}
+	sigHex := strings.TrimSpace(sigHeader)
+	if len(sigHex) > len("sha256=") && strings.EqualFold(sigHex[:len("sha256=")], "sha256=") {
+		sigHex = sigHex[len("sha256="):]
+	}
+	given, err := hex.DecodeString(sigHex)
+	if err != nil {
+		return errWebhookSigInvalid
+	}
 	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write(raw)
-	computed := "sha256=" + fmt.Sprintf("%x", mac.Sum(nil))
-	if !hmac.Equal([]byte(sigHeader), []byte(computed)) {
+	mac.Write(rawBody)
+	if !hmac.Equal(given, mac.Sum(nil)) {
 		return errWebhookSigInvalid
 	}
 	return nil

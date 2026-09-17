@@ -207,8 +207,11 @@ When degraded: `status: "degraded"` and `db_ok: false` alongside `db_error`.
 | POST | `/v2/alert/pool` | The legacy NXS pool (authenticated by the `X-Auth-Key` header) |
 
 `{key}` is the integration's routing key. HMAC verification through
-`X-Hub-Signature-256` or `X-Anomaly-Signature` is optional, and applies when the
-integration has a `webhook_secret`. Returns `202 Accepted` (or `200` for victorops
+`X-Hub-Signature-256` or `X-Anomaly-Signature` is optional and applies to
+`/integrations/v1/webhook/{key}` when the integration has a `webhook_secret`: the
+header is the hex HMAC-SHA256 of the request body exactly as sent, with or without
+a `sha256=` prefix. The other formats are not signed by their senders and are
+authenticated by the key alone. Returns `202 Accepted` (or `200` for victorops
 and the legacy pool), `404` for an unknown key, `400` on a validation error, `429`
 when the rate limit is exceeded.
 
@@ -269,6 +272,18 @@ The practical configuration guide is in [CONFIGURATION.md](CONFIGURATION.md).
 | POST | `/api/v1/schedules/{id}/override` (synonym: `/overrides`) |
 | PUT/PATCH/DELETE | `/api/v1/schedules/{id}/overrides/{override_id}` |
 | POST | `/api/v1/integrations/{id}/rotate-key` |
+
+An integration's `webhook_secret` is never returned: responses carry
+`webhook_secret_set` instead (an `env:` reference is shown as is). To change the
+secret, send a new value; to remove it, send `null`. `key` and `routing_key` — the
+permission to send alerts — are visible to `editor` and `admin` and masked for
+other roles.
+
+`DELETE` of a user, team, schedule or escalation chain answers `409` while
+paging still depends on it — an escalation chain step, a rotation, a current or
+future shift or override, an integration's route or notification policy. The
+error names every dependent object; unlink them and delete again. Past shifts and
+overrides do not block and are removed with the user.
 
 ### Maintenance windows
 
@@ -475,6 +490,11 @@ The bulk endpoints take `{"group_ids": ["...", "..."]}`. `bulk-silence` also
 accepts `duration_minutes` (in the body or as `?duration_minutes=`, default 60).
 The responses carry `silenced`/`acknowledged`/`resolved`, `not_found` and
 `skipped`.
+
+A silence with a duration ends on its own: at `silenced_until` the worker returns
+the group to `open` and runs its escalation chain again from the first step, as it
+does when a maintenance window ends. `POST /api/v1/alert-groups/{id}/unacknowledge`
+also runs the chain again from the first step.
 
 ### Alerts, notifications, history, debugging
 

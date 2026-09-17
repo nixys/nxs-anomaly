@@ -118,3 +118,71 @@ tests:
       - equal:
           path: data.NXS_ANOMALY_DB_CONNECT_MAX_WAIT_SECONDS
           value: "0"
+
+  - it: api has a startup probe on /live
+    templates:
+      - templates/api.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.path
+          value: /live
+
+  - it: worker has a startup probe on /live
+    templates:
+      - templates/worker.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.path
+          value: /live
+
+  - it: a changed inline Secret rolls the api pods
+    templates:
+      - templates/api.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      existingSecret.enabled: false
+      inlineSecret.enabled: true
+      postgresql.enabled: true
+    asserts:
+      - exists:
+          path: spec.template.metadata.annotations["checksum/secret"]
+
+  - it: a changed inline Secret rolls the worker pods
+    templates:
+      - templates/worker.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      existingSecret.enabled: false
+      inlineSecret.enabled: true
+      postgresql.enabled: true
+    asserts:
+      - exists:
+          path: spec.template.metadata.annotations["checksum/secret"]
+
+  - it: an operator-managed Secret adds no secret checksum
+    templates:
+      - templates/api.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notExists:
+          path: spec.template.metadata.annotations["checksum/secret"]
+
+  - it: the API trusts X-Forwarded-For from the in-cluster proxies by default
+    templates:
+      - templates/configmap.yaml
+    asserts:
+      - matchRegex:
+          path: data.NXS_ANOMALY_TRUSTED_PROXIES
+          pattern: "10\\.0\\.0\\.0/8"

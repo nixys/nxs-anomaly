@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -718,24 +720,46 @@ func TestDeleteUserRemovesThemFromSchedules(t *testing.T) {
 		t.Fatalf("CreateScheduleOverride: %v", err)
 	}
 
+	// Still on the rotation and covering right now: deleting would open a hole
+	// nobody chose. Refused, naming what depends on the user.
+	_, err = e.DeleteEntity(ctx, "users", "u_b")
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("DeleteEntity with the user on call = %v, want a conflict", err)
+	}
+	for _, want := range []string{`schedule "Primary" rotation`, `schedule "Primary" override`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("conflict %q does not name %s", err.Error(), want)
+		}
+	}
+
+	// Unlinked: off the rotation, the override withdrawn. The past shift is
+	// history and does not block; it goes with the user.
+	if _, err := e.UpdateSchedule(ctx, schedID, map[string]any{
+		"rotation": map[string]any{
+			"start_at":         utils.ToISO(utils.UTCNow().Add(-time.Hour)),
+			"handoff_interval": 1,
+			"handoff_unit":     "days",
+			"participant_ids":  []any{"u_a"},
+		},
+	}); err != nil {
+		t.Fatalf("UpdateSchedule: %v", err)
+	}
+	current, _ := e.GetItem(ctx, "schedules", schedID)
+	for _, raw := range anyList(current["overrides"]) {
+		if _, err := e.DeleteScheduleOverride(ctx, schedID, utils.StrVal(raw.(map[string]any), "id")); err != nil {
+			t.Fatalf("DeleteScheduleOverride: %v", err)
+		}
+	}
 	if _, err := e.DeleteEntity(ctx, "users", "u_b"); err != nil {
-		t.Fatalf("DeleteEntity: %v", err)
+		t.Fatalf("DeleteEntity after unlinking: %v", err)
 	}
 
 	after, err := e.GetItem(ctx, "schedules", schedID)
 	if err != nil {
 		t.Fatalf("GetItem: %v", err)
 	}
-	rot := after["rotation"].(map[string]any)
-	ids, _ := utils.CoerceStringList(rot["participant_ids"])
-	if len(ids) != 1 || ids[0] != "u_a" {
-		t.Errorf("participant_ids = %v, want [u_a]", ids)
-	}
 	if len(anyList(after["shifts"])) != 0 {
-		t.Errorf("shifts = %v, want none", after["shifts"])
-	}
-	if len(anyList(after["overrides"])) != 0 {
-		t.Errorf("overrides = %v, want none", after["overrides"])
+		t.Errorf("shifts = %v, want the past shift removed with the user", after["shifts"])
 	}
 }
 

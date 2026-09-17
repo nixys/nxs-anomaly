@@ -1164,7 +1164,10 @@ export interface paths {
             };
         };
         post?: never;
-        /** Delete an escalation chain */
+        /**
+         * Delete an escalation chain
+         * @description Refused with 409 while escalation chains, schedules (rotation, current or future shifts and overrides) or integration routes still page through the object; the error names each of them.
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -1177,6 +1180,7 @@ export interface paths {
             requestBody?: never;
             responses: {
                 200: components["responses"]["Object"];
+                409: components["responses"]["Error"];
             };
         };
         options?: never;
@@ -1974,7 +1978,10 @@ export interface paths {
             };
         };
         post?: never;
-        /** Delete a schedule */
+        /**
+         * Delete a schedule
+         * @description Refused with 409 while escalation chains, schedules (rotation, current or future shifts and overrides) or integration routes still page through the object; the error names each of them.
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -1987,6 +1994,7 @@ export interface paths {
             requestBody?: never;
             responses: {
                 200: components["responses"]["Object"];
+                409: components["responses"]["Error"];
             };
         };
         options?: never;
@@ -2261,7 +2269,10 @@ export interface paths {
             };
         };
         post?: never;
-        /** Delete a team */
+        /**
+         * Delete a team
+         * @description Refused with 409 while escalation chains, schedules (rotation, current or future shifts and overrides) or integration routes still page through the object; the error names each of them.
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -2274,6 +2285,7 @@ export interface paths {
             requestBody?: never;
             responses: {
                 200: components["responses"]["Object"];
+                409: components["responses"]["Error"];
             };
         };
         options?: never;
@@ -2402,7 +2414,10 @@ export interface paths {
             };
         };
         post?: never;
-        /** Delete a user */
+        /**
+         * Delete a user
+         * @description Refused with 409 while escalation chains, schedules (rotation, current or future shifts and overrides) or integration routes still page through the object; the error names each of them.
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -2416,6 +2431,7 @@ export interface paths {
             responses: {
                 200: components["responses"]["Object"];
                 403: components["responses"]["Error"];
+                409: components["responses"]["Error"];
             };
         };
         options?: never;
@@ -3264,7 +3280,7 @@ export interface components {
             epic_threshold_count: number;
             epic_threshold_seconds: number;
         };
-        /** @description An ingest endpoint and its routing. `webhook_secret` is never returned in clear text on read paths. */
+        /** @description An ingest endpoint and its routing. `webhook_secret` is never returned in clear text (an `env:` reference is shown as is); `webhook_secret_set` says whether one is configured. `key` and `routing_key` are masked for roles that cannot edit configuration. */
         Integration: {
             id: string;
             name: string;
@@ -3285,6 +3301,8 @@ export interface components {
             } | null;
             team_id: string | null;
             webhook_secret: string | null;
+            /** @description Whether an HMAC secret is configured. */
+            webhook_secret_set: boolean;
             kafka_topic: string | null;
             /** @description Name of the infrastructure-as-code tool that created this object ("terraform"), absent when a person did. Present means the object is owned by that tool: the API refuses updates and deletes from anyone else, and the web UI disables its own edit controls, because an edit made here would be reverted by the next apply with nothing on screen having said so. */
             provisioned_by?: string;

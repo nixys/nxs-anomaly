@@ -37,6 +37,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nixys/nxs-anomaly/internal/authz"
 	"github.com/nixys/nxs-anomaly/internal/engine"
 	"github.com/nixys/nxs-anomaly/internal/store"
 	"github.com/nixys/nxs-anomaly/internal/utils"
@@ -414,7 +415,10 @@ func setup(ctx context.Context, st store.PostgreSQLStore, eng *engine.Engine, st
 }
 
 func loadIntegrationKeys(ctx context.Context, eng *engine.Engine, want int) []string {
-	res, err := eng.ListCollectionPage(ctx, "integrations", map[string]any{"limit": want})
+	// The read path masks routing keys for actors who may not edit
+	// configuration, and a context with no actor is one of them.
+	adminCtx := authz.NewContext(ctx, authz.Actor{ID: "usr-loadtest", Kind: "user", Role: authz.RoleAdmin})
+	res, err := eng.ListCollectionPage(adminCtx, "integrations", map[string]any{"limit": want})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "list integrations:", err)
 		os.Exit(2)

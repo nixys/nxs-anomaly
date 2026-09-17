@@ -37,9 +37,14 @@ func sanitizeNotificationTargets(raw any, policy ChannelPolicy) ([]any, error) {
 	}
 	var targets []any
 	for _, item := range list {
+		// A bare channel name ("telegram") is the short form of an entry that
+		// uses the address on the profile.
+		if name, isName := item.(string); isName {
+			item = map[string]any{"type": name}
+		}
 		m, ok := item.(map[string]any)
 		if !ok {
-			return nil, errValidation("notification target must be an object")
+			return nil, errValidation("notification target must be an object or a channel name")
 		}
 		t := strings.ToLower(fmt.Sprintf("%v", m["type"]))
 		if t == "" {
@@ -48,7 +53,8 @@ func sanitizeNotificationTargets(raw any, policy ChannelPolicy) ([]any, error) {
 		if !supportedNotificationTargets[t] {
 			return nil, errValidation(fmt.Sprintf("unsupported notification target type: %s", t))
 		}
-		target := fmt.Sprintf("%v", m["target"])
+		// An absent target is empty, not the string "<nil>" that %v makes of it.
+		target := strings.TrimSpace(utils.StrVal(m, "target"))
 		if err := policy.validateTarget(t, target); err != nil {
 			return nil, err
 		}

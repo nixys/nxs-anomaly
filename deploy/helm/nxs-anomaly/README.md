@@ -143,6 +143,7 @@ helm show values oci://ghcr.io/nixys/nxs-anomaly --version "$CHART_VERSION" > ch
 | `externalPostgres.sslmode` | `require` | TLS mode when the chart assembles a DSN |
 | `config.NXS_ANOMALY_PROFILE` | `""` | Set to `production` for the security profile |
 | `config.NXS_ANOMALY_SESSION_COOKIE_SECURE` | `"true"` | Require HTTPS for session cookies |
+| `config.NXS_ANOMALY_TRUSTED_PROXIES` | private ranges | Proxies whose `X-Forwarded-For` is believed; narrow to your pod and ingress CIDRs if clients also connect from private networks |
 | `ingress.enabled` | `false` | Publish the frontend through an Ingress |
 | `networkPolicy.enabled` | `false` | Enable chart NetworkPolicies; requires an enforcing CNI |
 | `serviceMonitor.enabled`, `prometheusRule.enabled` | `false`, `false` | Prometheus Operator integration |

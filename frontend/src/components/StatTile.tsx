@@ -29,7 +29,14 @@ function useCountUp(value: number | string | undefined): number | string | undef
       setShown(value);
       return;
     }
-    const from = typeof shown === 'number' ? shown : value;
+    // The first number — typically the answer to the query that was loading —
+    // is set as is: there is nothing on screen to count from. Returning here
+    // without setting it left the tile at "—" forever.
+    if (typeof shown !== 'number') {
+      setShown(value);
+      return;
+    }
+    const from = shown;
     if (from === value) return;
     const started = performance.now();
     const step = (now: number) => {

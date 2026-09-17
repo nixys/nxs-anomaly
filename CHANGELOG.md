@@ -7,6 +7,64 @@ semantic versioning once it reaches 1.0.
 ## [Unreleased]
 
 ### Fixed
+- **Silences and maintenance windows end.** A silence with a duration and a
+  group silenced by a maintenance window stayed silenced forever: nothing read
+  `silenced_until`, and new alerts of the same problem joined the silent group.
+  At `silenced_until` the worker now returns the group to `open` and runs its
+  chain from the first step. Migration `0029_silence_expiry` makes groups silenced
+  before the upgrade due at their `silenced_until`.
+- **`REPEAT` pages again.** The second pass of a chain logged "Notified users" and
+  sent nothing: notification idempotency keys did not tell passes apart. Keys now
+  include the episode, the chain pass, the step and the repeat.
+- **Unacknowledge pages again.** The group returned to `open` with the chain
+  already at its end, so nobody was paged; the chain now runs from the first
+  step. The timeline names who took the acknowledgement back.
+- **The heartbeat stays raised while a source is silent.** The `SourceSilent`
+  alert counted as the source talking, so it resolved on the next cycle and was
+  raised again an interval later, paging every interval.
+- **Webhook HMAC signatures verify.** The signature was computed over a
+  re-encoding of the parsed body, so a correct signature of the bytes sent was
+  rejected. It is now checked over the raw body; the `sha256=` prefix is optional.
+- **Integration secrets are not returned.** `webhook_secret` is never in a
+  response (`webhook_secret_set` says whether one is set); `key`/`routing_key` are
+  masked for viewers and responders, who could previously read both and send
+  alerts. The web form no longer overwrites a secret it was not shown.
+- **Sign-in rate limiting is per client, not per proxy.** `X-Forwarded-For` was
+  read from the left, so a client could set its own address; and the chart did
+  not trust its own frontend, so a few wrong passwords locked every user out of
+  the web UI. The client is now the nearest untrusted hop, and the chart sets
+  `NXS_ANOMALY_TRUSTED_PROXIES` to the private ranges.
+- **Liveness no longer kills a starting process.** API and worker listen before
+  waiting for PostgreSQL and migrations: `/live` answers 200, everything else 503
+  until ready. A slow database start or a long migration was killed on every
+  attempt. The chart adds a `startupProbe`. A replica waiting for another one's
+  migrations no longer gives up after `statement_timeout` (30 s by default).
+- **A changed inline Secret rolls the pods.** The chart annotates API and worker
+  with a checksum of the rendered Secret.
+- **Regex routes match the title and labels.** The pattern ran against the JSON of
+  the whole payload, so `^…` never matched and an unanchored pattern matched
+  field names and annotations.
+- **Alertmanager and Grafana alerts without `fingerprint` stay separate.** They
+  were grouped by `groupKey`, so resolving one instance closed the group and the
+  next firing instance opened a new incident. A missing label `severity` is
+  `unknown`, not the envelope status.
+- **PagerDuty Events v2:** `severity: error` is kept (it became `warning`); a
+  trigger without `dedup_key` gets one and it is returned; acknowledge and resolve
+  without `dedup_key` are rejected.
+- **Email alerts are well-formed.** The subject is `[severity] title` instead of a
+  fixed text; messages carry `Date`, `Message-ID` and UTF-8 MIME headers.
+- **The channel test finds a webhook address** configured as a notification
+  target, and without a channel tests the first configured one instead of `log`.
+  A notification target without an address is stored empty (it was `"<nil>"`)
+  and uses the address on the profile; a bare channel name is accepted.
+- **A permanent delivery failure is written to the group's timeline.**
+- **Readiness warns when a schedule puts several people on call at once.**
+- **The home page counters show numbers.** They stayed at "—" unless the browser
+  asked for reduced motion; status and severity badges are no longer cut off.
+- `deleted_at` and `claimed_at` are RFC 3339; `endsAt: 0001-01-01…` is stored as
+  no end.
+- **Numeric label values keep their digits.** A label of `1000000` was stored as
+  `1e+06`. Groups keyed on such a label split once after the upgrade.
 - **The web interface can change data in the Compose deployment.** The
   frontend's nginx forwarded `Host $host`, which drops the port, so every write
   after sign-in from `http://127.0.0.1:3100` failed the same-origin check with
@@ -49,6 +107,19 @@ semantic versioning once it reaches 1.0.
   runner, fails with "Inappropriate ioctl for device" and exports nothing. The
   `HELM_GPG_PRIVATE_KEY` secret already holds the binary keyring Helm needs,
   so the workflow now decodes it straight to the keyring file.
+
+### Changed
+- **Deleting an object paging depends on answers 409.** Users, teams, schedules
+  and escalation chains still used by a chain step, a rotation, a current or future
+  shift or override, or an integration route or policy are no longer deleted; the
+  error names the dependents. Past shifts and overrides are still removed with the
+  user. A Terraform replacement of such an object needs `create_before_destroy`.
+- **Severity is normalized at ingest** to `critical`/`error`/`warning`/`info`/
+  `debug`/`unknown`; the source's spelling is kept in the `severity_raw` label.
+- **Regex route patterns** written against the raw JSON (for example with quotes
+  and field names) no longer match; rewrite them against the title and labels.
+- Documentation: SMTP settings in CONFIGURATION.md; `wait_minutes` is the pause
+  after a step; HMAC applies to the generic webhook endpoint.
 
 ### Added
 - **A Community installation guide with ready-to-use presets.**

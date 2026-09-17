@@ -321,8 +321,11 @@ api -X PUT "$API/api/v1/integrations/{id}" -d '{
 ```
 
 - `match_type: labels` — a match on every label listed;
-- `match_type: regex` — against the title/labels; the pattern is compiled on write,
-  so a syntax error returns a 400 straight away rather than at the first alert;
+- `match_type: regex` — matched against the alert title, each label value and each
+  label as `name=value` (annotations and the message are not considered), so
+  `^Disk` anchors on the start of the title or of a label value; the pattern is
+  compiled on write, so a syntax error returns a 400 straight away rather than at
+  the first alert;
 - `match_type: all` — accepts everything.
 
 **Exactly one route must have `is_default: true`.** Not zero, not two: without a
@@ -518,13 +521,13 @@ until the person acknowledges the alert:
 api -X PUT "$API/api/v1/users/{id}" -d '{
   "notification_policies": {
     "default": [
-      {"channel": "telegram", "wait_minutes": 0},
-      {"channel": "email",    "wait_minutes": 5},
-      {"channel": "call",     "wait_minutes": 10}
+      {"channel": "telegram", "wait_minutes": 5},
+      {"channel": "email",    "wait_minutes": 10},
+      {"channel": "call",     "wait_minutes": 0}
     ],
     "important": [
-      {"channel": "call",     "wait_minutes": 0},
-      {"channel": "telegram", "wait_minutes": 2}
+      {"channel": "call",     "wait_minutes": 2},
+      {"channel": "telegram", "wait_minutes": 0}
     ]
   }
 }'
@@ -532,12 +535,32 @@ api -X PUT "$API/api/v1/users/{id}" -d '{
 
 - This is **opt-in**: without `notification_policies` the behaviour does not
   change.
+- `wait_minutes` is the pause **after** a step, before the next one. The example
+  sends Telegram, then email 5 minutes later, then a call 10 minutes after that.
 - Steps with `wait_minutes: 0` go out back-to-back in one cycle.
 - The run **stops the moment the group is acknowledged or resolved** — that is the
   whole point of a fallback.
 - Which policy applies is decided by the step:
   `{"kind": "NOTIFY_USER", "notify_policy": "important"}`. An empty `important`
   falls back to `default`.
+
+### Email (SMTP)
+
+Email is delivered through the SMTP server configured on the API and the worker:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `NXS_ANOMALY_SMTP_HOST` | — | SMTP server; without it the `email` channel is `skipped` / `not_configured` |
+| `NXS_ANOMALY_SMTP_PORT` | `465` | Port |
+| `NXS_ANOMALY_SMTP_USE_TLS` | `true` | `true` — implicit TLS (port 465); `false` — plain connection with STARTTLS when the server offers it (port 587 or 25) |
+| `NXS_ANOMALY_SMTP_USERNAME`, `NXS_ANOMALY_SMTP_PASSWORD` | — | Credentials; without a username no authentication is attempted |
+| `NXS_ANOMALY_SMTP_SENDER` | the username | Envelope and `From` address |
+| `NXS_ANOMALY_SMTP_FROM` | `Nixys Alerter` | Display name in `From` |
+
+Keep the password in the Secret, not in values. A message's subject is
+`[severity] title` (`[RESOLVED] …` for a resolution notice), so a mailbox threads
+alerts per incident; the body is UTF-8. Check the channel with the user's
+test-notification button before relying on it.
 
 ## 8. ChatOps
 

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -164,7 +165,7 @@ func (e *Engine) ProcessNotificationBatches(ctx context.Context) ([]map[string]a
 		return nil, nil
 	}
 	out := result.(batchOutcome)
-	e.fireDeadLetters(out.failedCtx)
+	e.fireDeadLetters(ctx, out.failedCtx)
 	return out.flushed, nil
 }
 
@@ -283,7 +284,7 @@ func (e *Engine) ProcessNotificationDeliveries(ctx context.Context) ([]map[strin
 		return nil, nil
 	}
 	processed := out.([]map[string]any)
-	e.fireDeadLetters(processed)
+	e.fireDeadLetters(ctx, processed)
 	return processed, nil
 }
 
@@ -334,19 +335,70 @@ func (e *Engine) applyOutcome(n model.Notification, res deliveryOutcome, ts stri
 
 // fireDeadLetters sends dead-letter events for notifications that just became
 // permanently failed. Runs after the saving transaction, outside any lock.
-func (e *Engine) fireDeadLetters(notifs []map[string]any) {
+func (e *Engine) fireDeadLetters(ctx context.Context, notifs []map[string]any) {
+	var failed []model.Notification
 	for _, n := range notifs {
 		nw := model.WrapNotification(n)
 		if nw.Status() != model.NotificationFailed {
 			continue
 		}
+		failed = append(failed, nw)
 		// Count the dead-letter regardless of whether a webhook is configured —
 		// permanent failure is the operationally interesting signal.
 		e.sink().IncDeadLetter(nw.Channel())
 		if e.deliveryCfg.DeadLetterWebhookURL != "" {
-			go e.sendDeadLetterEvent(deepCopyItem(n))
+			go e.sendDeadLetterEvent(context.WithoutCancel(ctx), deepCopyItem(n))
 		}
 	}
+	if err := e.recordDeliveryFailures(ctx, failed); err != nil {
+		slog.Warn("record_delivery_failures_failed", "error", err)
+	}
+}
+
+// recordDeliveryFailures writes a permanent delivery failure into the history
+// of the group it was about. The group's timeline said "Notified users" and
+// "Escalation chain completed" while the person was never reached; the failure
+// was visible only on the notification row.
+func (e *Engine) recordDeliveryFailures(ctx context.Context, failed []model.Notification) error {
+	byGroup := map[string][]model.Notification{}
+	var ids []string
+	for _, n := range failed {
+		gid := n.AlertGroupID()
+		if gid == "" {
+			continue
+		}
+		if _, seen := byGroup[gid]; !seen {
+			ids = append(ids, gid)
+		}
+		byGroup[gid] = append(byGroup[gid], n)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	_, err := e.store.UpdateCollectionsFiltered(ctx, loadGroups(ids...), []string{"alert_groups"},
+		func(state *store.State) (any, error) {
+			for gid, notifs := range byGroup {
+				g, ok := groupAG(state.AlertGroups[gid])
+				if !ok {
+					continue
+				}
+				for _, n := range notifs {
+					recipient := n.UserID()
+					if user, _ := n.Payload()["user"].(map[string]any); utils.StrVal(user, "username") != "" {
+						recipient = utils.StrVal(user, "username")
+					}
+					if recipient == "" {
+						recipient = n.Target()
+					}
+					g.AppendLog("delivery_failed",
+						fmt.Sprintf("Notification to %s via %s failed permanently: %s", recipient, n.Channel(), n.LastError()),
+						map[string]any{"notification_id": n.ID(), "channel": n.Channel(), "user_id": n.UserID()})
+				}
+				state.AlertGroups[gid] = g
+			}
+			return nil, nil
+		}, advisoryLock["record_delivery_failures"])
+	return err
 }
 
 func (e *Engine) ProcessNotificationRetries(ctx context.Context) ([]map[string]any, error) {
@@ -506,6 +558,6 @@ func (e *Engine) ProcessNotificationRetries(ctx context.Context) ([]map[string]a
 		return nil, nil
 	}
 	retried := out.([]map[string]any)
-	e.fireDeadLetters(retried)
+	e.fireDeadLetters(ctx, retried)
 	return retried, nil
 }

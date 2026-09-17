@@ -10,7 +10,7 @@ import (
 
 func selectRoute(integration map[string]any, payload map[string]any) (map[string]any, error) {
 	labels, _ := utils.CoerceLabelMap(payload["labels"])
-	payloadJSON := utils.JSONDumps(payload)
+	title := utils.StrVal(payload, "title")
 	routes, _ := integration["routes"].([]any)
 	var defaultRoute map[string]any
 	for _, r := range routes {
@@ -38,7 +38,7 @@ func selectRoute(integration map[string]any, payload map[string]any) (map[string
 		case "regex":
 			pattern := utils.StrVal(route, "pattern")
 			if pattern != "" {
-				if ok, _ := regexp.MatchString(pattern, payloadJSON); ok {
+				if re, err := regexp.Compile(pattern); err == nil && regexRouteMatches(re, title, labels) {
 					return route, nil
 				}
 			}
@@ -48,6 +48,25 @@ func selectRoute(integration map[string]any, payload map[string]any) (map[string
 		return nil, fmt.Errorf("integration default route is missing")
 	}
 	return defaultRoute, nil
+}
+
+// regexRouteMatches applies a regex route to the alert's title and labels: the
+// title, each label value, and each label as "name=value".
+//
+// It used to run against the JSON of the whole payload. An anchored pattern
+// such as ^DiskSpace then never matched (the JSON starts with a brace), and an
+// unanchored one matched anywhere — a field name, an annotation, the message —
+// so "prod" routed a staging alert whose runbook said "reproduce".
+func regexRouteMatches(re *regexp.Regexp, title string, labels map[string]string) bool {
+	if title != "" && re.MatchString(title) {
+		return true
+	}
+	for name, value := range labels {
+		if re.MatchString(value) || re.MatchString(name+"="+value) {
+			return true
+		}
+	}
+	return false
 }
 
 func buildDedupeKey(integration map[string]any, labels map[string]string, title string) string {

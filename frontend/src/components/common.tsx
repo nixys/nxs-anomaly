@@ -238,26 +238,29 @@ function useChangeFlash(value: string | undefined) {
   } as const;
 }
 
+// A badge in a narrow table column was cut to "крити…" / "acknowledg…": its label
+// could shrink below its own width. The whole word is the information.
+const NO_TRUNCATE = { minWidth: 'max-content' } as const;
+
 export function StatusBadge({ status }: { status: string | undefined }) {
   const label = useStatusLabel();
   const flash = useChangeFlash(status);
   if (!status) return <Text c="dimmed">{EMPTY_VALUE}</Text>;
   const key = status.toLowerCase();
   return (
-    <Badge color={STATUS_COLORS[key] ?? 'gray'} variant="light" tt="none" style={flash}>
+    <Badge color={STATUS_COLORS[key] ?? 'gray'} variant="light" tt="none" style={{ ...flash, ...NO_TRUNCATE }}>
       {label(key)}
     </Badge>
   );
 }
 
 /**
- * Severity as one badge: colour and shape from the level, text from the word the
- * source actually sent.
+ * Severity as one badge: colour and shape from the level.
  *
- * Both halves matter. The level is what ranks and filters, so `high` and
- * `error` have to look identical; the spelling is what the source said, so
- * showing `error` where the payload said `high` would quietly rewrite the
- * evidence somebody is about to quote in a chat.
+ * Ingest now stores the level itself (critical/error/warning/info/debug) and
+ * keeps the word the source sent in the `severity_raw` label, which is shown
+ * with the other labels. Groups stored before that still carry the raw word;
+ * mapping it to its level here keeps `high` and `error` looking identical.
  */
 export function SeverityBadge({ severity }: { severity: string | undefined }) {
   const label = useSeverityLabel();
@@ -267,7 +270,7 @@ export function SeverityBadge({ severity }: { severity: string | undefined }) {
   if (level === null) {
     return (
       <Tooltip label={t('severity.unmodelled')} withArrow>
-        <Badge color="gray" variant="outline" tt="none" styles={{ label: { fontVariant: 'normal' } }}>
+        <Badge color="gray" variant="outline" tt="none" style={NO_TRUNCATE} styles={{ label: { fontVariant: 'normal' } }}>
           {severity}
         </Badge>
       </Tooltip>
@@ -278,6 +281,7 @@ export function SeverityBadge({ severity }: { severity: string | undefined }) {
       color={SEVERITY_COLOR[level]}
       variant="outline"
       tt="none"
+      style={NO_TRUNCATE}
       leftSection={<span aria-hidden>{SEVERITY_GLYPH[level]}</span>}
     >
       {label(severity.toLowerCase())}

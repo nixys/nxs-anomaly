@@ -1,12 +1,12 @@
 # nxs-anomaly Community
 
-![nxs-anomaly](assets/horizontal.png)
-
 [![GitHub release](https://img.shields.io/github/v/release/nixys/nxs-anomaly)](https://github.com/nixys/nxs-anomaly/releases)
 [![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/nxs-anomaly)](https://artifacthub.io/packages/helm/nxs-anomaly/nxs-anomaly)
 [![Terraform Registry](https://img.shields.io/badge/Terraform-Registry-7B42BC?logo=terraform&logoColor=white)](https://registry.terraform.io/providers/nixys/nxs-anomaly/latest)
 [![CI](https://github.com/nixys/nxs-anomaly/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nixys/nxs-anomaly/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/nixys/nxs-anomaly)](LICENSE)
+
+![nxs-anomaly](assets/horizontal.png)
 
 **Self-hosted on-call schedules, alert routing and escalation for your existing monitoring.**
 
@@ -86,10 +86,6 @@ acknowledgements and resolutions in one shared timeline.
 | Docker Compose | [Compose installation](docs/community/en/INSTALLATION.md#docker-compose): ports, health checks, transport configuration and persistent data |
 | Kubernetes | [Kubernetes installation](docs/community/en/INSTALLATION.md#kubernetes): Helm, Secrets and explicit StorageClass |
 | Configuration files | [Preset catalogue](deploy/quickstart/README.md) |
-
-- Generate credentials once and retain `.local/` when restarting. 
-- Recreating files does not rotate a password already stored in PostgreSQL.
-- These presets use local HTTP: configure [TLS, security and backups](docs/community/en/SECURITY_PROFILE.md) before exposing the service.
 
 ## Documentation
 
