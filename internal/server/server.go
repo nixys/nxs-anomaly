@@ -68,6 +68,7 @@ type Server struct {
 	startTime      time.Time
 	trustedProxies []*net.IPNet
 	cycleRunning   atomic.Bool // guards against overlapping worker cycles
+	heartbeat      *heartbeatPinger
 	reqIDCounter   atomic.Uint64
 	// health ping cache (5s TTL)
 	pingOK           atomic.Bool
@@ -178,6 +179,7 @@ func New(ctx context.Context, s store.PostgreSQLStore, eng *engine.Engine, cfg C
 		go srv.runGaugeRefreshLoop(gaugeCtx)
 	}
 	if cfg.StartScheduler {
+		srv.heartbeat = newHeartbeatPinger(cfg.WorkerHeartbeatURL)
 		workerCtx, cancel := context.WithCancel(ctx)
 		workerCancel = cancel
 		var workerWG sync.WaitGroup
@@ -255,11 +257,12 @@ func (srv *Server) runWorkerLoop(ctx context.Context) {
 			continue
 		}
 		t0 := time.Now()
-		result, _ := srv.eng.RunWorkerCycle(context.WithoutCancel(ctx))
+		result, err := srv.eng.RunWorkerCycle(context.WithoutCancel(ctx))
 		srv.cycleRunning.Store(false)
 		srv.metrics.recordCycle(time.Since(t0))
 		srv.metrics.updateOperationalGauges(srv.store)
 		applyCycleResult(srv.metrics, result)
+		srv.heartbeat.cycleCompleted(err)
 	}
 }
 

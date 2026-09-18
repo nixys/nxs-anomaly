@@ -63,13 +63,14 @@ func applyCycleResult(m *Metrics, result map[string]any) {
 
 // runWorkerCycleOnce runs a single worker cycle and records all cycle metrics.
 // Used by the standalone worker loop; the embedded scheduler inlines the same
-// steps around its overlap guard.
-func runWorkerCycleOnce(ctx context.Context, eng *engine.Engine, s store.PostgreSQLStore, m *Metrics) {
+// steps around its overlap guard. Returns the cycle's error.
+func runWorkerCycleOnce(ctx context.Context, eng *engine.Engine, s store.PostgreSQLStore, m *Metrics) error {
 	t0 := time.Now()
-	result, _ := eng.RunWorkerCycle(context.WithoutCancel(ctx))
+	result, err := eng.RunWorkerCycle(context.WithoutCancel(ctx))
 	m.recordCycle(time.Since(t0))
 	m.updateOperationalGauges(s)
 	applyCycleResult(m, result)
+	return err
 }
 
 // workerRuntime is the standalone run-worker: it owns the engine, its own
@@ -83,6 +84,7 @@ type workerRuntime struct {
 	metrics   *Metrics
 	cfg       Config
 	startTime time.Time
+	heartbeat *heartbeatPinger
 	// health ping cache (5s TTL), mirrors the server's /health.
 	pingOK        atomic.Bool
 	pingCheckedAt atomic.Int64 // unix nanoseconds
@@ -97,6 +99,7 @@ func RunWorker(ctx context.Context, s store.PostgreSQLStore, eng *engine.Engine,
 		metrics:   newMetrics(),
 		cfg:       cfg,
 		startTime: time.Now(),
+		heartbeat: newHeartbeatPinger(cfg.WorkerHeartbeatURL),
 	}
 	// Wire engine-emitted metrics (delivery latency, dead-letters, breaker skips,
 	// skipped/shift notifications, coverage) into this worker's registry.
@@ -171,7 +174,7 @@ func (wr *workerRuntime) loop(ctx context.Context) {
 			slog.Info("worker stopped")
 			return
 		}
-		runWorkerCycleOnce(ctx, wr.eng, wr.store, wr.metrics)
+		wr.heartbeat.cycleCompleted(runWorkerCycleOnce(ctx, wr.eng, wr.store, wr.metrics))
 	}
 }
 

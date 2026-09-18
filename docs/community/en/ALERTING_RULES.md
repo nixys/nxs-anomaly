@@ -161,6 +161,50 @@ groups:
             one is still running. Raise the concurrency or the poll interval, or
             move the worker into separate replicas.
 
+      # A process is gone, not degraded. Every rule above reads metrics the
+      # process itself exports, so a dead API or worker silently takes them
+      # with it; only the scrape result says so. The job label is the Service
+      # name under the chart's ServiceMonitor (<release>-nxs-anomaly-api,
+      # -worker) or your job_name in a static config — adjust the regex if you
+      # use fullnameOverride.
+      - alert: NxsAnomalyTargetDown
+        expr: up{job=~".*nxs-anomaly.*"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "nxs-anomaly target {{ $labels.job }} down on {{ $labels.instance }}"
+          description: >
+            Prometheus cannot scrape this nxs-anomaly process. If it is the
+            worker, nobody is being paged. Route this alert around nxs-anomaly.
+
+      # No worker anywhere completes cycles: all are down, crash-looping or not
+      # scraped at all. "> 0" matters: an API started with --no-scheduler
+      # exports this gauge too, at 0, and would otherwise mask the absence.
+      - alert: WorkerAbsent
+        expr: absent(nxs_anomaly_worker_last_cycle_timestamp_seconds > 0)
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No nxs-anomaly worker is completing cycles"
+          description: >
+            No scraped process reports a completed worker cycle. Escalation and
+            delivery are stopped. Route this alert around nxs-anomaly.
+
+      # Always firing, by design. It proves the Prometheus → Alertmanager →
+      # receiver path works: send it to an external dead-man's switch, which
+      # alarms when it STOPS arriving. Never route it into nxs-anomaly.
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: none
+        annotations:
+          summary: "Alerting pipeline heartbeat (always firing)"
+          description: >
+            Send to a dead-man's-switch receiver with a short repeat_interval.
+            Its silence means Prometheus or Alertmanager is down.
+
       # A delivery channel has degraded in latency (p95), possibly without errors.
       - alert: DeliveryLatencyHigh
         expr: >
@@ -222,6 +266,45 @@ scrape_configs:
     metrics_path: /metrics
     scrape_interval: 15s
 ```
+
+## Monitoring around nxs-anomaly
+
+An alert that nxs-anomaly is broken cannot be delivered through nxs-anomaly: it
+would arrive at the very system that is down. Route the three rules above —
+`NxsAnomalyTargetDown`, `WorkerAbsent` and `Watchdog` — through a separate
+Alertmanager receiver straight to an independent channel, and `Watchdog` to an
+external dead-man's switch:
+
+```yaml
+# alertmanager.yml
+route:
+  routes:
+    - matchers: ['alertname="Watchdog"']
+      receiver: deadmans-switch
+      repeat_interval: 1m
+    - matchers: ['alertname=~"NxsAnomalyTargetDown|WorkerAbsent|DatabaseUnavailable|WorkerCycleStuck"']
+      receiver: ops-direct          # Telegram/e-mail/SMS directly, not nxs-anomaly
+      continue: false
+receivers:
+  - name: deadmans-switch
+    webhook_configs:
+      - url: https://hc-ping.com/<uuid>
+  - name: ops-direct
+    telegram_configs:
+      - chat_id: <id>
+        bot_token_file: /etc/alertmanager/telegram-token
+```
+
+`Watchdog` checks the Prometheus → Alertmanager path, not nxs-anomaly itself.
+For a signal straight from the worker, set `NXS_ANOMALY_WORKER_HEARTBEAT_URL`:
+after a successful cycle the worker sends a `GET` there, at most once a minute. A
+cycle that failed on the database sends nothing, so one such check covers the
+worker, its database and the network — without Prometheus. Give the check a
+generous period in the external service, 5 minutes or more. Every worker replica
+pings, so the check goes quiet only when none of them works.
+
+In the Helm chart, set the variable through the application Secret or
+`worker.extraEnv`. The URL carries the check's token, so it is never logged.
 
 ## SLI / SLO
 

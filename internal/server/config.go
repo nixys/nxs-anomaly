@@ -70,6 +70,9 @@ type Config struct {
 	// cycle before /ready reports it degraded. Zero means derive it from the
 	// poll interval (see defaultWorkerStallTimeout).
 	WorkerStallTimeout time.Duration
+	// WorkerHeartbeatURL, when set, receives a GET after a successful worker
+	// cycle, at most once a minute (see heartbeatPinger).
+	WorkerHeartbeatURL string
 	WebhookRate        float64
 	APIRate            float64
 	StartScheduler     bool
@@ -148,6 +151,7 @@ func ConfigFromEnv() Config {
 		ShutdownTimeout:    shutdownTimeout,
 		WorkerAddr:         workerAddr,
 		WorkerStallTimeout: envDurationSeconds("NXS_ANOMALY_WORKER_STALL_TIMEOUT_SECONDS", 0),
+		WorkerHeartbeatURL: os.Getenv("NXS_ANOMALY_WORKER_HEARTBEAT_URL"),
 		WebhookRate:        webhookRate,
 		APIRate:            apiRate,
 		AllowAnonymous:     os.Getenv("NXS_ANOMALY_ALLOW_ANONYMOUS") == "true",
