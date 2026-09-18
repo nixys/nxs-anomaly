@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning once it reaches 1.0.
 
+## [1.3.1] — 2026-09-18
+
+### Fixed
+- **1.3.0 was tagged but never built.** Its pipeline stopped before the images:
+  the lint gate caught an unchecked `resp.Body.Close` in the new heartbeat
+  pinger, and the community-cut gate read the `Watchdog` rule's PromQL
+  `vector(1)` as the Vector log shipper. Both are fixed; 1.3.1 carries the 1.3.0
+  changes unaltered. Use 1.3.1 — there are no 1.3.0 images or chart.
+- The 1.3.0 release commit also mislabelled the older `Unreleased` section as
+  1.3.0; its heading is restored.
+
+## [1.3.0] — 2026-09-18
+
+### Added
+- **The worker can ping an external dead-man's switch.** Set
+  `NXS_ANOMALY_WORKER_HEARTBEAT_URL` and the worker sends it a `GET` after a
+  successful cycle, at most once a minute. When the worker, its database or the
+  network fails, the pings stop and healthchecks.io, Cronitor or an Uptime Kuma
+  push monitor raises the alarm through its own channel — the one failure
+  nxs-anomaly cannot page about through itself.
+- **Alert rules for a process that is gone, not degraded.** Every shipped rule
+  read metrics the process itself exports, so a dead API or worker silently took
+  them with it. `NxsAnomalyTargetDown` (`up == 0`), `WorkerAbsent` (no process
+  reports a completed cycle) and an always-firing `Watchdog` for a dead-man's
+  switch cover that. `ALERTING_RULES.md` shows how to route them around
+  nxs-anomaly.
+
 ## [1.2.0] — 2026-09-18
 
 ### Security

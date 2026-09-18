@@ -159,6 +159,50 @@ groups:
             выполняется. Увеличьте concurrency/poll-interval или вынесите worker
             в отдельные реплики.
 
+      # Процесс не упал в деградацию, а пропал. Все правила выше читают метрики,
+      # которые экспортирует сам процесс, и мёртвый API или worker молча уносит
+      # их с собой — об этом говорит только результат скрейпа. Label job — имя
+      # Service под ServiceMonitor чарта (<release>-nxs-anomaly-api, -worker)
+      # или ваш job_name в static-конфиге; при fullnameOverride поправьте regex.
+      - alert: NxsAnomalyTargetDown
+        expr: up{job=~".*nxs-anomaly.*"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "nxs-anomaly target {{ $labels.job }} down on {{ $labels.instance }}"
+          description: >
+            Prometheus не может снять метрики с процесса nxs-anomaly. Если это
+            worker — никого не будят. Маршрутизируйте в обход nxs-anomaly.
+
+      # Ни один worker не завершает циклы: все упали, в crash-loop или вообще не
+      # скрейпятся. «> 0» обязательно: API с --no-scheduler тоже экспортирует
+      # этот gauge, но со значением 0, и без фильтра маскировал бы отсутствие.
+      - alert: WorkerAbsent
+        expr: absent(nxs_anomaly_worker_last_cycle_timestamp_seconds > 0)
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No nxs-anomaly worker is completing cycles"
+          description: >
+            Ни один процесс не сообщает о завершённом цикле worker-а. Эскалация и
+            доставка стоят. Маршрутизируйте в обход nxs-anomaly.
+
+      # Горит всегда — так задумано. Доказывает, что путь Prometheus →
+      # Alertmanager → receiver жив: отправляйте его во внешний dead-man's switch,
+      # который поднимает тревогу, когда алерт ПЕРЕСТАЁТ приходить. Никогда не
+      # направляйте его в сам nxs-anomaly.
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: none
+        annotations:
+          summary: "Alerting pipeline heartbeat (always firing)"
+          description: >
+            Receiver — dead-man's switch с коротким repeat_interval. Его молчание
+            означает, что лежит Prometheus или Alertmanager.
+
       # Канал доставки деградировал по латентности (p95), хотя ошибок может не быть.
       - alert: DeliveryLatencyHigh
         expr: >
@@ -219,6 +263,45 @@ scrape_configs:
     metrics_path: /metrics
     scrape_interval: 15s
 ```
+
+## Мониторинг в обход nxs-anomaly
+
+Алерт о том, что nxs-anomaly не работает, нельзя доставлять через nxs-anomaly:
+он придёт в ту самую систему, которая лежит. Поэтому три правила выше —
+`NxsAnomalyTargetDown`, `WorkerAbsent` и `Watchdog` — нужно маршрутизировать
+отдельным receiver-ом Alertmanager прямо в независимый канал, а `Watchdog` — во
+внешний dead-man's switch:
+
+```yaml
+# alertmanager.yml
+route:
+  routes:
+    - matchers: ['alertname="Watchdog"']
+      receiver: deadmans-switch
+      repeat_interval: 1m
+    - matchers: ['alertname=~"NxsAnomalyTargetDown|WorkerAbsent|DatabaseUnavailable|WorkerCycleStuck"']
+      receiver: ops-direct          # Telegram/почта/SMS напрямую, не nxs-anomaly
+      continue: false
+receivers:
+  - name: deadmans-switch
+    webhook_configs:
+      - url: https://hc-ping.com/<uuid>
+  - name: ops-direct
+    telegram_configs:
+      - chat_id: <id>
+        bot_token_file: /etc/alertmanager/telegram-token
+```
+
+`Watchdog` проверяет цепочку Prometheus → Alertmanager, но не сам nxs-anomaly.
+Для прямого сигнала от worker-а задайте `NXS_ANOMALY_WORKER_HEARTBEAT_URL`: после
+успешного цикла worker делает `GET` на этот адрес, не чаще раза в минуту. Цикл,
+упавший на базе, пинга не даёт, поэтому один такой check покрывает worker, его
+базу и сеть — без Prometheus. Период проверки во внешнем сервисе ставьте с
+запасом: не меньше 5 минут. Пинг уходит от каждой реплики worker-а, так что
+check молчит, только когда не работает ни одна.
+
+В Helm-чарте переменную задают через Secret приложения или `worker.extraEnv`;
+URL содержит токен check-а, поэтому в логи он не пишется.
 
 ## SLI / SLO
 

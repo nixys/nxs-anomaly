@@ -57,6 +57,52 @@ spec:
               A cycle started before the previous finished. Raise concurrency /
               poll interval or move the worker to dedicated replicas.
 
+        # A process is gone, not degraded. Every rule above reads metrics the
+        # process itself exports, so a dead API or worker takes them silently
+        # with it; only the scrape result says so. The job label is the Service
+        # name under the chart's ServiceMonitor (<release>-nxs-anomaly-api,
+        # -worker) or your job_name in a static config — adjust the regex if you
+        # use fullnameOverride or other job names.
+        - alert: NxsAnomalyTargetDown
+          expr: up{job=~".*nxs-anomaly.*"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "nxs-anomaly target {{ $labels.job }} down on {{ $labels.instance }}"
+            description: >
+              Prometheus cannot scrape this nxs-anomaly process. If it is the
+              worker, nobody is being paged. Route this alert around nxs-anomaly.
+
+        # No worker anywhere has completed a cycle: every worker is down, crash-
+        # looping or not scraped at all. "> 0" matters: an API started with
+        # --no-scheduler exports this gauge too, at 0, and would otherwise mask
+        # the absence.
+        - alert: WorkerAbsent
+          expr: absent(nxs_anomaly_worker_last_cycle_timestamp_seconds > 0)
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "No nxs-anomaly worker is completing cycles"
+            description: >
+              No scraped process reports a completed worker cycle. Escalation and
+              delivery are stopped. Route this alert around nxs-anomaly.
+
+        # Always firing, by design. It proves the Prometheus → Alertmanager →
+        # receiver path works: route it to an external dead-man's switch
+        # (healthchecks.io, Cronitor, Dead Man's Snitch), which alarms when it
+        # STOPS arriving. Never route it into nxs-anomaly.
+        - alert: Watchdog
+          expr: vector(1)
+          labels:
+            severity: none
+          annotations:
+            summary: "Alerting pipeline heartbeat (always firing)"
+            description: >
+              Send to a dead-man's-switch receiver with a short repeat_interval.
+              Its silence means Prometheus or Alertmanager is down.
+
     - name: nxs-anomaly.backlog
       interval: 60s
       rules:
