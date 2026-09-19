@@ -52,7 +52,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  GO_VERSION: '1.25'
+  GO_VERSION: '1.27'
 
 jobs:
   # ── Release metadata ───────────────────────────────────────────────────────

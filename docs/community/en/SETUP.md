@@ -9,7 +9,7 @@ For prepared env files, systemd, Compose and Kubernetes, start with
 ## Requirements
 
 - Docker, or a reachable PostgreSQL 14+
-- Go 1.25 and Node.js 22.12+ — only to build from source
+- Go 1.27 and Node.js 22.12+ — only to build from source
 
 ## Docker Compose
 
