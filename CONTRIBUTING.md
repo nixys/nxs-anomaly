@@ -66,7 +66,7 @@ tests/run_postgres_integration.sh
 Linter is golangci-lint v2.6. Run via Docker to match CI exactly:
 
 ```sh
-docker run --rm -v "$(pwd):/app" -w /app golangci/golangci-lint:v2.6-alpine \
+docker run --rm -v "$(pwd):/app" -w /app golangci/golangci-lint:v2.13-alpine \
   golangci-lint run --timeout=15m ./...
 ```
 
@@ -92,7 +92,7 @@ npm run build
 Vulnerability gates, if you touch dependencies:
 
 ```sh
-GOVULNCHECK=$(go env GOPATH)/bin/govulncheck scripts/vuln-gate.sh   # go install golang.org/x/vuln/cmd/govulncheck@v1.7.0 first
+GOVULNCHECK=$(go env GOPATH)/bin/govulncheck scripts/vuln-gate.sh   # go install golang.org/x/vuln/cmd/govulncheck@v1.8.0 first
 cd frontend && node scripts/audit-gate.mjs --level=high --omit-dev
 ```
 

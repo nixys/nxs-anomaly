@@ -100,16 +100,7 @@ func Init(ctx context.Context, version string) (shutdown func(context.Context) e
 		return func(context.Context) error { return nil }, nil
 	}
 
-	res, err := resource.Merge(resource.Default(), resource.NewWithAttributes(
-		semconv.SchemaURL,
-		semconv.ServiceName(serviceName()),
-		semconv.ServiceVersion(version),
-	))
-	if err != nil {
-		// A schema-URL conflict, not a reason to lose tracing entirely.
-		slog.Warn("tracing_resource_merge_failed", "err", err)
-		res = resource.Default()
-	}
+	res := serviceResource(version)
 
 	provider := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exporter),
@@ -274,4 +265,26 @@ func StartLinked(ctx context.Context, name, traceparent string, attrs ...attribu
 		opts = append(opts, trace.WithLinks(link))
 	}
 	return Tracer().Start(ctx, name, opts...)
+}
+
+// serviceResource is the SDK's default resource plus this service's name and
+// version.
+//
+// The attributes carry no schema URL of their own. The default resource
+// declares the semantic-conventions schema of the SDK's release (v1.43.0 with
+// SDK 1.46), this package's semconv import is v1.26.0, and Merge refuses two
+// different schema URLs — so the fallback below used to run on every start and
+// every span went out as "unknown_service" without a version. A schemaless
+// resource merges into whichever schema the SDK declares.
+func serviceResource(version string) *resource.Resource {
+	res, err := resource.Merge(resource.Default(), resource.NewSchemaless(
+		semconv.ServiceName(serviceName()),
+		semconv.ServiceVersion(version),
+	))
+	if err != nil {
+		// A schema-URL conflict, not a reason to lose tracing entirely.
+		slog.Warn("tracing_resource_merge_failed", "err", err)
+		res = resource.Default()
+	}
+	return res
 }

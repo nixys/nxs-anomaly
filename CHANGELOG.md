@@ -4,6 +4,61 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning once it reaches 1.0.
 
+## [1.4.2] — 2026-09-19
+
+### Fixed
+- **The Community mirror publishes to GitHub over SSH on port 443**
+  (`ssh.github.com`). The runner cannot reach `github.com:22`, so the mirror job
+  timed out before cloning. GitHub's published host keys are pinned instead of
+  scanned: the scan used port 22 as well and silently left `known_hosts` empty.
+
+## [1.4.1] — 2026-09-19
+
+### Fixed
+- **1.4.0 was tagged but its pipeline stopped before the images.**
+  `test:restore-drill` installed the PostgreSQL 17 client from
+  apt.postgresql.org, which the runner cannot reach, and failed on "Unable to
+  locate package postgresql-client-17" before testing anything. The job now runs
+  on `golang:1.27-trixie`, where PostgreSQL 17 is Debian's own version and the
+  client comes from deb.debian.org; the external repository and its signing key
+  are gone from the pipeline.
+
+## [1.4.0] — 2026-09-19
+
+### Changed
+- **Built with Go 1.27** (latest stable, 1.27.1): `go.mod` declares `go 1.27.0`,
+  and the release image, the GitLab pipeline (`GO_VERSION`) and the Community
+  GitHub workflows build and test on `golang:1.27`. The tools pinned to a Go
+  release move with it: golangci-lint v2.6 → v2.13 (built with go1.27) and
+  govulncheck v1.7.0 → v1.8.0, which v1.25 could not install.
+
+### Fixed
+- **An OIDC signing key that is not a point on its curve is refused.** EC keys
+  from the provider's JWKS were built by setting the raw coordinates, which Go
+  1.26 deprecates and which accepted any two numbers; they are now parsed with
+  `ecdsa.ParseUncompressedPublicKey`, and coordinates of the wrong length for the
+  curve are refused as RFC 7518 requires.
+
+## [1.3.3] — 2026-09-19
+
+### Security
+- **Dependencies with published advisories are upgraded.** OpenTelemetry Go
+  (`otel`, `sdk`, `trace`, `metric`, `otlptrace`, `otlptracehttp`) 1.44.0 →
+  1.46.0, with the matching `otlp` protobufs, `grpc-gateway`, `genproto` and
+  `protobuf`. Frontend: `react-router` 7.18.1 → 7.18.4 (shipped in the bundle),
+  and the build and test tooling — `js-yaml` 4.2.0 → 4.3.2 (via
+  `@redocly/openapi-core` 1.34.20), `vitest`, `@vitest/mocker` and
+  `@vitest/coverage-v8` 4.1.10 → 4.1.11, `nanoid` 3.3.19, `brace-expansion`
+  2.1.7. `npm audit` reports no vulnerabilities.
+
+### Fixed
+- **Traces name the service again.** The OpenTelemetry SDK's default resource
+  declares the semantic-conventions schema of its own release, and the service's
+  name and version were declared under an older one; the SDK refused to merge the
+  two, the fallback dropped them, and every span arrived as `unknown_service`
+  without a version. The service attributes now carry no schema of their own and
+  merge into the SDK's.
+
 ## [1.3.2] — 2026-09-19
 
 ### Fixed

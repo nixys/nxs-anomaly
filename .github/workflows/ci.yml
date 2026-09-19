@@ -28,7 +28,7 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: '1.25'
+  GO_VERSION: '1.27'
   NODE_VERSION: '22.12'
 
 jobs:
@@ -55,7 +55,7 @@ jobs:
         # Same image and version as the internal pipeline and CONTRIBUTING.md's
         # local instructions, so a result here matches a contributor's own run.
         run: |
-          docker run --rm -v "$(pwd):/app" -w /app golangci/golangci-lint:v2.6-alpine \
+          docker run --rm -v "$(pwd):/app" -w /app golangci/golangci-lint:v2.13-alpine \
             golangci-lint run --timeout=15m ./...
 
   govulncheck:
@@ -67,12 +67,11 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: false
       - name: Install govulncheck
-        # Pinned, not @latest: golang.org/x/vuln v1.8.0 raised its own go.mod
-        # floor to go >= 1.26, so @latest breaks the moment this job's Go
-        # version (env.GO_VERSION, currently 1.25) lags upstream's toolchain
-        # bump — the same failure that hit the internal pipeline's equivalent
-        # job. v1.7.0 is the newest release that still declares go 1.25.
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+        # Pinned, not @latest: golang.org/x/vuln raises its own go.mod floor
+        # with upstream's toolchain, so @latest breaks the moment this job's Go
+        # version (env.GO_VERSION) lags behind — it did once, when v1.8.0
+        # required go >= 1.26 on a 1.25 job. Bump it together with GO_VERSION.
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
       - name: Vulnerability gate
         run: GOVULNCHECK="$(go env GOPATH)/bin/govulncheck" bash scripts/vuln-gate.sh
 

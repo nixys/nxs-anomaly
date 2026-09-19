@@ -231,3 +231,23 @@ func TestRecordError(t *testing.T) {
 func TestShutdownToleratesNil(t *testing.T) {
 	Shutdown(nil) // must not panic
 }
+
+// Every span carries the service it came from. The SDK's default resource
+// declares the semantic-conventions schema of its own release, and this
+// package's attributes declared another; Merge refused the pair, the fallback
+// kept the default, and every trace arrived as "unknown_service" with no
+// version.
+func TestServiceResourceNamesTheService(t *testing.T) {
+	t.Setenv("OTEL_SERVICE_NAME", "")
+	res := serviceResource("v9.9.9")
+	got := map[string]string{}
+	for _, kv := range res.Attributes() {
+		got[string(kv.Key)] = kv.Value.String()
+	}
+	if got["service.name"] != serviceName() || got["service.version"] != "v9.9.9" {
+		t.Fatalf("service.name=%q service.version=%q, want %q and v9.9.9", got["service.name"], got["service.version"], serviceName())
+	}
+	if got["telemetry.sdk.language"] != "go" {
+		t.Errorf("the SDK's own attributes are missing: %v", got)
+	}
+}
