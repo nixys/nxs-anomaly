@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning once it reaches 1.0.
 
+## [1.5.0] — 2026-09-20
+
+### Added
+- **A one-command demo.** `docker compose -f deploy/demo/compose.yaml up -d`
+  starts the published images with a team, an on-call rotation, an escalation
+  chain, a webhook integration and one firing alert; sign in at
+  http://localhost:3100 as `alice` / `demo-password`. Before, a fresh install
+  was an empty system to fill by hand before anything could be seen working.
+  `seed-demo` gained the two flags this needs: `--if-empty` (a no-op on a
+  database that already has data, so a restart keeps what was changed) and
+  `--sample-alert` (send one critical alert through the demo integration).
+
 ## [1.4.3] — 2026-09-19
 
 ### Security
@@ -202,7 +214,7 @@ semantic versioning once it reaches 1.0.
   canary's notifications instead of scanning an unfiltered page, where on an
   installation with history it never appeared.
 
-## [Unreleased]
+## [1.5.0] — 2026-09-20
 
 ### Fixed
 - **Silences and maintenance windows end.** A silence with a duration and a

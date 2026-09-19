@@ -80,6 +80,21 @@ acknowledgements and resolutions in one shared timeline.
 
 ## Quickstart
 
+**Try the demo first.** One command starts a ready-to-explore installation with a
+team, an on-call rotation, an escalation chain, a webhook integration and an alert
+already escalating:
+
+```bash
+docker compose -f deploy/demo/compose.yaml up -d
+```
+
+Open http://localhost:3100 and sign in as `alice` / `demo-password`, the engineer on
+call. Notifications are written to the worker log (`docker compose -f deploy/demo/compose.yaml logs worker`);
+send more alerts to the webhook URL shown on the Integrations page.
+Remove the demo with `docker compose -f deploy/demo/compose.yaml down -v`. The
+credentials are public and the stack is for evaluation only — use the installation
+guides below for a real deployment.
+
 | Deployment | Instructions and ready-to-use files |
 |---|---|
 | Bare metal / VM without containers | [On-premise installation](docs/community/en/INSTALLATION.md#on-premise-bare-metal-or-virtual-machine): build, systemd units, nginx and env presets |
