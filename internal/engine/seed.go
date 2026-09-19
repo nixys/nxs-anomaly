@@ -2,11 +2,15 @@ package engine
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"time"
 
 	"github.com/nixys/nxs-anomaly/internal/utils"
 )
+
+// ErrDemoNotEmpty is returned by SeedDemo without force when the database
+// already holds data.
+var ErrDemoNotEmpty = errors.New("database is not empty, pass --force to reseed")
 
 // SeedDemo creates demo data (users, team, schedule, chain, integration).
 func (e *Engine) SeedDemo(ctx context.Context, force bool) (map[string]any, error) {
@@ -17,7 +21,7 @@ func (e *Engine) SeedDemo(ctx context.Context, force bool) (map[string]any, erro
 			return nil, err
 		}
 		if hasAny {
-			return nil, fmt.Errorf("database is not empty, pass --force to reseed")
+			return nil, ErrDemoNotEmpty
 		}
 	}
 	if force {

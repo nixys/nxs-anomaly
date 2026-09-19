@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -324,6 +325,10 @@ func cmdRunReport(args []string) {
 func cmdSeedDemo(args []string) {
 	fs := flag.NewFlagSet("seed-demo", flag.ExitOnError)
 	force := fs.Bool("force", false, "reset store before seeding")
+	// For a container that runs on every `docker compose up`: the second run
+	// finds its own data and must not fail, nor wipe what the user did since.
+	ifEmpty := fs.Bool("if-empty", false, "do nothing and exit 0 if the database already has data")
+	sampleAlert := fs.Bool("sample-alert", false, "send a critical alert through the demo integration after seeding")
 	parseFlags(fs, args)
 
 	ctx := context.Background()
@@ -336,9 +341,26 @@ func cmdSeedDemo(args []string) {
 
 	eng := engine.New(s)
 	result, err := eng.SeedDemo(ctx, *force)
+	if *ifEmpty && errors.Is(err, engine.ErrDemoNotEmpty) {
+		slog.Info("seed-demo skipped: database already has data")
+		return
+	}
 	if err != nil {
 		slog.Error("seed-demo failed", "err", err)
 		os.Exit(1)
+	}
+	if *sampleAlert {
+		key := utils.StrVal(result["integration"].(map[string]any), "key")
+		result["sample_alert"], err = eng.IngestAlert(ctx, key, map[string]any{
+			"title":    "Demo: API latency is high",
+			"severity": "critical",
+			"status":   "firing",
+			"labels":   map[string]any{"alertname": "HighLatency", "service": "api", "severity": "critical"},
+		})
+		if err != nil {
+			slog.Error("seed-demo sample alert failed", "err", err)
+			os.Exit(1)
+		}
 	}
 	printJSON(result)
 }
