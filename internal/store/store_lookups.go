@@ -263,7 +263,7 @@ func (s *pgStore) ListCollectionPage(ctx context.Context, collection string, fil
 
 	args = append(args, limit, offset)
 	rows, err := s.pool.Query(ctx,
-		fmt.Sprintf("SELECT data %s%s LIMIT $%d OFFSET $%d", base, orderClause(sort), len(args)-1, len(args)),
+		fmt.Sprintf("SELECT data %s%s LIMIT $%d OFFSET $%d", base, orderClause(collection, sort), len(args)-1, len(args)),
 		args...)
 	if err != nil {
 		return nil, 0, err

@@ -98,6 +98,18 @@ describe('AlertGroupsPage', () => {
     expect(screen.getByTestId('search').textContent).toContain('view=firing');
   });
 
+  // The preset used to be applied by an effect after the first render, so the
+  // list loaded once unfiltered by last_received_at and again by severity, and
+  // the row under the cursor moved away as it was clicked.
+  it('loads the landing list once, already in the firing order', async () => {
+    renderPage();
+    await screen.findByText('Incident grp_1');
+    await waitFor(() => expect(screen.getByTestId('search').textContent).toContain('view=firing'));
+    const lists = get.mock.calls.filter(([path]) => path === '/api/v1/alert-groups');
+    expect(lists).toHaveLength(1);
+    expect(lists[0][1]).toEqual(expect.objectContaining({ status: 'open', sort: 'severity', order: 'desc' }));
+  });
+
   it('lists the groups it was given', async () => {
     renderPage();
     expect(await screen.findByText('Incident grp_1')).toBeInTheDocument();

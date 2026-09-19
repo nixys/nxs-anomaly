@@ -246,6 +246,15 @@ func severityRankSQL() string {
 	return b.String()
 }
 
+// SeverityTieBreak is the column that orders rows of equal severity: the
+// collection's own time, newest first. Severity has five levels, so most rows
+// tie on it, and ordering the ties by random-hex id put a critical that arrived
+// a second ago at the bottom of the "firing" view (24th of 25 on the CE stand)
+// under criticals hours old. Empty for a collection without a time order.
+func SeverityTieBreak(collection string) string {
+	return defaultSort[collection].Field
+}
+
 // orderClause renders the ORDER BY for a resolved spec.
 //
 // Two details carry weight. NULLS LAST keeps rows that never got a timestamp
@@ -253,7 +262,7 @@ func severityRankSQL() string {
 // page. And id is always the last key: without a tie-break, two rows with the
 // same timestamp can swap places between two queries, which in an OFFSET-paged
 // listing shows one row twice and hides another entirely.
-func orderClause(spec SortSpec) string {
+func orderClause(collection string, spec SortSpec) string {
 	if spec.Field == "" || spec.Field == "id" {
 		if spec.Desc {
 			return " ORDER BY id DESC"
@@ -267,6 +276,9 @@ func orderClause(spec SortSpec) string {
 	column := spec.Field
 	if spec.Field == "severity" {
 		column = severityRankSQL()
+		if tie := SeverityTieBreak(collection); tie != "" {
+			return fmt.Sprintf(" ORDER BY %s %s NULLS LAST, %s DESC NULLS LAST, id %s", column, dir, tie, dir)
+		}
 	}
 	return fmt.Sprintf(" ORDER BY %s %s NULLS LAST, id %s", column, dir, dir)
 }

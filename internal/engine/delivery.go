@@ -99,6 +99,11 @@ func (e *Engine) ProcessNotificationBatches(ctx context.Context) ([]map[string]a
 	// recipient to nothing, so the failure has to stop the flush. See refSet.
 	refs := e.newRefSet(ctx)
 	usersMap := refs.get("users")
+	recipients := make([]string, 0, len(preNotifs))
+	for _, n := range preNotifs {
+		recipients = append(recipients, utils.StrVal(n, "user_id"))
+	}
+	usersMap = refs.require(usersMap, "users", recipients)
 	if err := refs.Err(); err != nil {
 		return nil, err
 	}

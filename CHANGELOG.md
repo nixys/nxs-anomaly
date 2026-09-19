@@ -4,6 +4,39 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning once it reaches 1.0.
 
+## [1.3.2] — 2026-09-19
+
+### Fixed
+- **An alert no longer goes unpaged because another replica had not seen a new
+  chain or user yet.** Each API and worker replica caches reference data for
+  five seconds, and a write only refreshes the cache of the replica that made it.
+  An alert routed on another replica within those seconds found no chain
+  ("Escalation chain not found") or no user ("Skipped recipient(s) that no longer
+  exist"), and both outcomes were final: the group stayed open and nobody was
+  ever paged. With two API replicas, the chart's default, this reproduced three
+  times out of three. A reference a paging decision needs is now looked up in
+  the database before it is declared missing; an id that really is gone costs
+  one extra read per five seconds, not one per alert.
+- **`WorkerCycleStuck` no longer fires on every healthy API pod.** An API started
+  with `--no-scheduler` exports the last-cycle timestamp as 0, which the rule
+  read as a worker stuck since 1970 — a permanent false critical that the 1.3
+  guide routes straight to the on-call engineer. The rule now ignores the 0.
+- **The alert group list loads once.** A bare `/alert-groups` was listed first
+  unfiltered and then again in the "firing" order, and the row under the cursor
+  moved as it was being clicked. The landing view is now read from the first
+  render. Within one severity the newest group comes first; ties used to be
+  broken by random id, which put a critical that had just arrived at the bottom
+  of the first page.
+- **The worker logs an unconfirmed duty shift when the gap changes**, not every
+  five seconds for as long as the shift lasts.
+- **The bundled PostgreSQL meets Pod Security "restricted"**
+  (`seccompProfile: RuntimeDefault`, no privilege escalation, all capabilities
+  dropped). It already ran as a non-root user; a namespace enforcing the profile
+  refused the pod.
+- **Argo CD no longer reports the chart OutOfSync forever.** CPU quantities are
+  written as the API server stores them (`1`, not `1000m`); Argo CD compares
+  without normalising, so every workload left at the default never synced.
+
 ## [1.3.1] — 2026-09-18
 
 ### Fixed

@@ -147,6 +147,9 @@ type Engine struct {
 	// lastHeartbeat throttles the worker heartbeat that readiness reads. Same
 	// ownership as lastCoverageCheck: worker goroutine only.
 	lastHeartbeat time.Time
+	// lastDutyGap is the check-in gap last written to the log, as
+	// [missing, on_call]. Same ownership as lastCoverageCheck.
+	lastDutyGap [2]int
 	// reopenAckedOnNewAlert is the deployment's policy for an alert arriving on
 	// an acknowledged group. Off by default: an acknowledgement means an
 	// operator answered, and a source that keeps re-sending the same alert must

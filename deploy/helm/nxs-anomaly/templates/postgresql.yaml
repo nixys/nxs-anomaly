@@ -32,14 +32,24 @@ spec:
       labels:
         {{- include "nxs-anomaly.datastorePodLabels" (dict "ctx" . "component" $component) | nindent 8 }}
     spec:
+      # Pod Security "restricted": the process already runs as the image's
+      # postgres user, so dropping every capability and privilege escalation
+      # takes nothing it uses. Without them a namespace that enforces the
+      # profile refuses the pod.
       securityContext:
         fsGroup: 70
         runAsUser: 70
         runAsGroup: 70
         runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: postgresql
           image: {{ .Values.postgresql.image }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           env:
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata

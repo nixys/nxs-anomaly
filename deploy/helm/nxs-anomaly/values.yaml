@@ -44,6 +44,10 @@ securityContext:
     drop: ["ALL"]
 
 # ── Components ────────────────────────────────────────────────────────────────
+# Resource quantities are written the way the API server stores them (cpu: 1,
+# not 1000m). Argo CD compares the rendered manifest with the live object
+# without normalising quantities, so "1000m" against the stored "1" kept every
+# workload using the default permanently OutOfSync.
 # API: stateless HTTP, scales horizontally, runs with --no-scheduler.
 api:
   replicaCount: 2
@@ -74,7 +78,7 @@ worker:
   extraArgs: []
   resources:
     requests: {cpu: 100m, memory: 128Mi}
-    limits: {cpu: 1000m, memory: 256Mi}
+    limits: {cpu: 1, memory: 256Mi}
   podDisruptionBudget:
     enabled: false
     minAvailable: 1
@@ -333,7 +337,7 @@ postgresql:
     storageClass: ""
   resources:
     requests: {cpu: 100m, memory: 256Mi}
-    limits: {cpu: 1000m, memory: 1Gi}
+    limits: {cpu: 1, memory: 1Gi}
 
 externalPostgres:
   # Provide either a full dsn, or host/port/username/password/database/sslmode.

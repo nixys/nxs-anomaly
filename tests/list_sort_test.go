@@ -74,6 +74,21 @@ func TestAlertGroupListOrderingInPostgres(t *testing.T) {
 		t.Errorf("first row ascending = %q, want the oldest group (\"first\")", got)
 	}
 
+	// All three are critical: within a severity the newest comes first, in
+	// either direction. Ordered by random id instead, a critical that arrived a
+	// second ago landed at the bottom of the "firing" view.
+	for _, order := range []string{"desc", "asc"} {
+		page, err = eng.ListCollectionPage(adminCtx, "alert_groups",
+			map[string]any{"limit": 100, "sort": "severity", "order": order})
+		if err != nil {
+			t.Fatalf("severity %s: %v", order, err)
+		}
+		items = page["items"].([]map[string]any)
+		if got := utils.StrVal(items[0], "title"); got != "third" {
+			t.Errorf("first row by severity %s = %q, want the newest group (\"third\")", order, got)
+		}
+	}
+
 	// Every column the UI offers, in both directions: the point is that the
 	// query runs at all.
 	for _, column := range []string{"last_received_at", "created_at", "severity", "status", "alert_count", "id"} {

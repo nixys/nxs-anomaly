@@ -25,6 +25,35 @@ tests:
     asserts:
       - equal: {path: metadata.name, value: rel-nxs-anomaly-postgresql}
 
+  - it: bundled postgres meets Pod Security "restricted"
+    templates:
+      - templates/postgresql.yaml
+    set:
+      postgresql.enabled: true
+    documentSelector:
+      path: kind
+      value: StatefulSet
+    asserts:
+      - equal: {path: spec.template.spec.securityContext.runAsNonRoot, value: true}
+      - equal: {path: spec.template.spec.securityContext.seccompProfile.type, value: RuntimeDefault}
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          value: ["ALL"]
+  - it: bundled postgres renders its CPU limit the way the API server stores it
+    templates:
+      - templates/postgresql.yaml
+    set:
+      postgresql.enabled: true
+    documentSelector:
+      path: kind
+      value: StatefulSet
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.cpu
+          value: 1
   - it: disabled postgres renders nothing
     templates:
       - templates/postgresql.yaml

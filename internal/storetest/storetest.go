@@ -332,6 +332,10 @@ func (m *Store) sortedRows(col string, filters map[string]any, spec store.SortSp
 	}
 	sort.SliceStable(rows, func(i, j int) bool {
 		a, b := sortKey(rows[i], spec.Field), sortKey(rows[j], spec.Field)
+		if a == b && spec.Field == "severity" {
+			// Newest first within a severity, as store.orderClause does.
+			a, b = sortKey(rows[j], store.SeverityTieBreak(col)), sortKey(rows[i], store.SeverityTieBreak(col))
+		}
 		if a == b {
 			return false // sortedByID already ordered them; SliceStable keeps that
 		}
