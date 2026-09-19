@@ -54,6 +54,24 @@ tests:
       - equal:
           path: spec.template.spec.containers[0].resources.limits.cpu
           value: 1
+  - it: bundled postgres writes its claim template the way the API server stores it
+    templates:
+      - templates/postgresql.yaml
+    set:
+      postgresql.enabled: true
+    documentSelector:
+      path: kind
+      value: StatefulSet
+    asserts:
+      - equal:
+          path: spec.volumeClaimTemplates[0].apiVersion
+          value: v1
+      - equal:
+          path: spec.volumeClaimTemplates[0].kind
+          value: PersistentVolumeClaim
+      - equal:
+          path: spec.volumeClaimTemplates[0].spec.volumeMode
+          value: Filesystem
   - it: disabled postgres renders nothing
     templates:
       - templates/postgresql.yaml

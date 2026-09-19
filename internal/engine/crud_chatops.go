@@ -970,7 +970,10 @@ func (e *Engine) executeChatopsCommand(ctx context.Context, state *store.State, 
 			"priority [username] <high|medium|low>, oncall <schedule_id>, " +
 			"report"}, nil
 	}
-	return nil, fmt.Errorf("unsupported chatops command: %s", cmd)
+	// A validation error, not a plain one: a mistyped command is the caller's
+	// mistake, and a plain error became HTTP 500 plus an ERROR log line on the
+	// API. Chat webhooks show the text to the person either way.
+	return nil, errValidation(fmt.Sprintf("unsupported chatops command: %s; send \"help\" for the list", cmd))
 }
 
 // chatopsSilenceDefaultMinutes is what a silence button without a duration

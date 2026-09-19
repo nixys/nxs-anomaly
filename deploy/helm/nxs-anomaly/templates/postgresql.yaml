@@ -75,11 +75,18 @@ spec:
             - name: data
               mountPath: /var/lib/postgresql/data
   {{- if .Values.postgresql.persistence.enabled }}
+  # Written the way the API server stores them (apiVersion, kind, volumeMode):
+  # Argo CD compares the claim templates without the defaults and otherwise
+  # reports this StatefulSet OutOfSync forever. The values equal the defaults,
+  # so an upgrade changes nothing on the immutable field.
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: data
       spec:
         accessModes: ["ReadWriteOnce"]
+        volumeMode: Filesystem
         {{- with .Values.postgresql.persistence.storageClass }}
         storageClassName: {{ . }}
         {{- end }}

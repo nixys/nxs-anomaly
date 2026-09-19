@@ -82,8 +82,8 @@ func (e *Engine) deliverNotificationViaAdapter(ctx context.Context, ntf map[stri
 
 	switch channel {
 	case "webhook":
-		return postWebhookDetailed(ctx, e.deliveryCfg.clientFor("webhook"), target,
-			toAlertmanagerPayload(payload), e.deliveryCfg.blockPrivateFor("webhook"), nil)
+		return postWebhookGuarded(ctx, e.deliveryCfg.clientFor("webhook"), target,
+			toAlertmanagerPayload(payload), e.deliveryCfg.ssrfGuardFor("webhook"), nil)
 
 	case "slack", "mattermost":
 		text := renderNotificationText(ntf, payload, "")
@@ -93,8 +93,8 @@ func (e *Engine) deliverNotificationViaAdapter(ctx context.Context, ntf map[stri
 			body = MattermostMessagePayload(text, groupID,
 				e.deliveryCfg.PublicURL, e.deliveryCfg.MattermostActionSecret)
 		}
-		res := postWebhookDetailed(ctx, e.deliveryCfg.clientFor(channel), target,
-			body, e.deliveryCfg.blockPrivateFor(channel), nil)
+		res := postWebhookGuarded(ctx, e.deliveryCfg.clientFor(channel), target,
+			body, e.deliveryCfg.ssrfGuardFor(channel), nil)
 		res.ProviderStatus = channel + "_webhook"
 		return res
 
@@ -237,8 +237,8 @@ func (e *Engine) deliverMobilePush(ctx context.Context, deviceID string, payload
 	if tok := e.deliveryCfg.MobilePushToken; tok != "" {
 		headers["Authorization"] = "Bearer " + tok
 	}
-	res := postWebhookDetailed(ctx, e.deliveryCfg.clientFor("mobile"), e.deliveryCfg.MobilePushURL,
-		body, e.deliveryCfg.blockPrivateFor("mobile"), headers)
+	res := postWebhookGuarded(ctx, e.deliveryCfg.clientFor("mobile"), e.deliveryCfg.MobilePushURL,
+		body, e.deliveryCfg.ssrfGuardFor("mobile"), headers)
 	res.ProviderStatus = "mobile_push"
 	return res
 }
@@ -268,8 +268,8 @@ func (e *Engine) deliverChatops(ctx context.Context, ntf map[string]any, channel
 	}
 	text := renderNotificationText(ntf, payload, "")
 	proxyChannel := e.deliveryCfg.chatopsProxyChannel(utils.StrVal(channel, "platform"))
-	res := postWebhookDetailed(ctx, e.deliveryCfg.clientFor(proxyChannel), webhookURL,
-		map[string]any{"text": text}, e.deliveryCfg.blockPrivateFor(proxyChannel), nil)
+	res := postWebhookGuarded(ctx, e.deliveryCfg.clientFor(proxyChannel), webhookURL,
+		map[string]any{"text": text}, e.deliveryCfg.ssrfGuardFor(proxyChannel), nil)
 	res.ProviderStatus = utils.StrVal(channel, "platform") + "_chatops"
 	return res
 }
@@ -398,7 +398,7 @@ func (e *Engine) deliverIssue(ctx context.Context, payload map[string]any) (stat
 	if ok, detail := e.deliveryCfg.Channels.DestinationAllowed(url); !ok {
 		return "failed", detail, ""
 	}
-	if err := guardWebhookURL(ctx, url, e.deliveryCfg.blockPrivateFor("issue")); err != nil {
+	if err := checkWebhookURL(ctx, url, e.deliveryCfg.ssrfGuardFor("issue")); err != nil {
 		return "failed", err.Error(), ""
 	}
 	token := utils.StrVal(payload, "token")

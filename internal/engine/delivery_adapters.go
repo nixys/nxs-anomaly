@@ -33,7 +33,31 @@ import (
 // guardedDialContext validates the exact IP being connected to, on every hop.
 // See newDeliveryHTTPClient.
 func guardWebhookURL(ctx context.Context, rawURL string, block bool) error {
-	if !block {
+	return checkWebhookURL(ctx, rawURL, ssrfGuardOf(block))
+}
+
+// ssrfGuard is how the pre-flight judges a destination.
+type ssrfGuard uint8
+
+const (
+	// guardOff: the SSRF guard is disabled for this installation.
+	guardOff ssrfGuard = iota
+	// guardDirect: this process resolves and dials the destination itself.
+	guardDirect
+	// guardProxied: a proxy resolves and dials the destination (see guardProxiedURL).
+	guardProxied
+)
+
+func ssrfGuardOf(block bool) ssrfGuard {
+	if block {
+		return guardDirect
+	}
+	return guardOff
+}
+
+// checkWebhookURL is the pre-flight for one destination under the given guard.
+func checkWebhookURL(ctx context.Context, rawURL string, guard ssrfGuard) error {
+	if guard == guardOff {
 		return nil
 	}
 	u, err := url.Parse(rawURL)
@@ -47,10 +71,51 @@ func guardWebhookURL(ctx context.Context, rawURL string, block bool) error {
 	if host == "" {
 		return fmt.Errorf("blocked webhook URL with empty host")
 	}
+	if guard == guardProxied {
+		return guardProxiedHost(ctx, host)
+	}
 	var resolver net.Resolver
 	ips, err := resolver.LookupIPAddr(ctx, host)
 	if err != nil {
 		return fmt.Errorf("resolve webhook host %q: %w", host, err)
+	}
+	for _, ip := range ips {
+		if isBlockedIP(ip.IP) {
+			return fmt.Errorf("blocked webhook host %q resolves to non-public address %s", host, ip.IP)
+		}
+	}
+	return nil
+}
+
+// guardProxiedHost is the pre-flight for a destination a proxy will reach.
+//
+// Turning the guard off for proxied channels outright left the SSRF protection
+// with nothing: NXS_ANOMALY_DELIVERY_PROXY_URL is the default for every channel,
+// webhooks included, so a user-supplied http://169.254.169.254/ went through
+// the proxy and the proxy host's metadata service answered (seen on the EE
+// stand: HTTP 405 from the far side of a SOCKS proxy). What this process can
+// still judge, it judges:
+//
+//   - an IP literal needs no resolution, so a private, loopback or link-local
+//     one is refused exactly as it would be on a direct channel;
+//   - a name is resolved locally, and a private answer is refused;
+//   - no local answer is not a verdict — in the networks a proxy is deployed
+//     for, the proxy is often the only thing that can resolve public names — so
+//     the request goes ahead and the proxy resolves it.
+//
+// A name that only the proxy's resolver maps to an internal address is outside
+// what this process can see; the egress allowlist is the control for that.
+func guardProxiedHost(ctx context.Context, host string) error {
+	if ip := net.ParseIP(host); ip != nil {
+		if isBlockedIP(ip) {
+			return fmt.Errorf("blocked webhook host %s: non-public address", ip)
+		}
+		return nil
+	}
+	var resolver net.Resolver
+	ips, err := resolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil
 	}
 	for _, ip := range ips {
 		if isBlockedIP(ip.IP) {
@@ -143,6 +208,12 @@ func deliveryCheckRedirect(blocked func(net.IP) bool, egress ChannelPolicy) func
 		if blocked == nil {
 			return nil
 		}
+		// A redirect to a non-public IP literal is refused here, not only at
+		// dial time: through a proxy this process never dials the hop, so the
+		// dial guard would never see it.
+		if ip := net.ParseIP(req.URL.Hostname()); ip != nil && blocked(ip) {
+			return fmt.Errorf("redirect refused: non-public address %s", ip)
+		}
 		return guardWebhookScheme(req.URL)
 	}
 }
@@ -193,19 +264,19 @@ func guardedDialContext(dialer *net.Dialer, blocked func(net.IP) bool) func(cont
 }
 
 func postWebhook(ctx context.Context, client *http.Client, url string, payload map[string]any, blockPrivate bool) (status, errMsg string) {
-	res := postWebhookDetailed(ctx, client, url, payload, blockPrivate, nil)
+	res := postWebhookGuarded(ctx, client, url, payload, ssrfGuardOf(blockPrivate), nil)
 	if res.Status == deliveryDelivered {
 		return "delivered", ""
 	}
 	return "failed", res.Err
 }
 
-// postWebhookDetailed is postWebhook with the provider's answer kept: status
+// postWebhookGuarded is postWebhook with the provider's answer kept: status
 // code and a bounded excerpt of the body. Diagnosing "the webhook returned 403
 // with «channel archived»" needs both, and neither survived the old two-string
-// return.
-func postWebhookDetailed(ctx context.Context, client *http.Client, url string, payload map[string]any, blockPrivate bool, headers map[string]string) deliveryOutcome {
-	if err := guardWebhookURL(ctx, url, blockPrivate); err != nil {
+// return. The SSRF pre-flight is the one chosen for the channel (ssrfGuardFor).
+func postWebhookGuarded(ctx context.Context, client *http.Client, url string, payload map[string]any, guard ssrfGuard, headers map[string]string) deliveryOutcome {
+	if err := checkWebhookURL(ctx, url, guard); err != nil {
 		return failed("http_post", err.Error(), 0, "")
 	}
 	body := []byte(utils.JSONDumps(payload))
