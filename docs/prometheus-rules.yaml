@@ -32,9 +32,13 @@ spec:
 
         # Worker cycle not completing. Compared against the last-cycle TIMESTAMP,
         # not its duration — the duration gauge is a duration and would make this
-        # fire always.
+        # fire always. "> 0" matters: an API started with --no-scheduler exports
+        # this gauge too, at 0, and without the filter every API pod of the
+        # chart's default topology fired this permanently.
         - alert: WorkerCycleStuck
-          expr: time() - nxs_anomaly_worker_last_cycle_timestamp_seconds > 120
+          expr: >
+            time() - nxs_anomaly_worker_last_cycle_timestamp_seconds > 120
+            and nxs_anomaly_worker_last_cycle_timestamp_seconds > 0
           for: 5m
           labels:
             severity: critical

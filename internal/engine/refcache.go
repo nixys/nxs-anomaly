@@ -29,6 +29,10 @@ type refCache struct {
 type refCacheEntry struct {
 	loadedAt time.Time
 	items    map[string]map[string]any
+	// verified marks a load made because an id was missing (refSet.require).
+	// What such a load still lacks is gone, so another miss on it does not
+	// reload again until the entry expires.
+	verified bool
 }
 
 func newRefCache() *refCache {
@@ -58,9 +62,22 @@ func (c *refCache) get(name string, now time.Time) (map[string]map[string]any, b
 }
 
 func (c *refCache) put(name string, items map[string]map[string]any, now time.Time) {
+	c.putEntry(name, refCacheEntry{loadedAt: now, items: items})
+}
+
+func (c *refCache) putEntry(name string, entry refCacheEntry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.entries[name] = refCacheEntry{loadedAt: now, items: items}
+	c.entries[name] = entry
+}
+
+// verifiedFresh reports whether name was loaded to resolve a miss and has not
+// expired since.
+func (c *refCache) verifiedFresh(name string, now time.Time) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.entries[name]
+	return ok && e.verified && now.Sub(e.loadedAt) <= c.ttl
 }
 
 func (c *refCache) invalidate(names ...string) {
@@ -81,6 +98,17 @@ func (e *Engine) refCollection(ctx context.Context, name string) (map[string]map
 			return items, nil
 		}
 	}
+	items, err := e.loadRefCollection(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if e.refCache != nil {
+		e.refCache.put(name, items, now)
+	}
+	return items, nil
+}
+
+func (e *Engine) loadRefCollection(ctx context.Context, name string) (map[string]map[string]any, error) {
 	list, err := e.store.ListCollection(ctx, name)
 	if err != nil {
 		return nil, err
@@ -90,9 +118,6 @@ func (e *Engine) refCollection(ctx context.Context, name string) (map[string]map
 		if id := utils.StrVal(item, "id"); id != "" {
 			items[id] = item
 		}
-	}
-	if e.refCache != nil {
-		e.refCache.put(name, items, now)
 	}
 	return items, nil
 }
@@ -135,6 +160,103 @@ func (r *refSet) get(name string) map[string]map[string]any {
 		r.err, r.name = err, name
 	}
 	return items
+}
+
+// require returns items, re-read from the database when any of ids is missing
+// from it.
+//
+// Every replica caches references for refCacheTTL, and a write only drops the
+// cache of the replica that made it. A chain or user created on another replica
+// a moment ago is therefore missing from a warm cache, and the paging decision
+// that reads it is final: "Escalation chain not found" or "Skipped recipient(s)
+// that no longer exist", and nobody is ever paged for that group. So a miss is
+// checked against the database before it is believed. A load made this way is
+// marked verified, so an id that really is gone costs one reload per TTL, not
+// one per alert.
+func (r *refSet) require(items map[string]map[string]any, name string, ids []string) map[string]map[string]any {
+	if r.err != nil {
+		return items
+	}
+	missing := false
+	for _, id := range ids {
+		if _, ok := items[id]; id != "" && !ok {
+			missing = true
+			break
+		}
+	}
+	if !missing {
+		return items
+	}
+	now := time.Now()
+	if r.e.refCache != nil && r.e.refCache.verifiedFresh(name, now) {
+		return items
+	}
+	fresh, err := r.e.loadRefCollection(r.ctx, name)
+	if err != nil {
+		r.err, r.name = err, name
+		return items
+	}
+	if r.e.refCache != nil {
+		r.e.refCache.putEntry(name, refCacheEntry{loadedAt: now, items: fresh, verified: true})
+	}
+	return fresh
+}
+
+// requirePaging applies require to everything a paging decision reads: the
+// chains in chainIDs, the schedules and teams their steps name, and every user
+// those steps, schedules and teams page, plus userIDs. The maps are replaced in
+// place.
+func (r *refSet) requirePaging(chains, scheds, teams, users *map[string]map[string]any, chainIDs, userIDs []string) {
+	*chains = r.require(*chains, "escalation_chains", chainIDs)
+	var schedIDs, teamIDs []string
+	for _, id := range chainIDs {
+		for _, step := range asMaps((*chains)[id]["steps"]) {
+			userIDs = append(userIDs, anyToStringSlice(step["user_ids"])...)
+			userIDs = append(userIDs, utils.StrVal(step, "user_id"))
+			schedIDs = append(schedIDs, utils.StrVal(step, "schedule_id"))
+			teamIDs = append(teamIDs, utils.StrVal(step, "team_id"))
+		}
+	}
+	*scheds = r.require(*scheds, "schedules", schedIDs)
+	*teams = r.require(*teams, "teams", teamIDs)
+	for _, id := range schedIDs {
+		sched := (*scheds)[id]
+		for _, key := range []string{"shifts", "overrides"} {
+			for _, entry := range asMaps(sched[key]) {
+				userIDs = append(userIDs, utils.StrVal(entry, "user_id"))
+			}
+		}
+		if rot, ok := sched["rotation"].(map[string]any); ok {
+			userIDs = append(userIDs, anyToStringSlice(rot["participant_ids"])...)
+		}
+	}
+	for _, id := range teamIDs {
+		userIDs = append(userIDs, anyToStringSlice((*teams)[id]["member_ids"])...)
+	}
+	*users = r.require(*users, "users", userIDs)
+}
+
+// policyUserIDs names the users an integration's notification policy pages.
+func policyUserIDs(integration map[string]any) []string {
+	policy, _ := integration["notification_policy"].(map[string]any)
+	return []string{utils.StrVal(policy, "emergency_user_id"), utils.StrVal(policy, "epic_user_id")}
+}
+
+// asMaps reads a JSON list of objects, whichever concrete slice type holds it.
+func asMaps(v any) []map[string]any {
+	switch xs := v.(type) {
+	case []map[string]any:
+		return xs
+	case []any:
+		out := make([]map[string]any, 0, len(xs))
+		for _, x := range xs {
+			if m, ok := x.(map[string]any); ok {
+				out = append(out, m)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 // Err reports the first failure, naming the collection that caused it.

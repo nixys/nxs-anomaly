@@ -61,6 +61,7 @@ groups:
       - alert: WorkerCycleStuck
         expr: >
           time() - nxs_anomaly_worker_last_cycle_timestamp_seconds > 120
+          and nxs_anomaly_worker_last_cycle_timestamp_seconds > 0
         for: 5m
         labels:
           severity: critical

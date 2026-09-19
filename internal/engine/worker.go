@@ -311,6 +311,16 @@ func (e *Engine) processDueEscalationsOnce(ctx context.Context) ([]map[string]an
 	refs.scheds = rs.get("schedules")
 	refs.integs = rs.get("integrations")
 	refs.chains = rs.get("escalation_chains")
+	var chainIDs, integIDs, userIDs []string
+	for _, g := range dueGroups {
+		chainIDs = append(chainIDs, utils.StrVal(g, "escalation_chain_id"))
+		integIDs = append(integIDs, utils.StrVal(g, "integration_id"))
+	}
+	refs.integs = rs.require(refs.integs, "integrations", integIDs)
+	for _, id := range integIDs {
+		userIDs = append(userIDs, policyUserIDs(refs.integs[id])...)
+	}
+	rs.requirePaging(&refs.chains, &refs.scheds, &refs.teams, &refs.users, chainIDs, userIDs)
 	if err := rs.Err(); err != nil {
 		return nil, err
 	}

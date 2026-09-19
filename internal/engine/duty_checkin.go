@@ -81,8 +81,14 @@ func (e *Engine) ProcessDutyCheckins(ctx context.Context) (int, error) {
 	if len(expired) > 0 {
 		slog.Info("duty_checkins_expired", "count", len(expired), "user_ids", joinStrings(expired, ","))
 	}
-	if missing := onCall - confirmed; missing > 0 {
-		slog.Warn("duty_shift_without_checkin", "missing", missing, "on_call", onCall)
+	// Logged when the gap changes, not every cycle: the gauge above carries the
+	// standing value, and a warning repeated every five seconds for a whole
+	// shift buried everything else in the worker's log.
+	if gap := [2]int{onCall - confirmed, onCall}; gap != e.lastDutyGap {
+		e.lastDutyGap = gap
+		if gap[0] > 0 {
+			slog.Warn("duty_shift_without_checkin", "missing", gap[0], "on_call", onCall)
+		}
 	}
 	return len(expired), nil
 }

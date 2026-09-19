@@ -550,6 +550,13 @@ func (m *memStore) ListCollectionPage(_ context.Context, collection string, filt
 	sort.Slice(matched, func(i, j int) bool {
 		if spec.Field != "" && spec.Field != "id" {
 			a, b := memSortKey(matched[i], spec.Field), memSortKey(matched[j], spec.Field)
+			if a == b && spec.Field == "severity" {
+				// Newest first within a severity, as store.orderClause does.
+				tie := store.SeverityTieBreak(collection)
+				if ta, tb := utils.StrVal(matched[i], tie), utils.StrVal(matched[j], tie); ta != tb {
+					return ta > tb
+				}
+			}
 			if a != b {
 				// Absent sorts last either way, matching NULLS LAST.
 				if a == "" || b == "" {

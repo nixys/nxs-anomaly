@@ -107,6 +107,15 @@ const VIEWS: Array<{
 
 const DEFAULT_SORT = { field: 'last_received_at', desc: true };
 
+// What a bare /alert-groups means: the "firing" view, spelled as the address the
+// landing effect below writes.
+const LANDING_PARAMS = (() => {
+  const firing = VIEWS.find((item) => item.value === 'firing')!;
+  const out = new URLSearchParams({ view: firing.value });
+  for (const [key, value] of Object.entries(firing.filters)) if (value) out.set(key, value);
+  return out;
+})();
+
 export function AlertGroupsPage() {
   const { t, plural, fmt } = useI18n();
   const statusLabel = useStatusLabel();
@@ -116,7 +125,13 @@ export function AlertGroupsPage() {
   // Every filter lives in the address bar. A responder who filtered down to the
   // three groups that matter can now send that list to whoever takes over, and
   // a reload keeps the place instead of dropping back to "everything".
-  const [params, setParams] = useSearchParams();
+  const [addressParams, setParams] = useSearchParams();
+  // A bare address is read as the landing view from the very first render. When
+  // it was read as "no filters" until the effect below rewrote the address, the
+  // list loaded twice in two different orders, and the row under the cursor
+  // moved away as it was being clicked.
+  const bare = addressParams.toString() === '';
+  const params = bare ? LANDING_PARAMS : addressParams;
   const status = params.get('status');
   const severity = params.get('severity');
   const integrationId = params.get('integration');
@@ -159,7 +174,7 @@ export function AlertGroupsPage() {
   // rather than defaulting silently keeps the rule visible — and the link
   // shareable.
   useEffect(() => {
-    if (params.toString() === '') applyView('firing');
+    if (bare) applyView('firing');
     // Only on arrival: re-running this would fight every filter change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

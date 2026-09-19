@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -263,5 +264,48 @@ func TestDutyCommandChecksInAndOut(t *testing.T) {
 	user = ms.data["users"]["usr-alice"]
 	if user["on_duty"] != false || user["duty_checkin_until"] != nil {
 		t.Errorf("after checking out: on_duty=%v until=%v", user["on_duty"], user["duty_checkin_until"])
+	}
+}
+
+// The gap is a standing condition, and the worker checks it every cycle. It was
+// warned about every cycle too — twelve identical lines a minute for as long as
+// a shift went unconfirmed. It is logged when it changes.
+func TestUnconfirmedShiftIsLoggedOnChangeNotEveryCycle(t *testing.T) {
+	prev := slog.Default()
+	defer slog.SetDefault(prev)
+	h := &capturingHandler{}
+	slog.SetDefault(slog.New(h))
+
+	ms := dutyStore(t, nil, dailyRotation("usr-bob"))
+	e := crudEngine(ms)
+	count := func() int {
+		n := 0
+		for _, m := range h.msgs {
+			if m == "duty_shift_without_checkin" {
+				n++
+			}
+		}
+		return n
+	}
+	for i := 0; i < 5; i++ {
+		if _, err := e.ProcessDutyCheckins(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := count(); got != 1 {
+		t.Fatalf("5 cycles with the same unconfirmed shift logged %d warnings, want 1", got)
+	}
+
+	// A second schedule puts another unconfirmed person on call: that is news.
+	second := dailyRotation("usr-carol")
+	second["id"] = "sch-2"
+	if err := ms.UpsertItem(context.Background(), "schedules", second); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.ProcessDutyCheckins(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := count(); got != 2 {
+		t.Errorf("a changed gap logged %d warnings in total, want 2", got)
 	}
 }

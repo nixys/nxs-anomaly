@@ -227,6 +227,8 @@ func (e *Engine) ingestPrepared(ctx context.Context, integration map[string]any,
 	// Windows are read here, with the other reference data, because they are
 	// consulted inside the advisory lock where a database read is not allowed.
 	windowsMap := refs.get("maintenance_windows")
+	refs.requirePaging(&chainsMap, &schedsMap, &teamsMap, &usersMap,
+		append(routeChainIDs(integration), utils.StrVal(integration, "default_chain_id")), policyUserIDs(integration))
 	if err := refs.Err(); err != nil {
 		return nil, err
 	}
