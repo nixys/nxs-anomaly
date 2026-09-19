@@ -112,6 +112,12 @@ func TestRouteAPIChatops(t *testing.T) {
 		t.Errorf("command validation: code=%d, want 400", w.Code)
 	}
 
+	// A typo in a command is the caller's mistake, not a server fault: it used to
+	// answer 500 "internal error" and log an ERROR for every mistyped command.
+	if w := srv.do(http.MethodPost, "/api/v1/chatops/commands", `{"channel_id":"`+id+`","command":"frobnicate"}`); w.Code != http.StatusBadRequest {
+		t.Errorf("unknown command: code=%d body=%s, want 400", w.Code, w.Body.String())
+	}
+
 	if w := srv.do(http.MethodDelete, "/api/v1/chatops/channels/"+id, ""); w.Code != http.StatusOK {
 		t.Errorf("delete channel: code=%d", w.Code)
 	}

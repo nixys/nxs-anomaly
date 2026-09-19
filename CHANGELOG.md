@@ -4,6 +4,31 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning once it reaches 1.0.
 
+## [1.4.3] — 2026-09-19
+
+### Security
+- **A delivery proxy no longer switches the SSRF guard off.** With
+  `NXS_ANOMALY_BLOCK_PRIVATE_WEBHOOKS=true`, every proxied channel skipped the
+  destination check entirely — and `NXS_ANOMALY_DELIVERY_PROXY_URL` is the
+  default for every channel, `webhook` and `issue` included. A webhook to
+  `http://169.254.169.254/` went through the proxy, and on the EE stand the proxy
+  host's metadata service answered. A proxied destination is now checked as far
+  as the service can see it: an IP literal in a private, loopback or link-local
+  range is refused, so is a name that resolves locally to one, and so is a
+  redirect to such a literal. A name with no local answer still goes through for
+  the proxy to resolve. `PROXY.md` says what remains the egress allowlist's job.
+
+### Fixed
+- **An unknown ChatOps command answers 400**, not `500 internal error` with an
+  ERROR in the log. Chat webhooks already showed the person the text; the API
+  treated a typo as a server fault.
+- **Argo CD shows the chart in sync.** The StatefulSets' claim templates carry
+  `apiVersion`, `kind` and `volumeMode` as the API server stores them, and the
+  ClickHouse schema ConfigMap is an ordinary resource instead of a Helm hook;
+  either difference kept an Argo-managed release OutOfSync permanently. Both
+  changes leave a running release as it is: the claim template values are the
+  defaults the cluster already holds.
+
 ## [1.4.2] — 2026-09-19
 
 ### Fixed

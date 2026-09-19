@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"encoding/binary"
 	"io"
 	"net"
@@ -215,14 +216,63 @@ func TestMisconfiguredProxyFailsLoudlyInsteadOfGoingDirect(t *testing.T) {
 	}
 }
 
-func TestBlockPrivateForIsOffOnlyForProxiedChannels(t *testing.T) {
+func TestSSRFGuardModePerChannel(t *testing.T) {
 	s := buildProxySettings("", map[string]string{"telegram": "http://p.internal:3128"}, "")
 	cfg := DeliveryConfig{BlockPrivateWebhooks: true, proxies: s}
-	if cfg.blockPrivateFor("telegram") {
-		t.Error("pre-flight resolution still applied to a proxied channel; this process cannot resolve its destination")
+	if got := cfg.ssrfGuardFor("telegram"); got != guardProxied {
+		t.Errorf("proxied channel guard = %d, want guardProxied: its destination is still judged, just not by a local dial", got)
 	}
-	if !cfg.blockPrivateFor("webhook") {
-		t.Error("SSRF pre-flight was dropped for a channel that goes direct")
+	if got := cfg.ssrfGuardFor("webhook"); got != guardDirect {
+		t.Errorf("direct channel guard = %d, want guardDirect", got)
+	}
+	cfg.BlockPrivateWebhooks = false
+	if got := cfg.ssrfGuardFor("webhook"); got != guardOff {
+		t.Errorf("guard = %d with the guard disabled, want guardOff", got)
+	}
+}
+
+// The default proxy applies to webhooks too, and the proxied pre-flight used
+// to be off entirely: a user-supplied http://169.254.169.254/ went through the
+// proxy and the proxy host's metadata service answered. What this process can
+// judge without dialling, it judges.
+func TestProxiedGuardRefusesWhatItCanJudgeLocally(t *testing.T) {
+	ctx := context.Background()
+	for _, raw := range []string{
+		"http://169.254.169.254/latest/meta-data/",
+		"http://10.0.0.5:8080/hook",
+		"http://127.0.0.1/hook",
+		"http://[::1]/hook",
+		"http://[fd00::1]/hook",
+		"http://localhost/hook", // resolves locally to loopback
+	} {
+		if err := checkWebhookURL(ctx, raw, guardProxied); err == nil {
+			t.Errorf("%s passed the proxied pre-flight", raw)
+		}
+	}
+	for _, raw := range []string{
+		"http://93.184.216.34/hook",
+		"https://hooks.slack.invalid/services/x", // no local answer: the proxy resolves it
+	} {
+		if err := checkWebhookURL(ctx, raw, guardProxied); err != nil {
+			t.Errorf("%s refused by the proxied pre-flight: %v", raw, err)
+		}
+	}
+	if err := checkWebhookURL(ctx, "ftp://93.184.216.34/x", guardProxied); err == nil {
+		t.Error("a non-HTTP scheme passed the proxied pre-flight")
+	}
+}
+
+// Through a proxy the dial guard never sees a redirect hop, so the redirect
+// policy has to refuse a non-public IP literal itself.
+func TestRedirectToAPrivateIPLiteralIsRefused(t *testing.T) {
+	check := deliveryCheckRedirect(isBlockedIP, ChannelPolicy{})
+	req, _ := http.NewRequest(http.MethodGet, "http://169.254.169.254/latest/meta-data/", nil)
+	if err := check(req, []*http.Request{{}}); err == nil {
+		t.Error("redirect to the metadata address was followed")
+	}
+	req, _ = http.NewRequest(http.MethodGet, "http://93.184.216.34/next", nil)
+	if err := check(req, []*http.Request{{}}); err != nil {
+		t.Errorf("redirect to a public address refused: %v", err)
 	}
 }
 

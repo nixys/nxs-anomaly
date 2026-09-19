@@ -212,10 +212,15 @@ accepting deliberately:
 - **the proxy's own address is always allowed**, private included. An egress
   proxy on `10.x` or a sidecar on loopback is an ordinary arrangement, and the
   operator named it, not whoever edits an escalation chain;
-- **the destination's address is not checked at all.** The proxy resolves and
-  dials it, not the service, so neither the up-front check nor the connect-time
-  one could say anything meaningful. On a network with deliberately broken DNS
-  the up-front check would additionally refuse everything;
+- **the destination is checked as far as the service can see it.** The proxy
+  resolves and dials it, so there is no connect-time check; up front, an IP
+  literal in a private, loopback or link-local range is refused, and so is a
+  name that resolves locally to one. A name with no local answer is let
+  through — on a network with deliberately broken DNS that is the normal case —
+  and a name only the proxy maps to an internal address is beyond what the
+  service can judge; `NXS_ANOMALY_EGRESS_ALLOWLIST` is the control for that.
+  Before 1.4.3 the proxied destination was not checked at all, so a webhook to
+  `http://169.254.169.254/` reached the proxy host's metadata service;
 - **still in force**: `NXS_ANOMALY_EGRESS_ALLOWLIST`, against the written URL and
   at every redirect, plus the refusal of non-HTTP schemes and the ten-hop limit;
 - **channels without a proxy are checked in full**, as described in
@@ -227,7 +232,9 @@ accepting deliberately:
 Practical consequence: proxy without reservation the channels with a fixed
 provider address — `telegram`, `slack`, `mattermost`, `mobile`. For `webhook`,
 where the URL is set by whoever edits the chain, turn a proxy on together with
-`NXS_ANOMALY_EGRESS_ALLOWLIST`.
+`NXS_ANOMALY_EGRESS_ALLOWLIST`. Mind that `NXS_ANOMALY_DELIVERY_PROXY_URL` is the
+default for **every** channel, `webhook` and `issue` included; to proxy only
+the providers, set the per-channel variables instead.
 
 ## Checking it
 

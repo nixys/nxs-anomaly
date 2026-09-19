@@ -347,9 +347,10 @@ func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { r
 //
 // What cannot survive is dial-time validation of the *destination* through the
 // proxy: this process never resolves or dials it, the proxy does. For a proxied
-// channel the destination is judged by guardWebhookURL before the request (which
-// resolves the name locally) and by the egress allowlist on every hop, and that
-// is the whole of the protection. It is stated here rather than hidden because
+// channel the destination is judged before the request by guardProxiedHost (IP
+// literals, and names that resolve locally to a non-public address), on every
+// redirect hop by deliveryCheckRedirect (IP literals) and the egress allowlist,
+// and that is the whole of the protection. It is stated here rather than hidden because
 // it is a real reduction, and it is bounded: the channels people proxy point at
 // fixed provider hosts, not at operator-supplied URLs.
 func newProxiedDeliveryClient(timeout time.Duration, blocked func(net.IP) bool, egress ChannelPolicy, ep *proxyEndpoint, s proxySettings) *http.Client {

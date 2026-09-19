@@ -133,20 +133,26 @@ func (cfg DeliveryConfig) proxied(channel string) bool {
 	return ok
 }
 
-// blockPrivateFor decides whether the pre-flight SSRF check applies to a
-// channel's destination URL.
+// ssrfGuardFor decides how the pre-flight SSRF check judges a channel's
+// destination URL.
 //
-// It is off for a proxied channel, and that is not a weakening of the guard so
-// much as an acknowledgement of who resolves the name. The pre-flight resolves
-// the destination locally and refuses private answers; through a proxy this
-// process never resolves or dials the destination at all, so the local answer
-// says nothing about where the request goes — and in the networks people deploy
-// a proxy for, the local answer is commonly no answer, which would turn the
-// guard into "every notification fails". The destination is still judged by the
-// egress allowlist, on the configured URL and on every redirect hop. See
-// newProxiedDeliveryClient.
-func (cfg DeliveryConfig) blockPrivateFor(channel string) bool {
-	return cfg.BlockPrivateWebhooks && !cfg.proxied(channel)
+// Through a proxy this process never dials the destination and often cannot
+// resolve it — in the networks people deploy a proxy for, the local answer is
+// commonly no answer — so the full check would turn into "every notification
+// fails". It used to be switched off for proxied channels altogether, which, with
+// the default proxy applying to webhooks, let a user-supplied private or
+// link-local address through to the proxy's network. A proxied channel now gets
+// the checks that do not depend on dialling: IP literals, and names that resolve
+// locally to a non-public address. See guardProxiedHost.
+func (cfg DeliveryConfig) ssrfGuardFor(channel string) ssrfGuard {
+	switch {
+	case !cfg.BlockPrivateWebhooks:
+		return guardOff
+	case cfg.proxied(channel):
+		return guardProxied
+	default:
+		return guardDirect
+	}
 }
 
 // ChannelPolicy exposes the outbound-channel policy to callers outside the
