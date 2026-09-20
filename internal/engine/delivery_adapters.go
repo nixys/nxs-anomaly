@@ -277,7 +277,10 @@ func postWebhook(ctx context.Context, client *http.Client, url string, payload m
 // return. The SSRF pre-flight is the one chosen for the channel (ssrfGuardFor).
 func postWebhookGuarded(ctx context.Context, client *http.Client, url string, payload map[string]any, guard ssrfGuard, headers map[string]string) deliveryOutcome {
 	if err := checkWebhookURL(ctx, url, guard); err != nil {
-		return failed("http_post", err.Error(), 0, "")
+		// Terminal, like a refusal by the channel policy: the destination does
+		// not change between attempts, so retrying it twice only delays the
+		// moment the reason reaches the timeline.
+		return skipped(skipBlockedDestination, err.Error())
 	}
 	body := []byte(utils.JSONDumps(payload))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))

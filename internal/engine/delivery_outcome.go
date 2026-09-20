@@ -74,6 +74,9 @@ func failed(providerStatus, errMsg string, code int, response string) deliveryOu
 
 // skipped reports that no transport exists for this channel on this
 // deployment. detail explains what would have to be configured.
+// skipBlockedDestination is the reason on a delivery the SSRF guard refused.
+const skipBlockedDestination = "blocked_destination"
+
 func skipped(reason, detail string) deliveryOutcome {
 	return deliveryOutcome{Status: deliverySkipped, ProviderStatus: reason, Err: detail}
 }

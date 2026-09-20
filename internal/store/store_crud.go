@@ -80,7 +80,14 @@ func (s *pgStore) updateCollections(ctx context.Context, loads []LoadSpec, saveC
 	}
 
 	state := NewState()
-	if err := s.loadPartialStateTx(ctx, tx, loads, state); err != nil {
+	// Rows of alert_groups that this transaction will write are locked as they
+	// are read. An operator action and the worker's escalation hold different
+	// advisory locks — resolve_group and the integration's shard — so neither
+	// serialized the other, and both wrote the whole row back: an operator's
+	// resolve, answered 200 and audited, was silently overwritten by the
+	// escalation step the worker had already read (5 of 20 attempts on a stand).
+	// Locking the row is what makes the two orderings the only two outcomes.
+	if err := s.loadPartialStateTx(ctx, tx, loads, state, lockedRows(saveCollections)); err != nil {
 		return nil, err
 	}
 
@@ -122,7 +129,28 @@ func (s *pgStore) updateCollections(ctx context.Context, loads []LoadSpec, saveC
 	return result, nil
 }
 
-func (s *pgStore) loadPartialStateTx(ctx context.Context, tx pgx.Tx, loads []LoadSpec, state *State) error {
+// rowLockedCollections are the collections whose rows are locked for the
+// transaction that will save them. alert_groups carries the state operators and
+// the worker both change; the others are either claimed exclusively already
+// (notifications, via FOR UPDATE SKIP LOCKED) or appended to rather than
+// rewritten, and locking them would serialize unrelated shards.
+var rowLockedCollections = map[string]bool{"alert_groups": true}
+
+func lockedRows(saveCollections []string) map[string]bool {
+	var locked map[string]bool
+	for _, col := range saveCollections {
+		if !rowLockedCollections[col] {
+			continue
+		}
+		if locked == nil {
+			locked = make(map[string]bool, 1)
+		}
+		locked[col] = true
+	}
+	return locked
+}
+
+func (s *pgStore) loadPartialStateTx(ctx context.Context, tx pgx.Tx, loads []LoadSpec, state *State, lockRows map[string]bool) error {
 	for _, spec := range loads {
 		col := spec.Collection
 		table, ok := EntityTables[col]
@@ -138,6 +166,11 @@ func (s *pgStore) loadPartialStateTx(ctx context.Context, tx pgx.Tx, loads []Loa
 			}
 			q += " WHERE " + where
 			args = whereArgs
+		}
+		if lockRows[col] {
+			// Ordered by id so two transactions locking several rows take them
+			// in the same order and cannot deadlock.
+			q += " ORDER BY id FOR UPDATE"
 		}
 		rows, err := tx.Query(ctx, q, args...)
 		if err != nil {

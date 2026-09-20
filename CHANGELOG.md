@@ -4,6 +4,30 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning once it reaches 1.0.
 
+## [1.5.1] — 2026-09-20
+
+### Fixed
+- **An operator's action on an alert group is no longer overwritten by the
+  worker.** Resolve answered 200 and was written to the audit trail, and the
+  group stayed open and paging: the action and the worker's escalation step held
+  different advisory locks — `resolve_group` and the integration's shard — so
+  neither serialized the other, and both wrote the whole row back. On a stand
+  this lost 5 of 20 resolves. Acknowledge, silence and unacknowledge took the
+  same path, and the window is open whenever a group is due: after an
+  unacknowledge, at the end of a WAIT, on a REPEAT, when a silence expires. The
+  rows of `alert_groups` are now locked as the saving transaction reads them,
+  ordered by id so two writers cannot deadlock.
+- **A destination the SSRF guard refuses is terminal.** It was scheduled for
+  retry and tried again a minute and five minutes later, although the address
+  cannot change between attempts; it is now skipped with
+  `blocked_destination`, like a refusal by the channel policy.
+- **`scripts/check-version.sh` refuses a CHANGELOG with two headings for one
+  version.** The release step renames the `[Unreleased]` heading with `sed`, the
+  file carries a second, historical `[Unreleased]` section, and the unanchored
+  substitution renamed both — labelling years-old entries as the new release, in
+  1.3.0 and again in 1.5.0. The 1.5.0 heading on the historical section is
+  restored to `[Unreleased]`.
+
 ## [1.5.0] — 2026-09-20
 
 ### Added
@@ -214,7 +238,7 @@ semantic versioning once it reaches 1.0.
   canary's notifications instead of scanning an unfiltered page, where on an
   installation with history it never appeared.
 
-## [1.5.0] — 2026-09-20
+## [Unreleased]
 
 ### Fixed
 - **Silences and maintenance windows end.** A silence with a duration and a

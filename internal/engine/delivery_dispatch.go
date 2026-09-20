@@ -134,6 +134,9 @@ func (e *Engine) deliverNotificationViaAdapter(ctx context.Context, ntf map[stri
 		if status == "delivered" {
 			return delivered(strDefault(providerResp, "issue"), 0, providerResp)
 		}
+		if status == deliverySkipped {
+			return skipped(skipBlockedDestination, errMsg)
+		}
 		return failed("issue", errMsg, 0, providerResp)
 
 	case "mobile":
@@ -399,7 +402,7 @@ func (e *Engine) deliverIssue(ctx context.Context, payload map[string]any) (stat
 		return "failed", detail, ""
 	}
 	if err := checkWebhookURL(ctx, url, e.deliveryCfg.ssrfGuardFor("issue")); err != nil {
-		return "failed", err.Error(), ""
+		return deliverySkipped, err.Error(), ""
 	}
 	token := utils.StrVal(payload, "token")
 	if token == "" {

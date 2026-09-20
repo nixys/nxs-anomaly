@@ -262,6 +262,23 @@ func TestProxiedGuardRefusesWhatItCanJudgeLocally(t *testing.T) {
 	}
 }
 
+// A destination the guard refuses is terminal: the address does not change
+// between attempts, so retrying it only delays the reason reaching the
+// timeline. It used to be scheduled for retry twice before failing.
+func TestABlockedDestinationIsSkippedNotRetried(t *testing.T) {
+	out := postWebhookGuarded(context.Background(), &http.Client{}, "http://169.254.169.254/latest/meta-data/",
+		map[string]any{"title": "x"}, guardProxied, nil)
+	if out.Status != deliverySkipped {
+		t.Errorf("status = %q, want %q (terminal)", out.Status, deliverySkipped)
+	}
+	if out.ProviderStatus != skipBlockedDestination {
+		t.Errorf("reason = %q, want %q", out.ProviderStatus, skipBlockedDestination)
+	}
+	if !strings.Contains(out.Err, "non-public address") {
+		t.Errorf("detail does not name the cause: %q", out.Err)
+	}
+}
+
 // Through a proxy the dial guard never sees a redirect hop, so the redirect
 // policy has to refuse a non-public IP literal itself.
 func TestRedirectToAPrivateIPLiteralIsRefused(t *testing.T) {
