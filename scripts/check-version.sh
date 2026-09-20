@@ -93,6 +93,20 @@ for lit in $(read_file "$readme" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -u);
 		fail "$readme mentions version '$lit', expected only '$version' (examples take it from the VERSION= line)"
 done
 
+# One heading per version in the CHANGELOG. The release step renames the
+# "[Unreleased]" heading with sed, and the file carries a second, historical
+# "[Unreleased]" section further down: an unanchored substitution renamed both,
+# labelling years-old entries as this release. It happened for 1.3.0 and again
+# for 1.5.0.
+changelog=CHANGELOG.md
+dupe_marker="$(mktemp)"
+read_file "$changelog" | grep -oE '^## \[[^]]+\]' | sort | uniq -d | while IFS= read -r d; do
+	echo "check-version: $changelog has more than one '$d' heading — the release rename hit the historical section too" >&2
+	echo dup >>"$dupe_marker"
+done
+[ -s "$dupe_marker" ] && rc=1
+rm -f "$dupe_marker"
+
 if [ -n "$tag" ]; then
 	[ "$tag" = "v$version" ] ||
 		fail "tag '$tag' does not match VERSION ('$version' → expected tag 'v$version'). Run scripts/set-version.sh ${tag#v} and commit before tagging."
