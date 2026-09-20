@@ -14,6 +14,8 @@ Receive alerts from Prometheus Alertmanager, Grafana or JSON webhooks, notify th
 person on call, and escalate until someone acknowledges. Follow notifications,
 acknowledgements and resolutions in one shared timeline.
 
+![Screenshot 1: Main Page](assets/screenshot1.png)
+
 **Apache 2.0 · Go + PostgreSQL · No message broker or cache required · English and Russian UI**
 
 ## Table of Contents

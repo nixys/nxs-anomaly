@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning once it reaches 1.0.
 
+## [1.5.2] — 2026-09-20
+
+### Changed
+- **The Community README opens on a screenshot of the product**: the Overview
+  page of the demo installation the Quickstart starts, with the on-call
+  engineer, the integration and one critical alert group.
+
 ## [1.5.1] — 2026-09-20
 
 ### Fixed
