@@ -58,10 +58,11 @@ func (s *pgStore) FindIntegrationByKey(ctx context.Context, key string) (map[str
 	return items[0], nil
 }
 
-// FindMobileSessionByToken looks up an active mobile session by token.
-func (s *pgStore) FindMobileSessionByToken(ctx context.Context, token string) (map[string]any, error) {
+// FindMobileSessionByToken looks up a live mobile session by token hash.
+func (s *pgStore) FindMobileSessionByToken(ctx context.Context, tokenHash string) (map[string]any, error) {
 	rows, err := s.pool.Query(ctx,
-		"SELECT data FROM nxs_anomaly_mobile_sessions WHERE token=$1 AND revoked_at IS NULL LIMIT 1", token)
+		`SELECT data FROM nxs_anomaly_mobile_sessions
+		  WHERE token=$1 AND revoked_at IS NULL AND expires_at > now() LIMIT 1`, tokenHash)
 	if err != nil {
 		return nil, err
 	}
@@ -73,6 +74,40 @@ func (s *pgStore) FindMobileSessionByToken(ctx context.Context, token string) (m
 		return nil, nil
 	}
 	return items[0], nil
+}
+
+// CreateMobilePairingCode stores a pairing code hash. Expired codes are swept
+// here rather than by the worker: they are few, and issuing a code is the only
+// thing that adds to the table.
+func (s *pgStore) CreateMobilePairingCode(ctx context.Context, codeHash, userID string, expiresAt time.Time) error {
+	if _, err := s.pool.Exec(ctx,
+		"DELETE FROM nxs_anomaly_mobile_verification_tokens WHERE expires_at <= now()"); err != nil {
+		return err
+	}
+	_, err := s.pool.Exec(ctx,
+		`INSERT INTO nxs_anomaly_mobile_verification_tokens (token, user_id, expires_at)
+		 VALUES ($1, $2, $3)`, codeHash, userID, expiresAt)
+	return err
+}
+
+// RedeemMobilePairingCode deletes the code and returns its user in one
+// statement. An expired code is deleted too, but yields "".
+func (s *pgStore) RedeemMobilePairingCode(ctx context.Context, codeHash string) (string, error) {
+	var userID string
+	var live bool
+	err := s.pool.QueryRow(ctx,
+		`DELETE FROM nxs_anomaly_mobile_verification_tokens WHERE token=$1
+		 RETURNING user_id, expires_at > now()`, codeHash).Scan(&userID, &live)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if !live {
+		return "", nil
+	}
+	return userID, nil
 }
 
 // FindActiveAlertGroup looks up an open alert group by integration+dedupe key.

@@ -4,7 +4,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { SettingsPage } from './SettingsPage';
+import { SettingsPage, mobilePairingUri } from './SettingsPage';
 
 // A ChatOps channel has two independent switches — whether it accepts commands
 // and whether anything is pushed to it — and a webhook that decides whether the
@@ -13,6 +13,9 @@ import { SettingsPage } from './SettingsPage';
 
 const get = vi.fn();
 const put = vi.fn();
+const pairMobile = vi.fn();
+const mobileSessions = vi.fn();
+const revokeMobileSession = vi.fn();
 
 vi.mock('../api/client', () => ({
   api: {
@@ -27,7 +30,12 @@ vi.mock('../api/client', () => ({
   setApiKey: vi.fn(),
   clearApiKey: vi.fn(),
   verifyApiKey: vi.fn(),
-  authApi: { changePassword: vi.fn() },
+  authApi: {
+    changePassword: vi.fn(),
+    pairMobile: () => pairMobile(),
+    mobileSessions: () => mobileSessions(),
+    revokeMobileSession: (id: string) => revokeMobileSession(id),
+  },
 }));
 
 vi.mock('@mantine/notifications', () => ({
@@ -106,6 +114,7 @@ async function openChatops(user: ReturnType<typeof userEvent.setup>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mobileSessions.mockResolvedValue({ items: [] });
 });
 
 describe('SettingsPage ChatOps tab', () => {
@@ -238,5 +247,52 @@ describe('SettingsPage ChatOps tab', () => {
     // Both panels on the tab report it — the channel list and the message log
     // are separate reads of the same unreachable service.
     expect((await screen.findAllByText(/chatops channels unavailable/i)).length).toBeGreaterThan(0);
+  });
+});
+
+describe('SettingsPage mobile pairing', () => {
+  it('shows a one-time code and a QR code for the app', async () => {
+    const user = userEvent.setup();
+    pairMobile.mockResolvedValue({
+      code: 'ABCDE-FGH12',
+      expires_at: '2026-09-21T12:05:00+00:00',
+      server_url: '',
+    });
+    renderPage([]);
+    await user.click(await screen.findByRole('button', { name: /connect a phone/i }));
+
+    expect(await screen.findByTestId('pairing-code')).toHaveTextContent('ABCDE-FGH12');
+    expect(screen.getByAltText(/qr code/i)).toHaveAttribute('src', expect.stringMatching(/^data:image\//));
+  });
+
+  it('puts the server the phone must reach into the link', () => {
+    const pairing = { code: 'ABCDE-FGH12', expires_at: '', server_url: '' };
+    // No public URL configured: the address this page was opened on.
+    expect(mobilePairingUri(pairing, 'https://oncall.example')).toBe(
+      'nxs-anomaly://pair?server=https%3A%2F%2Foncall.example&code=ABCDE-FGH12',
+    );
+    // A configured public URL wins over the origin, which may be internal.
+    expect(mobilePairingUri({ ...pairing, server_url: 'https://public.example' }, 'http://10.0.0.5')).toContain(
+      'server=https%3A%2F%2Fpublic.example',
+    );
+  });
+
+  it('lists signed-in phones and signs one out', async () => {
+    const user = userEvent.setup();
+    const phone = {
+      id: 'msess-1',
+      device_name: 'Pixel 8',
+      platform: 'android',
+      created_at: '2026-09-21T10:00:00+00:00',
+      expires_at: '2026-10-21T10:00:00+00:00',
+    };
+    mobileSessions.mockResolvedValueOnce({ items: [phone] }).mockResolvedValue({ items: [] });
+    revokeMobileSession.mockResolvedValue(undefined);
+    renderPage([]);
+
+    expect(await screen.findByText('Pixel 8')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Revoke' }));
+    await waitFor(() => expect(revokeMobileSession).toHaveBeenCalledWith('msess-1'));
+    await waitFor(() => expect(screen.queryByText('Pixel 8')).not.toBeInTheDocument());
   });
 });

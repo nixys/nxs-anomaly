@@ -92,6 +92,7 @@ A version is the file name without its `.sql` extension:
 | `0027_retention_indexes` | Indexes for the retention sweep: a partial one on `updated_at` of terminal notifications, ones on `created_at` of delivery attempts and web sessions, and one on `actor_id` in the audit trail. The sweep asks the same question — "the oldest N rows past the cutoff" — every worker cycle; without indexes that is a sequential scan of the largest tables every few seconds, on exactly the installation where they are large because retention was just switched on. The actor index also serves pseudonymisation when a user is deleted. See [DATA_INVENTORY.md](DATA_INVENTORY.md). |
 | `0028_oncall_quality_reports` | Persist on-call quality reports: team, period, generation time, format version and JSON digest; index on `(team_id, generated_at)`. |
 | `0029_silence_expiry` | Make time-limited silences end: silenced groups with `silenced_until` get it as `next_run_at`, so the worker returns them to open. Before this, a silence or maintenance window never expired. |
+| `0030_mobile_session_hardening` | Make mobile sessions a credential: an `expires_at` column, the token stored as SHA-256. Sessions issued before (48-bit plaintext tokens, no expiry) are revoked and their tokens erased. The `mobile_verification_tokens` table from 0014 is emptied and holds hashes of one-time phone pairing codes. |
 
 ## The connection to the store code
 
@@ -181,14 +182,16 @@ The expected set of versions is asserted by the Go integration tests.
 ## Retired tables
 
 The Grafana plugin compatibility layer has been removed, together with the
-`grafana_plugins` entity and the QR verification tokens. Five tables remain in
+`grafana_plugins` entity and the QR verification tokens. Four tables remain in
 the schema and are read by nothing:
 
 - `nxs_anomaly_grafana_plugins` (from `0001`);
 - `nxs_anomaly_grafana_notification_policies`,
   `nxs_anomaly_grafana_channel_filters`, `nxs_anomaly_grafana_heartbeats`
-  (from `0011`);
-- `nxs_anomaly_mobile_verification_tokens` (from `0014`).
+  (from `0011`).
+
+`nxs_anomaly_mobile_verification_tokens` (from `0014`) is in use again since
+`0030`: it holds hashes of one-time phone pairing codes.
 
 They were deliberately not dropped in the same release. The expand/contract rule
 in [BACKUP_RESTORE.md](BACKUP_RESTORE.md) requires the previous binary to run

@@ -158,10 +158,19 @@ Connection pool:
 | Variable | Default | |
 |---|---|---|
 | `NXS_ANOMALY_DB_POOL_MAX` | `10` | maximum connections |
-| `NXS_ANOMALY_DB_POOL_MIN` | `1` | idle connections kept |
+| `NXS_ANOMALY_DB_POOL_MIN` | `1` | idle connections kept; `0` keeps none |
 | `NXS_ANOMALY_DB_POOL_MAX_CONN_LIFETIME_SECONDS` | `3600` | shed connections after a failover or through a load balancer |
-| `NXS_ANOMALY_DB_STATEMENT_TIMEOUT_SECONDS` | `30` | per-connection `statement_timeout`; migrations are exempt |
+| `NXS_ANOMALY_DB_STATEMENT_TIMEOUT_SECONDS` | `30` | per-connection `statement_timeout`; migrations are exempt. `0` sends no `statement_timeout` at all — required behind PgBouncer, which rejects startup parameters it is not told to ignore |
 | `NXS_ANOMALY_DB_CONNECT_MAX_WAIT_SECONDS` | `0` | retry the first connection for N seconds. Set it above zero under Kubernetes: the pod may start before the database accepts connections |
+
+`0` is accepted only where the table says what it means. For the pool size, the
+connection lifetime, idle time and health-check period (`…_POOL_MAX`,
+`…_MAX_CONN_LIFETIME_SECONDS`, `…_MAX_CONN_IDLE_SECONDS`, `…_HEALTHCHECK_SECONDS`)
+and for the HTTP timeouts and `NXS_ANOMALY_SESSION_TTL_SECONDS` the minimum is
+`1`: to the database driver and to the HTTP server `0` does not mean "off" but
+"close every connection" or "no timeout". A value that does not parse or is below
+the minimum keeps the default and is logged at start-up as `invalid_setting`
+with the variable's name.
 
 A note from load testing, in case you size this: raising the pool helps only once
 the database has CPU to spare. Against a throttled PostgreSQL a larger pool makes

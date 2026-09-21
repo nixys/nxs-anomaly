@@ -174,6 +174,12 @@ export interface SessionInfo {
   current: boolean;
 }
 
+/** A one-time code for signing the mobile app in as the current user. */
+export type MobilePairing = components['schemas']['MobilePairing'];
+
+/** One of the caller's signed-in phones. */
+export type MobileSessionInfo = components['schemas']['MobileSessionInfo'];
+
 export const authApi = {
   methods: () => api.get<AuthMethods>('/api/v1/auth/methods'),
   me: () => api.get<Identity>('/api/v1/auth/me'),
@@ -188,6 +194,9 @@ export const authApi = {
    */
   sessions: () => api.get<{ items: SessionInfo[] }>('/api/v1/auth/sessions'),
   revokeSession: (id: string) => api.delete<void>(`/api/v1/auth/sessions/${id}`),
+  pairMobile: () => api.post<MobilePairing>('/api/v1/mobile/pairing'),
+  mobileSessions: () => api.get<{ items: MobileSessionInfo[] }>('/api/v1/mobile/sessions'),
+  revokeMobileSession: (id: string) => api.delete<void>(`/api/v1/mobile/sessions/${id}`),
   ssoUrl: (returnTo: string) =>
     `${BASE_URL}/api/v1/auth/oidc/login?return_to=${encodeURIComponent(returnTo)}`,
 };

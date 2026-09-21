@@ -21,7 +21,8 @@ func (d MobileDevice) TypedValues() []any {
 }
 
 // MobileSession is the typed Record wrapper for the mobile_sessions collection.
-// TypedColumns: token, user_id, device_id, revoked_at.
+// TypedColumns: token, user_id, device_id, revoked_at, expires_at.
+// token holds the hash of the session token, never the token itself.
 type MobileSession struct{ mapBacked }
 
 var _ store.Record = MobileSession{}
@@ -36,6 +37,7 @@ func (s MobileSession) TypedValues() []any {
 		tvStr(s.raw, "user_id"),
 		tvStr(s.raw, "device_id"),
 		tvStr(s.raw, "revoked_at"),
+		tvStr(s.raw, "expires_at"),
 	}
 }
 

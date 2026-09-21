@@ -29,7 +29,14 @@ import {
   useHealth,
   useUpdateChatopsChannel,
 } from '../api/hooks';
-import { authApi, getApiKey, type SessionInfo } from '../api/client';
+import qrcode from 'qrcode-generator';
+import {
+  authApi,
+  getApiKey,
+  type MobilePairing,
+  type MobileSessionInfo,
+  type SessionInfo,
+} from '../api/client';
 import type { ChatopsChannel, ChatopsMessage } from '../api/types';
 import { useAuth } from '../auth/AuthProvider';
 import {
@@ -149,6 +156,7 @@ function InstanceTab() {
       </Paper>
 
       {identity?.kind === 'user' && <SessionsCard />}
+      {identity?.kind === 'user' && <PairMobileCard />}
       {identity?.kind === 'user' && <ChangePasswordCard />}
     </Stack>
   );
@@ -252,6 +260,156 @@ function SessionsCard() {
           </Table>
         </Table.ScrollContainer>
       )}
+    </Paper>
+  );
+}
+
+/**
+ * The link the mobile app understands: scanned with the app, or with the phone's
+ * camera, which hands the custom scheme to the app. The server URL is the
+ * configured public one, or else the address this page was opened on — which
+ * is the address the phone needs to reach.
+ */
+export function mobilePairingUri(pairing: MobilePairing, origin: string): string {
+  const server = pairing.server_url || origin;
+  return `nxs-anomaly://pair?server=${encodeURIComponent(server)}&code=${encodeURIComponent(pairing.code)}`;
+}
+
+function qrDataUrl(text: string): string {
+  const qr = qrcode(0, 'M');
+  qr.addData(text);
+  qr.make();
+  return qr.createDataURL(6, 2);
+}
+
+/**
+ * Signs the mobile app in as this person. The code works once and for five
+ * minutes; the phone gets this person's role, capped at responder.
+ */
+function PairMobileCard() {
+  const { t } = useI18n();
+  const [pairing, setPairing] = useState<MobilePairing | null>(null);
+  const [phones, setPhones] = useState<MobileSessionInfo[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [revoking, setRevoking] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const { items } = await authApi.mobileSessions();
+      setPhones(items);
+    } catch (err) {
+      setError(describeError(err, t));
+    }
+  }, [t]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const revoke = async (id: string) => {
+    setRevoking(id);
+    try {
+      await authApi.revokeMobileSession(id);
+      await load();
+    } catch (err) {
+      setError(describeError(err, t));
+    } finally {
+      setRevoking(null);
+    }
+  };
+
+  // The phone signs in while the dialog is open; closing it is when the new
+  // one should appear in the list.
+  const close = () => {
+    setPairing(null);
+    void load();
+  };
+
+  const start = async () => {
+    setBusy(true);
+    try {
+      setPairing(await authApi.pairMobile());
+      setError(null);
+    } catch (err) {
+      setError(describeError(err, t));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const uri = pairing ? mobilePairingUri(pairing, window.location.origin) : '';
+
+  return (
+    <Paper withBorder p="lg">
+      <Title order={5} mb="xs">
+        {t('settings.mobileApp')}
+      </Title>
+      <Text size="sm" c="dimmed" mb="md">
+        {t('settings.mobileAppHelp')}
+      </Text>
+      {error && <Alert color="red">{error}</Alert>}
+      {phones.length > 0 && (
+        <Table verticalSpacing="sm" mb="md">
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>{t('settings.mobileDevice')}</Table.Th>
+              <Table.Th>{t('settings.signedIn')}</Table.Th>
+              <Table.Th>{t('settings.expires')}</Table.Th>
+              <Table.Th w={110} />
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {phones.map((phone) => (
+              <Table.Tr key={phone.id}>
+                <Table.Td>
+                  {phone.device_name || EMPTY_VALUE}{' '}
+                  <Text span size="xs" c="dimmed">
+                    {phone.platform}
+                  </Text>
+                </Table.Td>
+                <Table.Td>
+                  <AbsoluteTime value={phone.created_at} />
+                </Table.Td>
+                <Table.Td>
+                  <AbsoluteTime value={phone.expires_at} />
+                </Table.Td>
+                <Table.Td>
+                  <Button
+                    size="compact-sm"
+                    variant="light"
+                    color="red"
+                    loading={revoking === phone.id}
+                    onClick={() => void revoke(phone.id)}
+                  >
+                    {t('settings.revoke')}
+                  </Button>
+                </Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      )}
+      <Button variant="light" loading={busy} onClick={() => void start()}>
+        {t('settings.mobilePair')}
+      </Button>
+      <Modal opened={pairing !== null} onClose={close} title={t('settings.mobileApp')} centered>
+        {pairing && (
+          <Stack align="center" gap="sm">
+            <img src={qrDataUrl(uri)} alt={t('settings.mobileQrAlt')} width={240} height={240} />
+            <Text size="sm">{t('settings.mobileManual')}</Text>
+            <Text ff="monospace" fw={700} size="xl" data-testid="pairing-code">
+              {pairing.code}
+            </Text>
+            <Text size="xs" ff="monospace" c="dimmed">
+              {pairing.server_url || window.location.origin}
+            </Text>
+            <Text size="xs" c="dimmed">
+              {t('settings.mobileExpires')} <AbsoluteTime value={pairing.expires_at} />
+            </Text>
+          </Stack>
+        )}
+      </Modal>
     </Paper>
   );
 }

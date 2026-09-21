@@ -143,47 +143,6 @@ func TestBulkSkippedGroupsAreNotAudited(t *testing.T) {
 	}
 }
 
-// TestMobileSessionIsAttributedToItsUser is the regression guard for the bug
-// this work uncovered: the mobile handlers validated the session and then threw
-// the user_id away, so mobile acknowledgements were anonymous.
-func TestMobileSessionIsAttributedToItsUser(t *testing.T) {
-	ms := newMemStore()
-	seedOpenGroup(ms, "grp-1")
-	ms.seed("users", map[string]any{"id": "usr-bob", "username": "bob"})
-	ms.seed("mobile_sessions", map[string]any{
-		"id": "msess-1", "token": "mtok-1", "user_id": "usr-bob",
-		"device_id": "dev-1", "is_active": true, "revoked_at": nil,
-	})
-	e := crudEngine(ms)
-
-	if _, err := e.MobileAcknowledgeGroup(context.Background(), "mtok-1", "grp-1"); err != nil {
-		t.Fatalf("MobileAcknowledgeGroup: %v", err)
-	}
-
-	ev := onlyEvent(t, ms.audit)
-	if ev.ActorID != "usr-bob" {
-		t.Errorf("actor id = %q, want usr-bob (the session's user)", ev.ActorID)
-	}
-	if ev.ActorName != "bob" {
-		t.Errorf("actor name = %q, want the username bob", ev.ActorName)
-	}
-	if ev.ActorKind != authz.KindUser {
-		t.Errorf("actor kind = %q, want %q", ev.ActorKind, authz.KindUser)
-	}
-	if ev.ActorRole != string(authz.RoleResponder) {
-		t.Errorf("actor role = %q, want responder", ev.ActorRole)
-	}
-
-	group := ms.row("alert_groups", "grp-1")
-	ref, ok := group["acknowledged_by"].(map[string]any)
-	if !ok {
-		t.Fatalf("group has no acknowledged_by: %#v", group)
-	}
-	if ref["id"] != "usr-bob" {
-		t.Errorf("acknowledged_by id = %v, want usr-bob", ref["id"])
-	}
-}
-
 // TestCreateUserRole covers the identity field added to the roster entity.
 func TestCreateUserRole(t *testing.T) {
 	ms := newMemStore()

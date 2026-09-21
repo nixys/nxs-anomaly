@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS nxs_anomaly_schema_migrations (
 | `0011_grafana_compat` | Таблицы `nxs_anomaly_grafana_notification_policies`, `nxs_anomaly_grafana_channel_filters`, `nxs_anomaly_grafana_heartbeats` — хранение данных слоя совместимости с плагином Grafana OnCall. **Слой удалён**; таблицы остались и не используются, см. «Снятые таблицы» ниже. |
 | `0012_kafka_outbox` | Таблица `nxs_anomaly_kafka_outbox` + индекс по `created_at` для transactional outbox (асинхронная отправка алертов в Kafka, FIFO-публикация worker-циклом). Схема одинакова в обеих редакциях — движение между ними должно быть заменой образа, — но заполняющий её продюсер входит только в enterprise-сборку; в community-сборке таблица существует и остаётся пустой. |
 | `0013_soft_delete_integrations` | Колонка `deleted_at` на integrations + частичный индекс. Soft-delete: удалённые интеграции исключаются из list/ingest, но остаются в БД. |
-| `0014_mobile_verification_tokens` | Таблица `nxs_anomaly_mobile_verification_tokens` + индекс по `expires_at`. Токены QR-верификации удалённого слоя совместимости; таблица не используется, см. «Снятые таблицы» ниже. |
+| `0014_mobile_verification_tokens` | Таблица `nxs_anomaly_mobile_verification_tokens` + индекс по `expires_at`. Токены QR-верификации удалённого слоя совместимости; с `0030` — хэши кодов подключения телефона. |
 | `0015_chatops_messages_created_at_idx` | Expression-индекс `((data->>'created_at'))` на chatops_messages — ускоряет TTL-архивацию старых сообщений. |
 | `0016_due_groups_idx_predicate` | Пересоздание `nxs_anomaly_alert_groups_due_idx` с предикатом `status NOT IN ('resolved','silenced')` — выравнивание с фактическим запросом worker (старый предикат `status='open'` не покрывал acknowledged-группы). |
 | `0017_notification_claim` | Частичный индекс `nxs_anomaly_notifications_claimed_idx` на `(status) WHERE status IN ('delivering','retrying')` для claim-then-deliver (multi-worker безопасная доставка) и reaper застрявших claim'ов. |
@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS nxs_anomaly_schema_migrations (
 | `0027_retention_indexes` | Индексы под retention-свип: частичный по `updated_at` терминальных notifications, по `created_at` попыток доставки и web-сессий, плюс индекс по `actor_id` в аудите. Свип задаёт один и тот же вопрос («самые старые N строк старше отсечки») каждый цикл воркера — без индексов это seq scan самых больших таблиц раз в несколько секунд, ровно на той инсталляции, где они велики потому, что retention только что включили. Индекс по актору обслуживает и псевдонимизацию при удалении пользователя. См. `internal/store/store_retention.go` и [DATA_INVENTORY.md](DATA_INVENTORY.md). |
 | `0028_oncall_quality_reports` | Хранение отчётов качества дежурств: период, команда, дата генерации, версия формата и JSON-дайджест; индекс `(team_id, generated_at)`. |
 | `0029_silence_expiry` | Истечение ограниченного по времени silence: у заглушённых групп с `silenced_until` он записывается в `next_run_at`, и worker возвращает их в `open`. До этого silence и окно обслуживания не истекали. |
+| `0030_mobile_session_hardening` | Мобильные сессии становятся учётными данными: колонка `expires_at`, токен хранится как SHA-256. Сессии, выданные до этого (48-битные токены открытым текстом, без срока), отзываются, а их токены стираются. Таблица `mobile_verification_tokens` из 0014 очищается и хранит хэши одноразовых кодов подключения телефона. |
 
 ## Связь с кодом store
 
@@ -171,8 +172,10 @@ ORDER BY version;
 
 - `nxs_anomaly_grafana_plugins` (из `0001`);
 - `nxs_anomaly_grafana_notification_policies`, `nxs_anomaly_grafana_channel_filters`,
-  `nxs_anomaly_grafana_heartbeats` (из `0011`);
-- `nxs_anomaly_mobile_verification_tokens` (из `0014`).
+  `nxs_anomaly_grafana_heartbeats` (из `0011`).
+
+`nxs_anomaly_mobile_verification_tokens` (из `0014`) снова используется с `0030`:
+в ней хранятся хэши одноразовых кодов подключения телефона.
 
 Они не удалены в том же релизе намеренно. Правило expand/contract из
 [BACKUP_RESTORE.md](BACKUP_RESTORE.md) требует, чтобы предыдущий бинарь работал

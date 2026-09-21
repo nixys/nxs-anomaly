@@ -473,8 +473,25 @@ Delivery reads the same rows through the store and is unaffected.
 | POST | `/api/v1/chatops/commands` |
 | GET/POST | `/api/v1/mobile/devices` |
 | POST | `/api/v1/mobile/sessions` |
-| GET | `/api/v1/mobile/dashboard` (the `X-Mobile-Session` header) |
-| POST | `/api/v1/mobile/alert-groups/{id}/acknowledge`, `/resolve` (the `X-Mobile-Session` header) |
+| POST | `/api/v1/mobile/pairing` — a one-time code to sign a phone in |
+| POST | `/api/v1/mobile/pairing/redeem` — exchange the code for a session (unauthenticated) |
+| DELETE | `/api/v1/mobile/sessions/current` — sign the phone out |
+| GET | `/api/v1/mobile/sessions` — the caller's own phones |
+| DELETE | `/api/v1/mobile/sessions/{id}` — sign one of the caller's phones out (a lost one, say) |
+| GET | `/api/v1/mobile/dashboard` (a mobile session) |
+| POST | `/api/v1/mobile/alert-groups/{id}/acknowledge`, `/resolve` (a mobile session) |
+
+**A mobile session** is a credential of its own: `Authorization: Bearer nxm_…`
+or the `X-Mobile-Session` header. A phone is connected under Settings → Mobile
+app: `POST /mobile/pairing`, made as the signed-in user, issues an
+`XXXXX-XXXXX` code (one use, five minutes), which the app exchanges at
+`POST /mobile/pairing/redeem` for a token. Redemption spends the same budget as
+a password sign-in. The session acts as its user, with their teams, but with the
+role capped at `responder`: a phone answers pages, it does not change
+configuration. The app therefore calls the ordinary `/api/v1/alert-groups/*`
+rather than mobile copies of them. Only the token's SHA-256 is stored; a session
+unused for 30 days expires, and use extends it. An invalid mobile token is a
+failed sign-in (401) even next to a valid cookie.
 
 A channel's `external_id` is what an inbound command names, so only one channel
 per platform may carry it: a second one answers `409`. Commands from a shared

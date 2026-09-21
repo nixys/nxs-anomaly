@@ -1691,7 +1691,30 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List the caller's live mobile sessions (their paired phones) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The caller's phones */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: components["schemas"]["MobileSessionInfo"][];
+                        };
+                    };
+                };
+                403: components["responses"]["Error"];
+            };
+        };
         put?: never;
         /** Create a mobile session */
         post: {
@@ -2731,6 +2754,147 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mobile/pairing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Issue a one-time code to pair a phone as the signed-in user */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Pairing code */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MobilePairing"];
+                    };
+                };
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mobile/pairing/redeem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Exchange a pairing code for a mobile session (shares the sign-in rate limit) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MobilePairingRedeem"];
+                };
+            };
+            responses: {
+                /** @description Issued session */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MobileSessionIssued"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mobile/sessions/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Sign this phone out (revokes the calling mobile session) */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Object"];
+                400: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mobile/sessions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Sign out one of the caller's phones */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Object"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3626,6 +3790,47 @@ export interface components {
             total: number;
             limit: number;
             offset: number;
+        };
+        MobilePairing: {
+            /** @description One-time code, XXXXX-XXXXX (Crockford base32). Case, spaces and dashes are ignored on redemption. */
+            code: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** @description NXS_ANOMALY_PUBLIC_URL, or empty when it is not set (the UI then uses its own origin). */
+            server_url: string;
+        };
+        MobilePairingRedeem: {
+            code: string;
+            /** @description android or ios */
+            platform: string;
+            device_name?: string;
+            /** @description Optional push token reference. */
+            push_token?: string;
+        };
+        MobileSessionIssued: {
+            /** @description The session token. Returned once; only its hash is stored. */
+            token: string;
+            /**
+             * Format: date-time
+             * @description Extended on use; a session unused for 30 days expires.
+             */
+            expires_at: string;
+            session_id: string;
+            device_id: string;
+            user: {
+                id: string;
+                name: string;
+                username: string;
+            };
+        };
+        MobileSessionInfo: {
+            id: string;
+            device_name: string;
+            platform: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
         };
     };
     responses: {

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nixys/nxs-anomaly/internal/authz"
+	"github.com/nixys/nxs-anomaly/internal/engine"
 	"github.com/nixys/nxs-anomaly/internal/utils"
 )
 
@@ -23,7 +24,15 @@ import (
 // keys configured. An invalid cookie falls through rather than rejecting: a
 // stale cookie left over from a previous deployment must not lock out a caller
 // who also presents a valid key.
+//
+// A mobile session is its own credential and is checked first when presented:
+// the X-Mobile-Session header, or a bearer token carrying the mobile prefix. It
+// is not a fallback — an invalid mobile token is a failed authentication, not
+// a reason to try the cookie next to it.
 func (srv *Server) authenticate(r *http.Request) (authz.Actor, bool) {
+	if token := mobileToken(r); token != "" {
+		return srv.mobileActor(r, token)
+	}
 	if actor, ok := srv.sessionActor(r); ok {
 		return actor, true
 	}
@@ -85,6 +94,53 @@ func (srv *Server) sessionActor(r *http.Request) (authz.Actor, bool) {
 		// Fail closed: a membership lookup that failed cannot be read as "this
 		// person is in no team", which would silently narrow their view, nor
 		// as "in every team", which would widen it.
+		slog.Error("team_scope_lookup_failed", "user_id", actor.ID, "error", err)
+		return authz.Actor{}, false
+	}
+	return actor, true
+}
+
+// mobileSessionHeader is how the first mobile API carried the session. The app
+// sends a bearer token instead; the header keeps older callers working.
+const mobileSessionHeader = "X-Mobile-Session"
+
+// mobileToken returns the mobile session token the request presents, if any.
+func mobileToken(r *http.Request) string {
+	if v := r.Header.Get(mobileSessionHeader); v != "" {
+		return v
+	}
+	if v := presentedToken(r); strings.HasPrefix(v, engine.MobileTokenPrefix) {
+		return v
+	}
+	return ""
+}
+
+// mobileActor resolves a mobile session to the person it belongs to.
+//
+// The person keeps their own role and team scope, capped at responder: a phone
+// is for answering pages, and a lost one should not be able to rewrite
+// escalation chains. A viewer's phone stays read-only.
+func (srv *Server) mobileActor(r *http.Request, token string) (authz.Actor, bool) {
+	if srv.eng == nil {
+		return authz.Actor{}, false
+	}
+	_, user, err := srv.eng.AuthenticateMobileSession(r.Context(), token)
+	if err != nil {
+		slog.Error("mobile_session_lookup_failed", "error", err)
+		return authz.Actor{}, false
+	}
+	if user == nil {
+		return authz.Actor{}, false
+	}
+	role := authz.ParseRole(utils.StrVal(user, "role"))
+	if !role.Valid() {
+		return authz.Actor{}, false
+	}
+	if authz.RoleRank(role) > authz.RoleRank(authz.RoleResponder) {
+		role = authz.RoleResponder
+	}
+	actor := userActor(user, role)
+	if err := srv.applyTeamScope(r.Context(), &actor); err != nil {
 		slog.Error("team_scope_lookup_failed", "user_id", actor.ID, "error", err)
 		return authz.Actor{}, false
 	}
@@ -208,9 +264,14 @@ func requiredAction(method, path string) authz.Action {
 	// Choosing the language and timezone you read the product in belongs here
 	// too: it changes nothing anybody else can see, and a viewer paged at 3am
 	// should not need an admin to get the UI into their own language.
+	// Pairing a phone and signing it out are the same kind of thing: the
+	// caller's own sessions. The phone gets the caller's role, capped, so a
+	// viewer pairing one gains nothing.
 	case path == "/api/v1/auth/me", path == "/api/v1/auth/password",
 		path == "/api/v1/auth/preferences",
-		hasPrefixPath(path, "/api/v1/auth/sessions"):
+		hasPrefixPath(path, "/api/v1/auth/sessions"),
+		path == "/api/v1/mobile/pairing",
+		method == http.MethodDelete && hasPrefixPath(path, "/api/v1/mobile/sessions"):
 		return authz.ActionRead
 	// Exporting a person's data is a GET, and the read floor below would let any
 	// authenticated principal pull somebody's addresses, paging history and
