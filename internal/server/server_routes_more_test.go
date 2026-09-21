@@ -3,26 +3,8 @@ package server
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 )
-
-// doHdr is do() with request headers (mobile session, etc.).
-func (srv *Server) doHdr(method, path, body string, headers map[string]string) *httptest.ResponseRecorder {
-	var r *http.Request
-	if body == "" {
-		r = httptest.NewRequest(method, path, nil)
-	} else {
-		r = httptest.NewRequest(method, path, strings.NewReader(body))
-	}
-	for k, v := range headers {
-		r.Header.Set(k, v)
-	}
-	w := httptest.NewRecorder()
-	srv.routeAPI(w, r)
-	return w
-}
 
 func TestRouteAPIScheduleLifecycle(t *testing.T) {
 	srv, _ := newTestServer()
@@ -120,47 +102,6 @@ func TestRouteAPIChatops(t *testing.T) {
 
 	if w := srv.do(http.MethodDelete, "/api/v1/chatops/channels/"+id, ""); w.Code != http.StatusOK {
 		t.Errorf("delete channel: code=%d", w.Code)
-	}
-}
-
-func TestRouteAPIMobileFlow(t *testing.T) {
-	srv, st := newTestServer()
-	ctx := context.Background()
-
-	// Build a user → device → session chain through the engine.
-	user, _ := srv.eng.CreateUser(ctx, map[string]any{"name": "Mob"})
-	uid := user["id"].(string)
-	dev, err := srv.eng.RegisterMobileDevice(ctx, map[string]any{"user_id": uid, "platform": "ios", "push_token": "tok"})
-	if err != nil {
-		t.Fatalf("register device: %v", err)
-	}
-	sess, err := srv.eng.CreateMobileSession(ctx, map[string]any{"user_id": uid, "device_id": dev["id"]})
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-	token := sess["token"].(string)
-	st.Seed("alert_groups", map[string]any{"id": "mg1", "status": "open", "logs": []any{}})
-
-	// Dashboard requires the session header.
-	if w := srv.do(http.MethodGet, "/api/v1/mobile/dashboard", ""); w.Code != http.StatusBadRequest {
-		t.Errorf("dashboard without header: code=%d, want 400", w.Code)
-	}
-	if w := srv.doHdr(http.MethodGet, "/api/v1/mobile/dashboard", "", map[string]string{"X-Mobile-Session": token}); w.Code != http.StatusOK {
-		t.Errorf("dashboard: code=%d", w.Code)
-	}
-
-	// Acknowledge via mobile (segment(path,4) id extraction + session header).
-	w := srv.doHdr(http.MethodPost, "/api/v1/mobile/alert-groups/mg1/acknowledge", "", map[string]string{"X-Mobile-Session": token})
-	if w.Code != http.StatusOK {
-		t.Fatalf("mobile ack: code=%d body=%s", w.Code, w.Body.String())
-	}
-	if st.Row("alert_groups", "mg1")["status"] != "acknowledged" {
-		t.Errorf("group not acknowledged via mobile")
-	}
-
-	// Missing session header → 400.
-	if w := srv.do(http.MethodPost, "/api/v1/mobile/alert-groups/mg1/resolve", ""); w.Code != http.StatusBadRequest {
-		t.Errorf("mobile resolve without header: code=%d, want 400", w.Code)
 	}
 }
 

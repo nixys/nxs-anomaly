@@ -2,7 +2,10 @@ package engine
 
 import (
 	"context"
+	"crypto/rand"
+	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -52,17 +55,111 @@ func (e *Engine) RegisterMobileDevice(ctx context.Context, payload map[string]an
 	return result.(map[string]any), nil
 }
 
+// MobileSessionTTL is how long a mobile session lives without being used. Use
+// extends it (see AuthenticateMobileSession), so a phone that is opened at
+// least once a month stays signed in; one left in a drawer does not.
+const MobileSessionTTL = 30 * 24 * time.Hour
+
+// MobileTokenPrefix marks a bearer token as a mobile session rather than an API
+// key, so authentication knows which of the two to look up.
+const MobileTokenPrefix = "nxm_"
+
+// mobilePairingTTL bounds how long a pairing code shown on screen stays usable.
+const mobilePairingTTL = 5 * time.Minute
+
+// ErrPairingCodeInvalid is returned for a pairing code that is unknown, already
+// used or expired. The three are not told apart: saying which would tell
+// someone guessing codes that they found a real one.
+var ErrPairingCodeInvalid = errors.New("pairing code is invalid or expired")
+
+// pairingAlphabet is Crockford's base32: no I, L, O or U, so a code read off a
+// screen and typed by hand cannot be mistyped into a different valid code.
+const pairingAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+// newPairingCode returns 10 symbols (50 bits), shown as XXXXX-XXXXX. That is
+// short enough to type, and with a five-minute life, one use and the sign-in
+// rate limit on redemption it is not guessable.
+func newPairingCode() (string, error) {
+	buf := make([]byte, 10)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	for i, b := range buf {
+		buf[i] = pairingAlphabet[b&31]
+	}
+	return string(buf[:5]) + "-" + string(buf[5:]), nil
+}
+
+// normalizePairingCode maps what a person typed onto the canonical code:
+// case, spaces and dashes do not matter, and the letters Crockford excludes
+// are read as the digits they look like.
+func normalizePairingCode(code string) string {
+	code = strings.ToUpper(code)
+	code = strings.NewReplacer("-", "", " ", "", "O", "0", "I", "1", "L", "1").Replace(code)
+	if len(code) != 10 {
+		return code
+	}
+	return code[:5] + "-" + code[5:]
+}
+
+func newMobileSessionToken() (string, error) {
+	token, err := authz.NewSessionToken()
+	if err != nil {
+		return "", err
+	}
+	return MobileTokenPrefix + token, nil
+}
+
+// newMobileSession builds a session record and returns it with its token. Only
+// the token's hash is stored; the token itself exists in the response to the
+// caller who is issued it and nowhere else.
+func newMobileSession(userID, deviceID string, now time.Time) (map[string]any, string, error) {
+	token, err := newMobileSessionToken()
+	if err != nil {
+		return nil, "", err
+	}
+	ts := utils.ToISO(now)
+	return map[string]any{
+		"id":         utils.MakeID("msess"),
+		"token":      authz.HashSessionToken(token),
+		"user_id":    userID,
+		"device_id":  deviceID,
+		"is_active":  true,
+		"created_at": ts,
+		"updated_at": ts,
+		"expires_at": utils.ToISO(now.Add(MobileSessionTTL)),
+		"revoked_at": nil,
+	}, token, nil
+}
+
+// issuedSession is what the caller who receives a session sees: the record
+// with the plaintext token in place of the stored hash.
+func issuedSession(session map[string]any, token string) map[string]any {
+	out := make(map[string]any, len(session))
+	for k, v := range session {
+		out[k] = v
+	}
+	out["token"] = token
+	return out
+}
+
+// CreateMobileSession issues a session for a registered device. It is the
+// administrative path (and what seed-demo uses); a person pairs their own
+// phone through CreateMobilePairing / RedeemMobilePairing instead.
 func (e *Engine) CreateMobileSession(ctx context.Context, payload map[string]any) (map[string]any, error) {
 	if err := utils.EnsureRequired(payload, []string{"user_id", "device_id"}); err != nil {
 		return nil, errValidation(err.Error())
 	}
-	ts := utils.ToISO(utils.UTCNow())
 	userID := utils.StrVal(payload, "user_id")
 	if err := e.ensureUsersExist(ctx, []string{userID}); err != nil {
 		return nil, err
 	}
 	deviceID := utils.StrVal(payload, "device_id")
-	result, err := e.store.UpdateCollectionsFiltered(ctx, loadItems("mobile_devices", deviceID), []string{"mobile_sessions"},
+	session, token, err := newMobileSession(userID, deviceID, utils.UTCNow())
+	if err != nil {
+		return nil, err
+	}
+	_, err = e.store.UpdateCollectionsFiltered(ctx, loadItems("mobile_devices", deviceID), []string{"mobile_sessions"},
 		func(state *store.State) (any, error) {
 			device := state.MobileDevices[deviceID]
 			if device == nil {
@@ -71,34 +168,237 @@ func (e *Engine) CreateMobileSession(ctx context.Context, payload map[string]any
 			if utils.StrVal(device, "user_id") != userID {
 				return nil, fmt.Errorf("device does not belong to user")
 			}
-			session := map[string]any{
-				"id":         utils.MakeID("msess"),
-				"token":      utils.MakeID("mtok"),
-				"user_id":    userID,
-				"device_id":  deviceID,
-				"is_active":  true,
-				"created_at": ts,
-				"updated_at": ts,
-				"revoked_at": nil,
-			}
 			state.MobileSessions[session["id"].(string)] = session
-			return session, nil
+			return nil, nil
 		}, advisoryLock["create_mobile_session"])
 	if err != nil {
 		return nil, err
 	}
-	return result.(map[string]any), nil
+	return issuedSession(session, token), nil
 }
 
-func (e *Engine) GetMobileDashboard(ctx context.Context, sessionToken string) (map[string]any, error) {
-	session, err := e.store.FindMobileSessionByToken(ctx, sessionToken)
+// CreateMobilePairing issues a one-time code with which the calling person
+// signs a phone in as themselves. The web UI shows it as a QR code.
+func (e *Engine) CreateMobilePairing(ctx context.Context) (map[string]any, error) {
+	actor := authz.FromContext(ctx)
+	if actor.Kind != authz.KindUser || actor.ID == "" {
+		return nil, errForbidden("only a signed-in user can pair a phone")
+	}
+	code, err := newPairingCode()
 	if err != nil {
 		return nil, err
 	}
-	if session == nil {
-		return nil, errNotFound("mobile session not found")
+	expiresAt := utils.UTCNow().Add(mobilePairingTTL)
+	if err := e.store.CreateMobilePairingCode(ctx, authz.HashSessionToken(code), actor.ID, expiresAt); err != nil {
+		return nil, err
 	}
-	userID := utils.StrVal(session, "user_id")
+	return map[string]any{
+		"code":       code,
+		"expires_at": utils.ToISO(expiresAt),
+		// Empty when NXS_ANOMALY_PUBLIC_URL is not set; the UI then uses the
+		// address it was opened on, which is the one the phone needs anyway.
+		"server_url": e.PublicURL(),
+	}, nil
+}
+
+// RedeemMobilePairing exchanges a pairing code for a device and a session. It
+// is called without authentication — the code is the credential — so the
+// caller must rate-limit it.
+func (e *Engine) RedeemMobilePairing(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	code := normalizePairingCode(utils.StrVal(payload, "code"))
+	platform := strings.ToLower(strings.TrimSpace(utils.StrVal(payload, "platform")))
+	if code == "" || platform == "" {
+		return nil, errValidation("code and platform are required")
+	}
+	userID, err := e.store.RedeemMobilePairingCode(ctx, authz.HashSessionToken(code))
+	if err != nil {
+		return nil, err
+	}
+	if userID == "" {
+		return nil, ErrPairingCodeInvalid
+	}
+	user, err := e.store.GetItem(ctx, "users", userID)
+	if err != nil {
+		return nil, err
+	}
+	// The person may have been deleted or lost their role in the five minutes
+	// the code was on screen.
+	if user == nil || !authz.ParseRole(utils.StrVal(user, "role")).Valid() {
+		return nil, ErrPairingCodeInvalid
+	}
+	now := utils.UTCNow()
+	ts := utils.ToISO(now)
+	device := map[string]any{
+		"id":        utils.MakeID("mdev"),
+		"user_id":   userID,
+		"device_id": utils.MakeID("devid"),
+		"platform":  platform,
+		// Optional: the app has no push channel yet, and a device without one
+		// is still a place the person is signed in.
+		"push_token":  utils.StrVal(payload, "push_token"),
+		"device_name": utils.StrVal(payload, "device_name"),
+		"active":      true,
+		"created_at":  ts,
+		"updated_at":  ts,
+	}
+	session, token, err := newMobileSession(userID, utils.StrVal(device, "id"), now)
+	if err != nil {
+		return nil, err
+	}
+	actorCtx := authz.NewContext(ctx, authz.Actor{
+		ID: userID, Kind: authz.KindUser, DisplayName: utils.StrVal(user, "username"),
+		Role: authz.ParseRole(utils.StrVal(user, "role")),
+	})
+	_, err = e.store.UpdateCollections(actorCtx, nil, []string{"mobile_devices", "mobile_sessions"},
+		func(state *store.State) (any, error) {
+			state.MobileDevices[utils.StrVal(device, "id")] = device
+			state.MobileSessions[utils.StrVal(session, "id")] = session
+			e.auditIn(state, actorCtx, AuditCreate, "mobile_device", utils.StrVal(device, "id"),
+				map[string]any{"user_id": userID, "platform": platform, "via": "pairing"})
+			return nil, nil
+		}, advisoryLock["register_mobile_device"])
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"token":      token,
+		"expires_at": session["expires_at"],
+		"session_id": session["id"],
+		"device_id":  device["id"],
+		"user": map[string]any{
+			"id":       userID,
+			"name":     utils.StrVal(user, "name"),
+			"username": utils.StrVal(user, "username"),
+		},
+	}, nil
+}
+
+// AuthenticateMobileSession resolves a mobile session token to its session and
+// the current user record, or (nil, nil) when the token is not a live session.
+//
+// The user is re-read on every request, as for web sessions, so a deleted user
+// or a withdrawn role takes effect immediately. A session in use is extended,
+// at most once a day, so the extension is not a write per request.
+func (e *Engine) AuthenticateMobileSession(ctx context.Context, token string) (session, user map[string]any, err error) {
+	session, err = e.store.FindMobileSessionByToken(ctx, authz.HashSessionToken(token))
+	if err != nil || session == nil {
+		return nil, nil, err
+	}
+	user, err = e.store.GetItem(ctx, "users", utils.StrVal(session, "user_id"))
+	if err != nil || user == nil {
+		return nil, nil, err
+	}
+	now := utils.UTCNow()
+	if exp, perr := time.Parse(time.RFC3339, utils.StrVal(session, "expires_at")); perr == nil &&
+		exp.Sub(now) < MobileSessionTTL-24*time.Hour {
+		e.extendMobileSession(ctx, utils.StrVal(session, "id"), now)
+	}
+	return session, user, nil
+}
+
+// extendMobileSession is best effort: failing to extend costs the person a
+// sign-in a month from now, which is no reason to fail the request they made.
+func (e *Engine) extendMobileSession(ctx context.Context, sessionID string, now time.Time) {
+	_, err := e.store.UpdateCollectionsFiltered(ctx, loadItems("mobile_sessions", sessionID), []string{"mobile_sessions"},
+		func(state *store.State) (any, error) {
+			sess := state.MobileSessions[sessionID]
+			if sess == nil || sess["revoked_at"] != nil {
+				return nil, nil
+			}
+			sess["expires_at"] = utils.ToISO(now.Add(MobileSessionTTL))
+			sess["updated_at"] = utils.ToISO(now)
+			return nil, nil
+		}, advisoryLock["create_mobile_session"])
+	if err != nil {
+		slog.Warn("mobile_session_extend_failed", "session_id", sessionID, "error", err)
+	}
+}
+
+// RevokeMobileSession signs a phone out by its own token.
+func (e *Engine) RevokeMobileSession(ctx context.Context, token string) error {
+	session, err := e.store.FindMobileSessionByToken(ctx, authz.HashSessionToken(token))
+	if err != nil {
+		return err
+	}
+	if session == nil {
+		return nil
+	}
+	return e.revokeMobileSession(ctx, utils.StrVal(session, "id"), utils.StrVal(session, "user_id"))
+}
+
+// RevokeOwnMobileSession signs one of the caller's phones out — the lost one,
+// typically, which cannot sign itself out.
+func (e *Engine) RevokeOwnMobileSession(ctx context.Context, sessionID string) error {
+	actor := authz.FromContext(ctx)
+	if actor.Kind != authz.KindUser || actor.ID == "" {
+		return errForbidden("only a signed-in user has mobile sessions")
+	}
+	return e.revokeMobileSession(ctx, sessionID, actor.ID)
+}
+
+// revokeMobileSession revokes a session only if it belongs to userID, checked
+// under the lock, so a guessed id belonging to someone else is simply not found.
+// Revoking rather than deleting keeps the row, like web sessions.
+func (e *Engine) revokeMobileSession(ctx context.Context, sessionID, userID string) error {
+	_, err := e.store.UpdateCollectionsFiltered(ctx, loadItems("mobile_sessions", sessionID), []string{"mobile_sessions"},
+		func(state *store.State) (any, error) {
+			sess := state.MobileSessions[sessionID]
+			if sess == nil || utils.StrVal(sess, "user_id") != userID {
+				return nil, errNotFound(fmt.Sprintf("mobile session %s not found", sessionID))
+			}
+			if sess["revoked_at"] != nil {
+				return nil, nil
+			}
+			ts := utils.ToISO(utils.UTCNow())
+			sess["revoked_at"] = ts
+			sess["is_active"] = false
+			sess["updated_at"] = ts
+			return nil, nil
+		}, advisoryLock["create_mobile_session"])
+	return err
+}
+
+// ListOwnMobileSessions shows the caller where their phones are signed in.
+// The token hash stays on the server.
+func (e *Engine) ListOwnMobileSessions(ctx context.Context) (map[string]any, error) {
+	actor := authz.FromContext(ctx)
+	if actor.Kind != authz.KindUser || actor.ID == "" {
+		return nil, errForbidden("only a signed-in user has mobile sessions")
+	}
+	sessions, err := e.store.ListItemsIn(ctx, "mobile_sessions", "user_id", []any{actor.ID})
+	if err != nil {
+		return nil, err
+	}
+	devices, err := e.store.ListItemsIn(ctx, "mobile_devices", "user_id", []any{actor.ID})
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]map[string]any, len(devices))
+	for _, d := range devices {
+		byID[utils.StrVal(d, "id")] = d
+	}
+	now := utils.UTCNow()
+	items := []any{}
+	for _, sess := range sessions {
+		exp, err := time.Parse(time.RFC3339, utils.StrVal(sess, "expires_at"))
+		if sess["revoked_at"] != nil || err != nil || !exp.After(now) {
+			continue
+		}
+		device := byID[utils.StrVal(sess, "device_id")]
+		items = append(items, map[string]any{
+			"id":          sess["id"],
+			"device_name": utils.StrVal(device, "device_name"),
+			"platform":    utils.StrVal(device, "platform"),
+			"created_at":  sess["created_at"],
+			"expires_at":  sess["expires_at"],
+		})
+	}
+	return map[string]any{"items": items}, nil
+}
+
+// GetMobileDashboard is the phone's home screen for userID: the groups that
+// concern them and the schedules they are on call in right now.
+func (e *Engine) GetMobileDashboard(ctx context.Context, userID string) (map[string]any, error) {
 
 	// Point reads instead of full-collection loads: the user by id, the
 	// user's notifications via the typed user_id index, unresolved groups via
@@ -162,7 +462,6 @@ func (e *Engine) GetMobileDashboard(ctx context.Context, sessionToken string) (m
 		}
 	}
 	return map[string]any{
-		"session":               session,
 		"user":                  user,
 		"assigned_alert_groups": activeGroups,
 		"on_call":               oncall,
@@ -217,64 +516,6 @@ func groupIsRelevantToUser(state *store.State, group map[string]any, userID stri
 		}
 	}
 	return false
-}
-
-// MobileAcknowledgeGroup acknowledges a group via mobile session token.
-//
-// The session identifies a user, so the transition is attributed to them rather
-// than to whatever principal authenticated the HTTP call.
-func (e *Engine) MobileAcknowledgeGroup(ctx context.Context, sessionToken, groupID string) (map[string]any, error) {
-	ctx, err := e.mobileActorContext(ctx, sessionToken)
-	if err != nil {
-		return nil, err
-	}
-	return e.AcknowledgeGroup(ctx, groupID)
-}
-
-// MobileResolveGroup resolves a group via mobile session token.
-func (e *Engine) MobileResolveGroup(ctx context.Context, sessionToken, groupID string) (map[string]any, error) {
-	ctx, err := e.mobileActorContext(ctx, sessionToken)
-	if err != nil {
-		return nil, err
-	}
-	return e.ResolveGroup(ctx, groupID)
-}
-
-// mobileActorContext validates the session and returns a context carrying the
-// session's user as the actor.
-//
-// Before this existed the session was validated and its user_id thrown away, so
-// mobile acknowledgements were indistinguishable from anonymous ones. A mobile
-// session grants RoleResponder: it can act on alerts and nothing else.
-func (e *Engine) mobileActorContext(ctx context.Context, sessionToken string) (context.Context, error) {
-	session, err := e.validateMobileSession(ctx, sessionToken)
-	if err != nil {
-		return nil, err
-	}
-	userID := utils.StrVal(session, "user_id")
-	name := userID
-	if user, err := e.store.GetItem(ctx, "users", userID); err == nil && user != nil {
-		if u := utils.StrVal(user, "username"); u != "" {
-			name = u
-		}
-	}
-	return authz.NewContext(ctx, authz.Actor{
-		ID:          userID,
-		Kind:        authz.KindUser,
-		DisplayName: name,
-		Role:        authz.RoleResponder,
-	}), nil
-}
-
-func (e *Engine) validateMobileSession(ctx context.Context, token string) (map[string]any, error) {
-	session, err := e.store.FindMobileSessionByToken(ctx, token)
-	if err != nil {
-		return nil, err
-	}
-	if session == nil {
-		return nil, errNotFound("mobile session not found")
-	}
-	return session, nil
 }
 
 // SendTestPush pushes a test notification to every active device of a user and

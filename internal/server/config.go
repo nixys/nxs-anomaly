@@ -150,12 +150,12 @@ func ConfigFromEnv() Config {
 		PollInterval:       pollInterval,
 		ShutdownTimeout:    shutdownTimeout,
 		WorkerAddr:         workerAddr,
-		WorkerStallTimeout: envDurationSeconds("NXS_ANOMALY_WORKER_STALL_TIMEOUT_SECONDS", 0),
+		WorkerStallTimeout: utils.EnvSeconds("NXS_ANOMALY_WORKER_STALL_TIMEOUT_SECONDS", 0, 0),
 		WorkerHeartbeatURL: os.Getenv("NXS_ANOMALY_WORKER_HEARTBEAT_URL"),
 		WebhookRate:        webhookRate,
 		APIRate:            apiRate,
 		AllowAnonymous:     os.Getenv("NXS_ANOMALY_ALLOW_ANONYMOUS") == "true",
-		SessionTTL:         envDurationSeconds("NXS_ANOMALY_SESSION_TTL_SECONDS", 12*time.Hour),
+		SessionTTL:         utils.EnvSeconds("NXS_ANOMALY_SESSION_TTL_SECONDS", 12*time.Hour, 1),
 		// Note the comparison: the attribute is dropped only on an explicit
 		// "false", so a typo in the variable leaves the cookie Secure.
 		SessionCookieSecure:    os.Getenv("NXS_ANOMALY_SESSION_COOKIE_SECURE") != "false",
@@ -165,10 +165,12 @@ func ConfigFromEnv() Config {
 		BootstrapAdminPassword: os.Getenv("NXS_ANOMALY_BOOTSTRAP_ADMIN_PASSWORD"),
 		StartScheduler:         os.Getenv("NXS_ANOMALY_START_SCHEDULER") != "false",
 		TrustedProxies:         trustedProxies,
-		ReadHeaderTimeout:      envDurationSeconds("NXS_ANOMALY_HTTP_READ_HEADER_TIMEOUT_SECONDS", 5*time.Second),
-		ReadTimeout:            envDurationSeconds("NXS_ANOMALY_HTTP_READ_TIMEOUT_SECONDS", 15*time.Second),
-		WriteTimeout:           envDurationSeconds("NXS_ANOMALY_HTTP_WRITE_TIMEOUT_SECONDS", 30*time.Second),
-		IdleTimeout:            envDurationSeconds("NXS_ANOMALY_HTTP_IDLE_TIMEOUT_SECONDS", 60*time.Second),
+		// No zero here: to net/http it means "no timeout", which switches off
+		// the slowloris protection these exist for.
+		ReadHeaderTimeout: utils.EnvSeconds("NXS_ANOMALY_HTTP_READ_HEADER_TIMEOUT_SECONDS", 5*time.Second, 1),
+		ReadTimeout:       utils.EnvSeconds("NXS_ANOMALY_HTTP_READ_TIMEOUT_SECONDS", 15*time.Second, 1),
+		WriteTimeout:      utils.EnvSeconds("NXS_ANOMALY_HTTP_WRITE_TIMEOUT_SECONDS", 30*time.Second, 1),
+		IdleTimeout:       utils.EnvSeconds("NXS_ANOMALY_HTTP_IDLE_TIMEOUT_SECONDS", 60*time.Second, 1),
 	}
 }
 
@@ -185,17 +187,6 @@ func rateFromEnv(key string, prod bool, prodDefault float64) float64 {
 		return prodDefault
 	}
 	return 0
-}
-
-// envDurationSeconds reads an integer number of seconds from env, returning def
-// when unset or non-positive.
-func envDurationSeconds(key string, def time.Duration) time.Duration {
-	if s := os.Getenv(key); s != "" {
-		if n, err := strconv.Atoi(s); err == nil && n > 0 {
-			return time.Duration(n) * time.Second
-		}
-	}
-	return def
 }
 
 // scopeAdmin is the role assigned to a bare key (one given with no role) and to

@@ -61,7 +61,8 @@ func loginAccountKey(login string) string {
 // invalid cookie can still recover instead of being stuck at 401.
 func isAuthPublicPath(path string) bool {
 	switch path {
-	case "/api/v1/auth/login", "/api/v1/auth/logout", "/api/v1/auth/methods":
+	case "/api/v1/auth/login", "/api/v1/auth/logout", "/api/v1/auth/methods",
+		"/api/v1/mobile/pairing/redeem":
 		return true
 	}
 	return false
@@ -76,9 +77,36 @@ func (srv *Server) handleAuthPublic(w http.ResponseWriter, r *http.Request) {
 		srv.handleLogin(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/logout":
 		srv.handleLogout(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/mobile/pairing/redeem":
+		srv.handlePairingRedeem(w, r)
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
 	}
+}
+
+// handlePairingRedeem signs a phone in with a pairing code. The code is the
+// credential, so it shares the sign-in budget: a wrong code costs the same as a
+// wrong password, and a right one is refunded.
+func (srv *Server) handlePairingRedeem(w http.ResponseWriter, r *http.Request) {
+	ip := srv.clientIP(r)
+	if !srv.loginLimiter.allow(ip) {
+		writeRateLimited(w, 10, "too many sign-in attempts")
+		return
+	}
+	body, ok := readJSON(w, r)
+	if !ok {
+		return
+	}
+	ctx := engine.NewRequestIPContext(r.Context(), ip)
+	v, err := srv.eng.RedeemMobilePairing(ctx, body)
+	if errors.Is(err, engine.ErrPairingCodeInvalid) {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": err.Error()})
+		return
+	}
+	if err == nil {
+		srv.loginLimiter.refund(ip)
+	}
+	writeResult(w, http.StatusCreated, v, err)
 }
 
 // handleAuthMethods tells the UI how this deployment expects people to sign in,

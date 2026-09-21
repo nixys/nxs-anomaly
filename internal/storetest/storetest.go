@@ -46,6 +46,13 @@ type Store struct {
 	// buckets models the cluster-wide token buckets for real, so a test can
 	// exhaust the sign-in limit and see the same answer the SQL would give.
 	buckets map[string]*rateBucket
+	// pairing stands in for the pairing-code table, keyed by code hash.
+	pairing map[string]pairingCode
+}
+
+type pairingCode struct {
+	userID    string
+	expiresAt time.Time
 }
 
 type rateBucket struct {
@@ -64,6 +71,7 @@ func New() *Store {
 		sessions: map[string]*store.WebSession{},
 		revoked:  map[string]bool{},
 		buckets:  map[string]*rateBucket{},
+		pairing:  map[string]pairingCode{},
 	}
 }
 
@@ -490,14 +498,39 @@ func (m *Store) FindIntegrationByKey(_ context.Context, key string) (map[string]
 	return rows[0], nil
 }
 
-func (m *Store) FindMobileSessionByToken(_ context.Context, token string) (map[string]any, error) {
+// FindMobileSessionByToken mirrors the SQL: the hash matches, the session is
+// not revoked and has not expired.
+func (m *Store) FindMobileSessionByToken(_ context.Context, tokenHash string) (map[string]any, error) {
+	now := time.Now()
 	rows := m.where("mobile_sessions", func(r map[string]any) bool {
-		return r["token"] == token && r["revoked_at"] == nil
+		if r["token"] != tokenHash || r["revoked_at"] != nil {
+			return false
+		}
+		exp, err := time.Parse(time.RFC3339, fmt.Sprint(r["expires_at"]))
+		return err == nil && exp.After(now)
 	})
 	if len(rows) == 0 {
 		return nil, nil
 	}
 	return rows[0], nil
+}
+
+func (m *Store) CreateMobilePairingCode(_ context.Context, codeHash, userID string, expiresAt time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.pairing[codeHash] = pairingCode{userID: userID, expiresAt: expiresAt}
+	return nil
+}
+
+func (m *Store) RedeemMobilePairingCode(_ context.Context, codeHash string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	code, ok := m.pairing[codeHash]
+	delete(m.pairing, codeHash)
+	if !ok || !code.expiresAt.After(time.Now()) {
+		return "", nil
+	}
+	return code.userID, nil
 }
 
 func (m *Store) FindActiveAlertGroup(_ context.Context, integrationID, dedupeKey string) (map[string]any, error) {

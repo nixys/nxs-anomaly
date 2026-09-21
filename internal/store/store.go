@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/nixys/nxs-anomaly/internal/utils"
 )
 
 // loadCollectionMaxRows is the threshold above which a warning is emitted when a
@@ -65,7 +67,7 @@ var TypedColumns = map[string][]string{
 	"notification_batches":           {"batch_key", "status", "flush_at", "deadline_at", "alert_group_id", "integration_id"},
 	"notification_delivery_attempts": {"notification_id", "channel", "target", "attempt", "status", "started_at", "finished_at"},
 	"notification_policy_runs":       {"alert_group_id", "user_id", "status", "next_step_at"},
-	"mobile_sessions":                {"token", "user_id", "device_id", "revoked_at"},
+	"mobile_sessions":                {"token", "user_id", "device_id", "revoked_at", "expires_at"},
 	"mobile_devices":                 {"user_id", "platform", "active"},
 	"schedules":                      {"team_id"},
 	"chatops_channels":               {"team_id", "user_id", "notifications_enabled"},
@@ -490,7 +492,15 @@ type PostgreSQLStore interface {
 	ClearCollections(ctx context.Context, collections []string) error
 	FindIntegrationByKey(ctx context.Context, key string) (map[string]any, error)
 	LastAlertReceivedAt(ctx context.Context, integrationID string) (time.Time, bool, error)
-	FindMobileSessionByToken(ctx context.Context, token string) (map[string]any, error)
+	// FindMobileSessionByToken takes the token's hash (authz.HashSessionToken)
+	// and returns the live session it belongs to: not revoked, not expired.
+	FindMobileSessionByToken(ctx context.Context, tokenHash string) (map[string]any, error)
+	// CreateMobilePairingCode stores a one-time pairing code by its hash.
+	CreateMobilePairingCode(ctx context.Context, codeHash, userID string, expiresAt time.Time) error
+	// RedeemMobilePairingCode consumes a pairing code and returns whose it was,
+	// or "" when the code is unknown, already used or expired. Consuming and
+	// reading are one statement, so a code cannot be redeemed twice.
+	RedeemMobilePairingCode(ctx context.Context, codeHash string) (string, error)
 	FindActiveAlertGroup(ctx context.Context, integrationID, dedupeKey string) (map[string]any, error)
 	ListDueAlertGroups(ctx context.Context, nowISO string) ([]map[string]any, error)
 	ListDueNotificationBatches(ctx context.Context, nowISO string) ([]map[string]any, error)
@@ -620,7 +630,7 @@ type pgStore struct {
 // one-shot CLIs and tests don't hang on a down database. Non-connectivity errors
 // (bad DSN, migration failure) always fail immediately.
 func NewPostgreSQLStore(ctx context.Context) (PostgreSQLStore, error) {
-	deadline := time.Now().Add(time.Duration(envInt("NXS_ANOMALY_DB_CONNECT_MAX_WAIT_SECONDS", 0)) * time.Second)
+	deadline := time.Now().Add(utils.EnvSeconds("NXS_ANOMALY_DB_CONNECT_MAX_WAIT_SECONDS", 0, 0))
 	backoff := 500 * time.Millisecond
 	for {
 		s, err := newPostgreSQLStore(ctx)
@@ -676,33 +686,10 @@ func newPostgreSQLStore(ctx context.Context) (PostgreSQLStore, error) {
 			host, port, name, user, pass, sslmode)
 	}
 
-	config, err := pgxpool.ParseConfig(dsn)
+	config, err := poolConfigFromEnv(dsn)
 	if err != nil {
-		return nil, fmt.Errorf("parse db config: %w", err)
+		return nil, err
 	}
-	// Pool sizes come from env and are small positive integers, so the int32
-	// casts cannot overflow in practice.
-	maxConns := envInt("NXS_ANOMALY_DB_POOL_MAX", 10)
-	minConns := envInt("NXS_ANOMALY_DB_POOL_MIN", 1)
-	config.MaxConns = int32(maxConns) // #nosec G115
-	if minConns > 0 && minConns <= maxConns {
-		config.MinConns = int32(minConns) // #nosec G115
-	}
-	// Per-session statement_timeout bounds every query: a stuck or lock-blocked
-	// statement is killed instead of hanging a worker cycle or HTTP request. Set
-	// as a connection startup parameter so it applies to all pool connections.
-	// Migrations disable it per-transaction (SET LOCAL) so a long DDL is exempt.
-	if stmtTimeout := envInt("NXS_ANOMALY_DB_STATEMENT_TIMEOUT_SECONDS", 30); stmtTimeout > 0 {
-		if config.ConnConfig.RuntimeParams == nil {
-			config.ConnConfig.RuntimeParams = map[string]string{}
-		}
-		config.ConnConfig.RuntimeParams["statement_timeout"] = strconv.Itoa(stmtTimeout * 1000)
-	}
-	// Bound connection age/idle and probe health so the pool sheds connections to
-	// a failed-over primary or stale balancer endpoint instead of pinning them.
-	config.MaxConnLifetime = envDurationSeconds("NXS_ANOMALY_DB_POOL_MAX_CONN_LIFETIME_SECONDS", time.Hour)
-	config.MaxConnIdleTime = envDurationSeconds("NXS_ANOMALY_DB_POOL_MAX_CONN_IDLE_SECONDS", 30*time.Minute)
-	config.HealthCheckPeriod = envDurationSeconds("NXS_ANOMALY_DB_POOL_HEALTHCHECK_SECONDS", time.Minute)
 
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
@@ -717,27 +704,49 @@ func newPostgreSQLStore(ctx context.Context) (PostgreSQLStore, error) {
 	return s, nil
 }
 
+// poolConfigFromEnv builds the pool configuration: the DSN plus the pool,
+// statement-timeout and connection-recycling settings from the environment.
+// Separate from the connect so the settings can be tested without a database.
+func poolConfigFromEnv(dsn string) (*pgxpool.Config, error) {
+	config, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("parse db config: %w", err)
+	}
+	// Pool sizes come from env and are small positive integers, so the int32
+	// casts cannot overflow in practice.
+	maxConns := utils.EnvInt("NXS_ANOMALY_DB_POOL_MAX", 10, 1)
+	// 0 is valid: no idle connections are kept open.
+	minConns := utils.EnvInt("NXS_ANOMALY_DB_POOL_MIN", 1, 0)
+	config.MaxConns = int32(maxConns) // #nosec G115
+	if minConns > 0 && minConns <= maxConns {
+		config.MinConns = int32(minConns) // #nosec G115
+	}
+	// Per-session statement_timeout bounds every query: a stuck or lock-blocked
+	// statement is killed instead of hanging a worker cycle or HTTP request. Set
+	// as a connection startup parameter so it applies to all pool connections.
+	// Migrations disable it per-transaction (SET LOCAL) so a long DDL is exempt.
+	// 0 sends no parameter at all: PgBouncer refuses a startup parameter it is
+	// not told to ignore, so behind one the service could not connect.
+	if stmtTimeout := utils.EnvInt("NXS_ANOMALY_DB_STATEMENT_TIMEOUT_SECONDS", 30, 0); stmtTimeout > 0 {
+		if config.ConnConfig.RuntimeParams == nil {
+			config.ConnConfig.RuntimeParams = map[string]string{}
+		}
+		config.ConnConfig.RuntimeParams["statement_timeout"] = strconv.Itoa(stmtTimeout * 1000)
+	}
+	// Bound connection age/idle and probe health so the pool sheds connections to
+	// a failed-over primary or stale balancer endpoint instead of pinning them.
+	// None of the three accepts 0: to pgxpool it does not mean "off". A zero
+	// lifetime or idle time closes every connection as soon as it is released,
+	// and a zero health-check period panics in time.NewTicker.
+	config.MaxConnLifetime = utils.EnvSeconds("NXS_ANOMALY_DB_POOL_MAX_CONN_LIFETIME_SECONDS", time.Hour, 1)
+	config.MaxConnIdleTime = utils.EnvSeconds("NXS_ANOMALY_DB_POOL_MAX_CONN_IDLE_SECONDS", 30*time.Minute, 1)
+	config.HealthCheckPeriod = utils.EnvSeconds("NXS_ANOMALY_DB_POOL_HEALTHCHECK_SECONDS", time.Minute, 1)
+	return config, nil
+}
+
 func getEnv(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
-	}
-	return def
-}
-
-func envInt(key string, def int) int {
-	if v := os.Getenv(key); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return n
-		}
-	}
-	return def
-}
-
-func envDurationSeconds(key string, def time.Duration) time.Duration {
-	if v := os.Getenv(key); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return time.Duration(n) * time.Second
-		}
 	}
 	return def
 }

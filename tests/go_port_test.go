@@ -1547,7 +1547,7 @@ func TestArchivalDeletesLargeBacklogInBatches(t *testing.T) {
 }
 
 // TestMobileDashboardScopedReads covers GetMobileDashboard end-to-end: session
-// auth, the user's active groups (relevance via notification and via chain)
+// lookup by token hash, the user's active groups (relevance via notification and via chain)
 // and the on-call section, after the dashboard moved from full-collection
 // reads to point/typed-index queries.
 func TestMobileDashboardScopedReads(t *testing.T) {
@@ -1608,6 +1608,10 @@ func TestMobileDashboardScopedReads(t *testing.T) {
 		t.Fatalf("create session: %v", err)
 	}
 	token := utils.StrVal(session, "token")
+	_, sessUser, err := eng.AuthenticateMobileSession(ctx, token)
+	if err != nil || utils.StrVal(sessUser, "id") != userID {
+		t.Fatalf("authenticate session: user=%v err=%v", sessUser, err)
+	}
 
 	res, err := eng.IngestAlert(ctx, utils.StrVal(integ, "key"), map[string]any{
 		"title": "dash alert", "labels": map[string]any{"alertname": "dash"},
@@ -1617,7 +1621,7 @@ func TestMobileDashboardScopedReads(t *testing.T) {
 	}
 	groupID := utils.StrVal(res["group"].(map[string]any), "id")
 
-	dash, err := eng.GetMobileDashboard(ctx, token)
+	dash, err := eng.GetMobileDashboard(ctx, userID)
 	if err != nil {
 		t.Fatalf("dashboard: %v", err)
 	}
@@ -1640,15 +1644,15 @@ func TestMobileDashboardScopedReads(t *testing.T) {
 		t.Fatalf("on_call = %#v, want dash-schedule entry", oncall)
 	}
 
-	if _, err := eng.GetMobileDashboard(ctx, "bogus-token"); err == nil {
-		t.Fatal("expected error for unknown session token")
+	if _, u, err := eng.AuthenticateMobileSession(ctx, "nxm_bogus"); err != nil || u != nil {
+		t.Fatalf("unknown session token authenticated: user=%v err=%v", u, err)
 	}
 
 	// Resolve the group: it must disappear from the dashboard.
 	if _, err := eng.ResolveGroup(ctx, groupID); err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	dash2, err := eng.GetMobileDashboard(ctx, token)
+	dash2, err := eng.GetMobileDashboard(ctx, userID)
 	if err != nil {
 		t.Fatalf("dashboard after resolve: %v", err)
 	}

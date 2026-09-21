@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/nixys/nxs-anomaly/internal/authz"
 	"github.com/nixys/nxs-anomaly/internal/utils"
 )
 
@@ -324,29 +325,41 @@ func (srv *Server) routeAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		v, err := eng.CreateMobileSession(ctx, body)
 		writeResult(w, http.StatusCreated, v, err)
-	case method == http.MethodGet && path == "/api/v1/mobile/dashboard":
-		token := r.Header.Get("X-Mobile-Session")
+	case method == http.MethodPost && path == "/api/v1/mobile/pairing":
+		v, err := eng.CreateMobilePairing(ctx)
+		writeResult(w, http.StatusCreated, v, err)
+	case method == http.MethodDelete && path == "/api/v1/mobile/sessions/current":
+		token := mobileToken(r)
 		if token == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "X-Mobile-Session header is required"})
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "not a mobile session"})
 			return
 		}
-		v, err := eng.GetMobileDashboard(ctx, token)
+		writeResult(w, http.StatusOK, map[string]any{"revoked": true}, eng.RevokeMobileSession(ctx, token))
+	case method == http.MethodGet && path == "/api/v1/mobile/sessions":
+		v, err := eng.ListOwnMobileSessions(ctx)
+		writeResult(w, http.StatusOK, v, err)
+	case method == http.MethodDelete && pathDepth(path, "/api/v1/mobile/sessions/") == 1:
+		writeResult(w, http.StatusOK, map[string]any{"revoked": true}, eng.RevokeOwnMobileSession(ctx, lastSegment(path)))
+	// The first mobile endpoints. Authentication now resolves the session to
+	// its user (see mobileActor), so these act as that user with their team
+	// scope, exactly like the ordinary alert-group endpoints the app uses.
+	case method == http.MethodGet && path == "/api/v1/mobile/dashboard":
+		if !requireMobileUser(w, r) {
+			return
+		}
+		v, err := eng.GetMobileDashboard(ctx, authz.FromContext(ctx).ID)
 		writeResult(w, http.StatusOK, v, err)
 	case method == http.MethodPost && strings.HasSuffix(path, "/acknowledge") && strings.HasPrefix(path, "/api/v1/mobile/alert-groups/"):
-		token := r.Header.Get("X-Mobile-Session")
-		if token == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "X-Mobile-Session header is required"})
+		if !requireMobileUser(w, r) {
 			return
 		}
-		v, err := eng.MobileAcknowledgeGroup(ctx, token, segment(path, 4))
+		v, err := eng.AcknowledgeGroup(ctx, segment(path, 4))
 		writeResult(w, http.StatusOK, v, err)
 	case method == http.MethodPost && strings.HasSuffix(path, "/resolve") && strings.HasPrefix(path, "/api/v1/mobile/alert-groups/"):
-		token := r.Header.Get("X-Mobile-Session")
-		if token == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "X-Mobile-Session header is required"})
+		if !requireMobileUser(w, r) {
 			return
 		}
-		v, err := eng.MobileResolveGroup(ctx, token, segment(path, 4))
+		v, err := eng.ResolveGroup(ctx, segment(path, 4))
 		writeResult(w, http.StatusOK, v, err)
 
 	// Stored reports remain readable without a configured ClickHouse source.
@@ -557,4 +570,16 @@ func (srv *Server) verifyWebhookSig(r *http.Request, integrationKey string, rawB
 		return errWebhookSigInvalid
 	}
 	return nil
+}
+
+// requireMobileUser keeps the first mobile endpoints answering as they always
+// did to a caller without a mobile session: 400, because the header they
+// require is missing. An API key or the anonymous escape hatch has no user whose
+// dashboard this could be.
+func requireMobileUser(w http.ResponseWriter, r *http.Request) bool {
+	if mobileToken(r) == "" || authz.FromContext(r.Context()).Kind != authz.KindUser {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "X-Mobile-Session header is required"})
+		return false
+	}
+	return true
 }

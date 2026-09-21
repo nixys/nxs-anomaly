@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "nxs-anomaly native API",
-    "version": "1.5.2",
+    "version": "1.6.0",
     "description": "The native /api/v1 contract for nxs-anomaly (API, worker, frontend). This is the authoritative contract; the Grafana-compatibility surface under /api/internal/v1 is a compatibility shim and is NOT part of this contract. The core payloads — user, team, schedule, escalation chain, integration, alert group, alert, notification, delivery attempt — are modelled field by field, with `required` reflecting exactly the keys the engine writes unconditionally; every one still allows additional properties because the underlying storage is JSONB. Remaining resources use the open `Entity` schema. Drift between this document and the router is gated by internal/server/openapi_contract_test.go, and the frontend compiles against types generated from this file (frontend/src/api/schema.d.ts).",
     "license": {
       "name": "Apache-2.0"
@@ -1372,6 +1372,38 @@
             "$ref": "#/components/responses/Error"
           }
         }
+      },
+      "get": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "List the caller's live mobile sessions (their paired phones)",
+        "responses": {
+          "200": {
+            "description": "The caller's phones",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MobileSessionInfo"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
       }
     },
     "/api/v1/notifications": {
@@ -2158,6 +2190,117 @@
           }
         }
       }
+    },
+    "/api/v1/mobile/pairing": {
+      "post": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Issue a one-time code to pair a phone as the signed-in user",
+        "responses": {
+          "201": {
+            "description": "Pairing code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilePairing"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/pairing/redeem": {
+      "post": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Exchange a pairing code for a mobile session (shares the sign-in rate limit)",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilePairingRedeem"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Issued session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileSessionIssued"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/sessions/current": {
+      "delete": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Sign this phone out (revokes the calling mobile session)",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "mobileSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/sessions/{id}": {
+      "delete": {
+        "tags": [
+          "mobile"
+        ],
+        "summary": "Sign out one of the caller's phones",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Object"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2177,13 +2320,13 @@
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer",
-        "description": "Same static API key sent as `Authorization: Bearer <key>`."
+        "description": "Static API key sent as `Authorization: Bearer <key>`, or a mobile session token (prefix `nxm_`). A mobile session acts as its user, with the role capped at responder."
       },
       "mobileSession": {
         "type": "apiKey",
         "in": "header",
         "name": "X-Mobile-Session",
-        "description": "Mobile session token from /api/v1/mobile/sessions."
+        "description": "Mobile session token issued by /api/v1/mobile/pairing/redeem (or, administratively, /api/v1/mobile/sessions)."
       }
     },
     "schemas": {
@@ -5454,6 +5597,126 @@
           },
           "offset": {
             "type": "integer"
+          }
+        }
+      },
+      "MobilePairing": {
+        "type": "object",
+        "required": [
+          "code",
+          "expires_at",
+          "server_url"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "One-time code, XXXXX-XXXXX (Crockford base32). Case, spaces and dashes are ignored on redemption."
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "server_url": {
+            "type": "string",
+            "description": "NXS_ANOMALY_PUBLIC_URL, or empty when it is not set (the UI then uses its own origin)."
+          }
+        }
+      },
+      "MobilePairingRedeem": {
+        "type": "object",
+        "required": [
+          "code",
+          "platform"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string",
+            "description": "android or ios"
+          },
+          "device_name": {
+            "type": "string"
+          },
+          "push_token": {
+            "type": "string",
+            "description": "Optional push token reference."
+          }
+        }
+      },
+      "MobileSessionIssued": {
+        "type": "object",
+        "required": [
+          "token",
+          "expires_at",
+          "session_id",
+          "device_id",
+          "user"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "The session token. Returned once; only its hash is stored."
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Extended on use; a session unused for 30 days expires."
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "device_id": {
+            "type": "string"
+          },
+          "user": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "username"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "username": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "MobileSessionInfo": {
+        "type": "object",
+        "required": [
+          "id",
+          "device_name",
+          "platform",
+          "created_at",
+          "expires_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "device_name": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }

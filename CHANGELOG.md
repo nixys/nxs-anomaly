@@ -4,6 +4,50 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning once it reaches 1.0.
 
+## [1.6.0] — 2026-09-21
+
+### Added
+- **A phone can sign in as its owner.** Settings → Mobile app shows a QR code
+  and a one-time `XXXXX-XXXXX` code (five minutes); the app exchanges it at
+  `POST /api/v1/mobile/pairing/redeem` for a mobile session, and
+  `DELETE /api/v1/mobile/sessions/current` signs it out. The same card lists the
+  person's phones and signs a lost one out (`GET /api/v1/mobile/sessions`,
+  `DELETE /api/v1/mobile/sessions/{id}`). Until now a mobile
+  session could only be created by an administrator for a given user and
+  device id.
+
+### Changed
+- **A mobile session authenticates on its own.** `/api/v1/mobile/*` sat behind
+  the ordinary authentication, so `X-Mobile-Session` was only read after a
+  cookie or an API key had already been accepted — a phone with nothing but its
+  session got 401 unless anonymous access was on. The session is now a
+  credential (`Authorization: Bearer nxm_…` or `X-Mobile-Session`) resolving to
+  its user with their team scope and the role capped at `responder`, so the
+  app uses the ordinary alert-group endpoints.
+- **Mobile session tokens are hashed and expire.** They were 48-bit ids stored
+  in plaintext and valid forever; they are now 256-bit, stored as SHA-256 like
+  web sessions, and expire after 30 days without use. Migration 0030 revokes
+  the sessions issued before it — none of them could authenticate on its own.
+  The mobile dashboard no longer returns the session record.
+
+### Fixed
+- **`NXS_ANOMALY_DB_STATEMENT_TIMEOUT_SECONDS=0` turns the timeout off again**
+  (#24). The numeric settings accepted only positive values, so an explicit `0`
+  silently became the default: `statement_timeout` was always sent as a startup
+  parameter, and behind PgBouncer, which rejects parameters it is not told to
+  ignore, the service could not connect. `0` now reaches the settings where it
+  means something (`…_STATEMENT_TIMEOUT_SECONDS`, `…_DB_POOL_MIN`,
+  `…_CONNECT_MAX_WAIT_SECONDS`, `…_WORKER_STALL_TIMEOUT_SECONDS`). Where `0`
+  would break things rather than switch them off — the pool size, connection
+  lifetime, idle time and health-check period (to pgx a zero lifetime closes
+  every connection on release, a zero period panics), the HTTP timeouts and the
+  session TTL — the minimum is 1. A value that does not parse or is below the
+  minimum still falls back to the default, but is now logged as
+  `invalid_setting` instead of being dropped silently.
+- **A mobile session could act on another team's alert groups.** It was given
+  the responder role without team scope; the "relevant to this user" filter
+  applied only to the dashboard, not to acknowledge and resolve.
+
 ## [1.5.2] — 2026-09-20
 
 ### Changed

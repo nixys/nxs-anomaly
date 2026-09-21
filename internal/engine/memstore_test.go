@@ -493,8 +493,8 @@ func (m *memStore) LastAlertReceivedAt(_ context.Context, integrationID string) 
 	return newest, found, nil
 }
 
-// FindMobileSessionByToken mirrors the real lookup: match on token, skip
-// revoked sessions. It was a nil stub until a test needed to prove that a
+// FindMobileSessionByToken mirrors the real lookup: match on token hash, skip
+// revoked and expired sessions. It was a nil stub until a test needed to prove that a
 // mobile action is attributed to the session's user.
 func (m *memStore) FindMobileSessionByToken(_ context.Context, token string) (map[string]any, error) {
 	m.mu.Lock()
@@ -506,9 +506,18 @@ func (m *memStore) FindMobileSessionByToken(_ context.Context, token string) (ma
 		if revoked, ok := row["revoked_at"]; ok && revoked != nil {
 			continue
 		}
+		if exp, err := time.Parse(time.RFC3339, fmt.Sprint(row["expires_at"])); err != nil || !exp.After(time.Now()) {
+			continue
+		}
 		return row, nil
 	}
 	return nil, nil
+}
+func (m *memStore) CreateMobilePairingCode(context.Context, string, string, time.Time) error {
+	return nil
+}
+func (m *memStore) RedeemMobilePairingCode(context.Context, string) (string, error) {
+	return "", nil
 }
 func (m *memStore) FindActiveAlertGroup(context.Context, string, string) (map[string]any, error) {
 	return nil, nil

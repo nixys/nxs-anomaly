@@ -135,6 +135,19 @@ export NXS_ANOMALY_DB_STATEMENT_TIMEOUT_SECONDS=30         # statement_timeout �
 export NXS_ANOMALY_DB_CONNECT_MAX_WAIT_SECONDS=0           # retry подключения к БД на старте до N сек (0=fail-fast); рекомендуется >0 для serve/run-worker в k8s
 ```
 
+`NXS_ANOMALY_DB_STATEMENT_TIMEOUT_SECONDS=0` не отправляет `statement_timeout`
+вовсе. За PgBouncer это обязательно: он отвергает startup-параметры, которых нет в
+`ignore_startup_parameters`, и сервис не может подключиться. `NXS_ANOMALY_DB_POOL_MIN=0`
+не держит idle-соединений.
+
+`0` принимается только там, где выше сказано, что он значит. Для размера пула, возраста
+и простоя соединения, периода health-probe (`…_POOL_MAX`, `…_MAX_CONN_LIFETIME_SECONDS`,
+`…_MAX_CONN_IDLE_SECONDS`, `…_HEALTHCHECK_SECONDS`), для HTTP-таймаутов и
+`NXS_ANOMALY_SESSION_TTL_SECONDS` минимум — `1`: для драйвера БД и HTTP-сервера `0`
+значит не «выкл», а «закрывать каждое соединение» или «без таймаута». Значение, которое
+не разбирается или ниже минимума, заменяется значением по умолчанию, и на старте
+пишется `invalid_setting` с именем переменной.
+
 ## Прочие env vars
 
 | Переменная | По умолчанию | Описание |

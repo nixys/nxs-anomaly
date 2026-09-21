@@ -51,11 +51,12 @@ var httpMethods = map[string]bool{"get": true, "post": true, "put": true, "patch
 // routeAPI switch, so srv.do (which calls routeAPI directly) cannot reach them.
 // They have their own tests (session_test.go, oidc_test.go).
 var routesHandledBeforeRouteAPI = map[string]bool{
-	"POST /api/v1/auth/login":        true,
-	"POST /api/v1/auth/logout":       true,
-	"GET /api/v1/auth/methods":       true,
-	"GET /api/v1/auth/oidc/login":    true,
-	"GET /api/v1/auth/oidc/callback": true,
+	"POST /api/v1/auth/login":            true,
+	"POST /api/v1/auth/logout":           true,
+	"GET /api/v1/auth/methods":           true,
+	"GET /api/v1/auth/oidc/login":        true,
+	"GET /api/v1/auth/oidc/callback":     true,
+	"POST /api/v1/mobile/pairing/redeem": true,
 }
 
 // TestOpenAPISpecRoutesAreReachable is the contract test for every documented
