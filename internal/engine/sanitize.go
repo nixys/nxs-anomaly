@@ -313,6 +313,13 @@ func (e *Engine) sanitizeStep(ctx context.Context, raw any, index int) (map[stri
 			return nil, err
 		}
 		step["webhook_url"] = hookURL
+		headers, err := sanitizeOutboundHeaders(m["headers"])
+		if err != nil {
+			return nil, err
+		}
+		if headers != nil {
+			step["headers"] = headers
+		}
 
 	case StepCreateIssue:
 		if err := utils.EnsureRequired(m, []string{"url"}); err != nil {

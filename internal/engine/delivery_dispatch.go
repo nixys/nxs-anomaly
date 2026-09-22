@@ -82,8 +82,14 @@ func (e *Engine) deliverNotificationViaAdapter(ctx context.Context, ntf map[stri
 
 	switch channel {
 	case "webhook":
+		// Only a TRIGGER_WEBHOOK step puts headers on the payload; they are
+		// the step's as configured, env: references still unresolved.
+		headers, err := resolveOutboundHeaders(payload["headers"])
+		if err != nil {
+			return skipped(skipNotConfigured, err.Error())
+		}
 		return postWebhookGuarded(ctx, e.deliveryCfg.clientFor("webhook"), target,
-			toAlertmanagerPayload(payload), e.deliveryCfg.ssrfGuardFor("webhook"), nil)
+			toAlertmanagerPayload(payload), e.deliveryCfg.ssrfGuardFor("webhook"), headers)
 
 	case "slack", "mattermost":
 		text := renderNotificationText(ntf, payload, "")
@@ -269,10 +275,14 @@ func (e *Engine) deliverChatops(ctx context.Context, ntf map[string]any, channel
 	if ok, detail := e.deliveryCfg.Channels.DestinationAllowed(webhookURL); !ok {
 		return skipped(skipDestinationNotAllowed, detail)
 	}
+	headers, err := resolveOutboundHeaders(channel["headers"])
+	if err != nil {
+		return skipped(skipNotConfigured, "chatops channel "+utils.StrVal(channel, "name")+": "+err.Error())
+	}
 	text := renderNotificationText(ntf, payload, "")
 	proxyChannel := e.deliveryCfg.chatopsProxyChannel(utils.StrVal(channel, "platform"))
 	res := postWebhookGuarded(ctx, e.deliveryCfg.clientFor(proxyChannel), webhookURL,
-		map[string]any{"text": text}, e.deliveryCfg.ssrfGuardFor(proxyChannel), nil)
+		map[string]any{"text": text}, e.deliveryCfg.ssrfGuardFor(proxyChannel), headers)
 	res.ProviderStatus = utils.StrVal(channel, "platform") + "_chatops"
 	return res
 }

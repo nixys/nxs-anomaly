@@ -309,7 +309,7 @@ func (cfg DeliveryConfig) ProxySummary() map[string]string {
 // newDeliveryClients builds the per-channel HTTP clients. Channels that go
 // direct get no entry and fall back to DeliveryConfig.HTTPClient, so a
 // deployment without a proxy keeps exactly the client it had before.
-func newDeliveryClients(timeout time.Duration, blocked func(net.IP) bool, egress ChannelPolicy, s proxySettings) map[string]*http.Client {
+func newDeliveryClients(timeout time.Duration, blocked blockPolicy, egress ChannelPolicy, s proxySettings) map[string]*http.Client {
 	clients := map[string]*http.Client{}
 	for ch, err := range s.errs {
 		clients[ch] = failingClient(fmt.Errorf("delivery proxy for channel %q is misconfigured: %w", ch, err))
@@ -353,7 +353,7 @@ func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { r
 // and that is the whole of the protection. It is stated here rather than hidden because
 // it is a real reduction, and it is bounded: the channels people proxy point at
 // fixed provider hosts, not at operator-supplied URLs.
-func newProxiedDeliveryClient(timeout time.Duration, blocked func(net.IP) bool, egress ChannelPolicy, ep *proxyEndpoint, s proxySettings) *http.Client {
+func newProxiedDeliveryClient(timeout time.Duration, blocked blockPolicy, egress ChannelPolicy, ep *proxyEndpoint, s proxySettings) *http.Client {
 	dialer := &net.Dialer{Timeout: timeout, KeepAlive: 30 * time.Second}
 	guarded := guardedDialContext(dialer, blocked)
 	transport := http.DefaultTransport.(*http.Transport).Clone()

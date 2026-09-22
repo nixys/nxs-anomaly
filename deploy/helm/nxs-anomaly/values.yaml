@@ -67,6 +67,10 @@ api:
   tolerations: []
   affinity: {}
   extraEnv: []
+  # Pod volumes and the container's mounts of them, passed through as written.
+  # For a private CA use customCA below: it also points Go's trust store at it.
+  extraVolumes: []
+  extraVolumeMounts: []
   service:
     type: ClusterIP
     port: 8080
@@ -87,6 +91,9 @@ worker:
   tolerations: []
   affinity: {}
   extraEnv: []
+  # See api.extraVolumes.
+  extraVolumes: []
+  extraVolumeMounts: []
   telemetryPort: 8081
 
 # Frontend: nginx serving the SPA, same-origin proxy to the API service.
@@ -137,6 +144,12 @@ config:
   # preset (values-production.yaml) sets this and the chart preflight then refuses
   # unsafe combinations (inline secrets, bundled DBs, weakened flags).
   NXS_ANOMALY_PROFILE: ""
+  # The SSRF guard refuses private delivery addresses, a receiver inside this
+  # cluster included. Let such a receiver through by name rather than turning
+  # the guard off (the production preflight refuses that):
+  #   NXS_ANOMALY_BLOCK_PRIVATE_WEBHOOKS_EXCEPT: "gw.chat.svc.cluster.local"
+  # Hosts, .domain suffixes and CIDRs; loopback and link-local are never
+  # excepted. See docs/SECURITY_PROFILE.md.
   NXS_ANOMALY_BLOCK_PRIVATE_WEBHOOKS: "true"
   NXS_ANOMALY_SESSION_COOKIE_SECURE: "true"
   # Proxies whose X-Forwarded-For the API believes. The bundled frontend (and an
@@ -226,6 +239,28 @@ deliveryProxy:
   # channels: {telegram: "socks5://tunnel.internal:1080", webhook: "direct"}
   channels: {}
   noProxy: ""
+
+# ── Private CA for outbound TLS ──────────────────────────────────────────────
+# A company or cluster CA that outbound HTTPS must trust: an internal webhook
+# receiver or chat gateway, an HTTPS proxy, SMTP with STARTTLS, an external
+# database with a certificate from that CA. Without it such a
+# delivery fails with "x509: certificate signed by unknown authority", and the
+# distroless image offers no way to add a CA at runtime.
+#
+# Name an existing ConfigMap or Secret (not both) holding a PEM bundle under
+# key — a trust-manager Bundle target works as is. It is mounted into every pod
+# that runs the application image, and SSL_CERT_DIR lists it next to /etc/ssl/certs: the
+# CA is trusted IN ADDITION to the image's roots, and public providers keep
+# verifying. SSL_CERT_FILE is not used — it names a replacement for the image's
+# bundle, and whether the public roots survive that depends on the image layout.
+#
+# The bundle is read once per process: after it changes, restart the pods
+# (kubectl rollout restart), or let a reloader do it. The chart cannot checksum
+# an object it does not render.
+customCA:
+  configMapName: ""
+  secretName: ""
+  key: ca.crt
 
 # Free-form extra non-secret env applied to API and worker.
 extraConfig: {}

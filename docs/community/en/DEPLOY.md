@@ -132,6 +132,38 @@ Replace `REPLACE_WITH_RELEASE_TAG` with the same published tag for API and worke
 For frontend, login credentials, TLS and complete deployment commands, use
 [Installation](INSTALLATION.md).
 
+### A private CA for outbound TLS
+
+An internal webhook receiver or chat gateway whose certificate comes from a
+company or cluster CA fails with `x509: certificate signed by unknown authority`,
+and the distroless image offers no way to add a CA at runtime. Point the chart at
+an existing ConfigMap or Secret holding a PEM bundle — a cert-manager
+trust-manager `Bundle` target works as is:
+
+```yaml
+customCA:
+  configMapName: corp-trust-bundle   # or secretName: …, not both
+  key: trust-bundle.pem              # default ca.crt
+```
+
+The bundle is mounted into the API and worker pods, and `SSL_CERT_DIR`
+lists it next to `/etc/ssl/certs`, so the CA is trusted **in addition to** the
+image's roots — public providers keep verifying. It covers every outbound TLS
+connection the binary makes: webhooks, ChatOps, an HTTPS proxy, SMTP with
+STARTTLS, an external PostgreSQL. The bundle is read once per
+process, so after it changes restart the pods (`kubectl rollout restart`) or let a
+reloader do it. An `SSL_CERT_DIR` of your own in `api.extraEnv`/`worker.extraEnv`
+takes precedence.
+
+A receiver inside the cluster is also a private address, which the SSRF guard
+(on in the chart) refuses; let it through by name with
+`config.NXS_ANOMALY_BLOCK_PRIVATE_WEBHOOKS_EXCEPT` rather than turning the guard
+off — see [SECURITY_PROFILE.md](SECURITY_PROFILE.md#exceptions-for-internal-receivers).
+
+For anything else a pod needs on disk, `api.extraVolumes`/`api.extraVolumeMounts`
+and `worker.extraVolumes`/`worker.extraVolumeMounts` pass volumes through as
+written.
+
 ### Secrets
 
 ```bash

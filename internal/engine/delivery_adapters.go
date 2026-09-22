@@ -36,17 +36,37 @@ func guardWebhookURL(ctx context.Context, rawURL string, block bool) error {
 	return checkWebhookURL(ctx, rawURL, ssrfGuardOf(block))
 }
 
-// ssrfGuard is how the pre-flight judges a destination.
-type ssrfGuard uint8
+// ssrfMode is how the pre-flight judges a destination.
+type ssrfMode uint8
 
 const (
-	// guardOff: the SSRF guard is disabled for this installation.
-	guardOff ssrfGuard = iota
-	// guardDirect: this process resolves and dials the destination itself.
-	guardDirect
-	// guardProxied: a proxy resolves and dials the destination (see guardProxiedURL).
-	guardProxied
+	// modeOff: the SSRF guard is disabled for this installation.
+	modeOff ssrfMode = iota
+	// modeDirect: this process resolves and dials the destination itself.
+	modeDirect
+	// modeProxied: a proxy resolves and dials the destination (see guardProxiedHost).
+	modeProxied
 )
+
+// ssrfGuard is the pre-flight for one channel: its mode and the installation's
+// exceptions (NXS_ANOMALY_BLOCK_PRIVATE_WEBHOOKS_EXCEPT), which the pre-flight
+// has to honour exactly as the dialler does — otherwise an excepted receiver
+// would pass the dial check and never get that far.
+type ssrfGuard struct {
+	mode   ssrfMode
+	exempt *ssrfExemptions
+}
+
+var (
+	guardOff     = ssrfGuard{mode: modeOff}
+	guardDirect  = ssrfGuard{mode: modeDirect}
+	guardProxied = ssrfGuard{mode: modeProxied}
+)
+
+// blocks reports whether the pre-flight refuses ip reached under host.
+func (g ssrfGuard) blocks(host string, ip net.IP) bool {
+	return isBlockedIP(ip) && !g.exempt.allows(host, ip)
+}
 
 func ssrfGuardOf(block bool) ssrfGuard {
 	if block {
@@ -57,7 +77,7 @@ func ssrfGuardOf(block bool) ssrfGuard {
 
 // checkWebhookURL is the pre-flight for one destination under the given guard.
 func checkWebhookURL(ctx context.Context, rawURL string, guard ssrfGuard) error {
-	if guard == guardOff {
+	if guard.mode == modeOff {
 		return nil
 	}
 	u, err := url.Parse(rawURL)
@@ -71,8 +91,8 @@ func checkWebhookURL(ctx context.Context, rawURL string, guard ssrfGuard) error 
 	if host == "" {
 		return fmt.Errorf("blocked webhook URL with empty host")
 	}
-	if guard == guardProxied {
-		return guardProxiedHost(ctx, host)
+	if guard.mode == modeProxied {
+		return guardProxiedHost(ctx, host, guard)
 	}
 	var resolver net.Resolver
 	ips, err := resolver.LookupIPAddr(ctx, host)
@@ -80,7 +100,7 @@ func checkWebhookURL(ctx context.Context, rawURL string, guard ssrfGuard) error 
 		return fmt.Errorf("resolve webhook host %q: %w", host, err)
 	}
 	for _, ip := range ips {
-		if isBlockedIP(ip.IP) {
+		if guard.blocks(host, ip.IP) {
 			return fmt.Errorf("blocked webhook host %q resolves to non-public address %s", host, ip.IP)
 		}
 	}
@@ -105,9 +125,9 @@ func checkWebhookURL(ctx context.Context, rawURL string, guard ssrfGuard) error 
 //
 // A name that only the proxy's resolver maps to an internal address is outside
 // what this process can see; the egress allowlist is the control for that.
-func guardProxiedHost(ctx context.Context, host string) error {
+func guardProxiedHost(ctx context.Context, host string, guard ssrfGuard) error {
 	if ip := net.ParseIP(host); ip != nil {
-		if isBlockedIP(ip) {
+		if guard.blocks(host, ip) {
 			return fmt.Errorf("blocked webhook host %s: non-public address", ip)
 		}
 		return nil
@@ -118,7 +138,7 @@ func guardProxiedHost(ctx context.Context, host string) error {
 		return nil
 	}
 	for _, ip := range ips {
-		if isBlockedIP(ip.IP) {
+		if guard.blocks(host, ip.IP) {
 			return fmt.Errorf("blocked webhook host %q resolves to non-public address %s", host, ip.IP)
 		}
 	}
@@ -163,9 +183,9 @@ const deliveryRedirectLimit = 10
 // CheckRedirect additionally rejects non-HTTP schemes and restates the hop limit
 // that supplying the hook would otherwise discard.
 func newDeliveryHTTPClient(timeout time.Duration, block bool, egress ChannelPolicy) *http.Client {
-	var blocked func(net.IP) bool
+	var blocked blockPolicy
 	if block {
-		blocked = isBlockedIP
+		blocked = ipPolicy(isBlockedIP)
 	}
 	return newDeliveryHTTPClientWithPolicy(timeout, blocked, egress)
 }
@@ -179,7 +199,7 @@ func newDeliveryHTTPClient(timeout time.Duration, block bool, egress ChannelPoli
 // designate one loopback address "public" and another "the metadata endpoint",
 // which exercises the real question here — whether the blocklist is consulted
 // on every hop — while isBlockedIP's own contents are tested separately.
-func newDeliveryHTTPClientWithPolicy(timeout time.Duration, blocked func(net.IP) bool, egress ChannelPolicy) *http.Client {
+func newDeliveryHTTPClientWithPolicy(timeout time.Duration, blocked blockPolicy, egress ChannelPolicy) *http.Client {
 	dialer := &net.Dialer{Timeout: timeout, KeepAlive: 30 * time.Second}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.DialContext = guardedDialContext(dialer, blocked)
@@ -193,7 +213,7 @@ func newDeliveryHTTPClientWithPolicy(timeout time.Duration, blocked func(net.IP)
 // deliveryCheckRedirect is the redirect policy shared by the direct and the
 // proxied delivery clients: same hop limit, same allowlist, same scheme rule
 // wherever a notification goes out.
-func deliveryCheckRedirect(blocked func(net.IP) bool, egress ChannelPolicy) func(*http.Request, []*http.Request) error {
+func deliveryCheckRedirect(blocked blockPolicy, egress ChannelPolicy) func(*http.Request, []*http.Request) error {
 	return func(req *http.Request, via []*http.Request) error {
 		if len(via) >= deliveryRedirectLimit {
 			return fmt.Errorf("stopped after %d redirects", deliveryRedirectLimit)
@@ -211,7 +231,7 @@ func deliveryCheckRedirect(blocked func(net.IP) bool, egress ChannelPolicy) func
 		// A redirect to a non-public IP literal is refused here, not only at
 		// dial time: through a proxy this process never dials the hop, so the
 		// dial guard would never see it.
-		if ip := net.ParseIP(req.URL.Hostname()); ip != nil && blocked(ip) {
+		if ip := net.ParseIP(req.URL.Hostname()); ip != nil && blocked(req.URL.Hostname(), ip) {
 			return fmt.Errorf("redirect refused: non-public address %s", ip)
 		}
 		return guardWebhookScheme(req.URL)
@@ -220,7 +240,7 @@ func deliveryCheckRedirect(blocked func(net.IP) bool, egress ChannelPolicy) func
 
 // guardedDialContext returns a DialContext that refuses to connect to any
 // address the blocked policy rejects. A nil policy is the ordinary dialler.
-func guardedDialContext(dialer *net.Dialer, blocked func(net.IP) bool) func(context.Context, string, string) (net.Conn, error) {
+func guardedDialContext(dialer *net.Dialer, blocked blockPolicy) func(context.Context, string, string) (net.Conn, error) {
 	if blocked == nil {
 		return dialer.DialContext
 	}
@@ -243,7 +263,7 @@ func guardedDialContext(dialer *net.Dialer, blocked func(net.IP) bool) func(cont
 		// of an ordinary misconfiguration, and picking the public one would let
 		// the attacker simply retry until timing favours them.
 		for _, ip := range ips {
-			if blocked(ip.IP) {
+			if blocked(host, ip.IP) {
 				return nil, fmt.Errorf("blocked webhook host %q resolves to non-public address %s", host, ip.IP)
 			}
 		}

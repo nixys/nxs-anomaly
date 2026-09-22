@@ -76,6 +76,9 @@ type DeliveryConfig struct {
 	// BlockPrivateWebhooks, when true, rejects outbound webhook/issue requests
 	// whose host resolves to a private, loopback, or link-local address (SSRF guard).
 	BlockPrivateWebhooks bool
+	// SSRFExemptions are the private destinations the guard lets through
+	// (NXS_ANOMALY_BLOCK_PRIVATE_WEBHOOKS_EXCEPT); nil when there are none.
+	SSRFExemptions *ssrfExemptions
 	// CircuitBreakerThreshold is the number of consecutive failures per
 	// channel+target before delivery to it is short-circuited. 0 (default) disables
 	// the breaker. CircuitBreakerCooldown is how long it stays open before a trial.
@@ -149,9 +152,9 @@ func (cfg DeliveryConfig) ssrfGuardFor(channel string) ssrfGuard {
 	case !cfg.BlockPrivateWebhooks:
 		return guardOff
 	case cfg.proxied(channel):
-		return guardProxied
+		return ssrfGuard{mode: modeProxied, exempt: cfg.SSRFExemptions}
 	default:
-		return guardDirect
+		return ssrfGuard{mode: modeDirect, exempt: cfg.SSRFExemptions}
 	}
 }
 
@@ -236,6 +239,13 @@ func DeliveryConfigFromEnv() DeliveryConfig {
 	// own transport, so it has to be known at construction time rather than only
 	// at call time. See newDeliveryHTTPClient.
 	blockPrivate := blockPrivateWebhooks(prod)
+	exempt := ssrfExemptionsFromEnv()
+	if exempt != nil && !blockPrivate {
+		// Said once at startup: an exception list with the guard off reads as
+		// protection that is not there.
+		slog.Warn("ssrf_exemptions_without_guard", "key", ssrfExemptionsEnv,
+			"detail", "NXS_ANOMALY_BLOCK_PRIVATE_WEBHOOKS is off, so every private destination is reachable anyway")
+	}
 	breakerThreshold := 0
 	if prod {
 		breakerThreshold = 5
@@ -289,29 +299,30 @@ func DeliveryConfigFromEnv() DeliveryConfig {
 		WebhookTimeoutSeconds:   timeoutSec,
 		DeliveryConcurrency:     deliveryConcurrency,
 		WorkerCycleTimeout:      cycleTimeout,
-		HTTPClient:              newDeliveryHTTPClient(timeout, blockPrivate, channels),
+		HTTPClient:              newDeliveryHTTPClientWithPolicy(timeout, blockedIPPolicy(blockPrivate, exempt), channels),
 		NotifyOnResolve:         os.Getenv("NXS_ANOMALY_NOTIFY_ON_RESOLVE") == "true",
 		PublicURL:               strings.TrimSpace(os.Getenv("NXS_ANOMALY_PUBLIC_URL")),
 		MattermostActionSecret:  strings.TrimSpace(os.Getenv("NXS_ANOMALY_MATTERMOST_ACTION_SECRET")),
 		DeadLetterWebhookURL:    os.Getenv("NXS_ANOMALY_DEAD_LETTER_WEBHOOK_URL"),
 		BlockPrivateWebhooks:    blockPrivate,
+		SSRFExemptions:          exempt,
 		CircuitBreakerThreshold: breakerThreshold,
 		CircuitBreakerCooldown:  breakerCooldown,
 		ClaimTimeout:            claimTimeout,
 		Retention:               retentionPolicyFromEnv(),
 		Channels:                channels,
 		proxies:                 proxies,
-		httpClients:             newDeliveryClients(timeout, blockedIPPolicy(blockPrivate), channels, proxies),
+		httpClients:             newDeliveryClients(timeout, blockedIPPolicy(blockPrivate, exempt), channels, proxies),
 	}
 }
 
-// blockedIPPolicy turns the SSRF flag into the dial-time blocklist, or nil when
-// the guard is off.
-func blockedIPPolicy(block bool) func(net.IP) bool {
+// blockedIPPolicy turns the SSRF flag and its exceptions into the dial-time
+// blocklist, or nil when the guard is off.
+func blockedIPPolicy(block bool, exempt *ssrfExemptions) blockPolicy {
 	if !block {
 		return nil
 	}
-	return isBlockedIP
+	return exempt.policy()
 }
 
 // worstCaseDeliveryStageSeconds estimates the longest a delivery/retry stage can

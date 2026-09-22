@@ -376,10 +376,14 @@ func notificationPayload(g model.AlertGroup, user map[string]any, reason string)
 }
 
 // triggerWebhook adds a webhook delivery_scheduled notification to state.
-func (e *Engine) triggerWebhook(state *store.State, g model.AlertGroup, webhookURL, timestamp string) {
+//
+// The step's headers ride on the payload as configured — env: references
+// unresolved — so retries send them too. Resolution happens at send time, and
+// the notification read path masks them (redactForReader).
+func (e *Engine) triggerWebhook(state *store.State, g model.AlertGroup, webhookURL string, headers any, timestamp string) {
 	groupID := g.ID()
 	ntf := buildNotification(g, "", "webhook", webhookURL, "escalation webhook", timestamp, "")
-	ntf.ScheduleDelivery(map[string]any{
+	payload := map[string]any{
 		"alert_group_id":   groupID,
 		"title":            g.Title(),
 		"severity":         g.Severity(),
@@ -387,14 +391,19 @@ func (e *Engine) triggerWebhook(state *store.State, g model.AlertGroup, webhookU
 		"status":           g.Status(),
 		"last_received_at": g.LastReceivedAt(),
 		"trace_parent":     g.TraceParent(),
-	})
+	}
+	logData := map[string]any{
+		"webhook_url":     webhookURL,
+		"delivery_status": "delivery_scheduled",
+	}
+	if hasOutboundHeaders(headers) {
+		payload["headers"] = headers
+		logData["headers"] = outboundHeaderNames(headers)
+	}
+	ntf.ScheduleDelivery(payload)
 	addNotification(state, ntf, nil)
-	g.AppendLog("webhook", "Triggered escalation webhook",
-		map[string]any{
-			"webhook_url":     webhookURL,
-			"delivery_status": "delivery_scheduled",
-			"notification_id": ntf.ID(),
-		})
+	logData["notification_id"] = ntf.ID()
+	g.AppendLog("webhook", "Triggered escalation webhook", logData)
 }
 
 // resolveNotificationReason is the reason string on a resolution notice. It is

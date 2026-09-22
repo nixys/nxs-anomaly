@@ -119,7 +119,7 @@ func TestProxiedChannelSendsThroughTheProxy(t *testing.T) {
 	proxySrv := recordingProxy(t, &seen)
 
 	s := buildProxySettings("", map[string]string{"telegram": proxySrv.URL}, "")
-	clients := newDeliveryClients(5*time.Second, isBlockedIP, ChannelPolicy{}, s)
+	clients := newDeliveryClients(5*time.Second, ipPolicy(isBlockedIP), ChannelPolicy{}, s)
 	client := clients["telegram"]
 	if client == nil {
 		t.Fatal("no client built for the proxied channel")
@@ -146,7 +146,7 @@ func TestProxyAddressIsExemptFromTheSSRFDialGuard(t *testing.T) {
 	proxySrv := recordingProxy(t, &seen)
 
 	s := buildProxySettings(proxySrv.URL, nil, "")
-	clients := newDeliveryClients(5*time.Second, isBlockedIP, ChannelPolicy{}, s)
+	clients := newDeliveryClients(5*time.Second, ipPolicy(isBlockedIP), ChannelPolicy{}, s)
 
 	resp, err := clients["slack"].Get("http://hooks.slack.com/services/T/B/X")
 	if err != nil {
@@ -173,7 +173,7 @@ func TestNoProxyDestinationIsDialledDirectlyAndStillGuarded(t *testing.T) {
 	}))
 
 	s := buildProxySettings(proxySrv.URL, nil, publicHost+","+privateHost)
-	clients := newDeliveryClients(5*time.Second, blockOnly(privateHost), ChannelPolicy{}, s)
+	clients := newDeliveryClients(5*time.Second, ipPolicy(blockOnly(privateHost)), ChannelPolicy{}, s)
 	client := clients["webhook"]
 
 	resp, err := client.Get(receiver.URL)
@@ -196,7 +196,7 @@ func TestNoProxyDestinationIsDialledDirectlyAndStillGuarded(t *testing.T) {
 // problem. Every attempt on the channel fails, carrying the reason.
 func TestMisconfiguredProxyFailsLoudlyInsteadOfGoingDirect(t *testing.T) {
 	s := buildProxySettings("htp://typo.internal:3128", nil, "")
-	clients := newDeliveryClients(5*time.Second, isBlockedIP, ChannelPolicy{}, s)
+	clients := newDeliveryClients(5*time.Second, ipPolicy(isBlockedIP), ChannelPolicy{}, s)
 
 	cfg := DeliveryConfig{
 		HTTPClient:  newDeliveryHTTPClient(5*time.Second, false, ChannelPolicy{}),
@@ -219,15 +219,15 @@ func TestMisconfiguredProxyFailsLoudlyInsteadOfGoingDirect(t *testing.T) {
 func TestSSRFGuardModePerChannel(t *testing.T) {
 	s := buildProxySettings("", map[string]string{"telegram": "http://p.internal:3128"}, "")
 	cfg := DeliveryConfig{BlockPrivateWebhooks: true, proxies: s}
-	if got := cfg.ssrfGuardFor("telegram"); got != guardProxied {
-		t.Errorf("proxied channel guard = %d, want guardProxied: its destination is still judged, just not by a local dial", got)
+	if got := cfg.ssrfGuardFor("telegram"); got.mode != modeProxied {
+		t.Errorf("proxied channel guard = %d, want guardProxied: its destination is still judged, just not by a local dial", got.mode)
 	}
-	if got := cfg.ssrfGuardFor("webhook"); got != guardDirect {
-		t.Errorf("direct channel guard = %d, want guardDirect", got)
+	if got := cfg.ssrfGuardFor("webhook"); got.mode != modeDirect {
+		t.Errorf("direct channel guard = %d, want guardDirect", got.mode)
 	}
 	cfg.BlockPrivateWebhooks = false
-	if got := cfg.ssrfGuardFor("webhook"); got != guardOff {
-		t.Errorf("guard = %d with the guard disabled, want guardOff", got)
+	if got := cfg.ssrfGuardFor("webhook"); got.mode != modeOff {
+		t.Errorf("guard = %d with the guard disabled, want guardOff", got.mode)
 	}
 }
 
@@ -282,7 +282,7 @@ func TestABlockedDestinationIsSkippedNotRetried(t *testing.T) {
 // Through a proxy the dial guard never sees a redirect hop, so the redirect
 // policy has to refuse a non-public IP literal itself.
 func TestRedirectToAPrivateIPLiteralIsRefused(t *testing.T) {
-	check := deliveryCheckRedirect(isBlockedIP, ChannelPolicy{})
+	check := deliveryCheckRedirect(ipPolicy(isBlockedIP), ChannelPolicy{})
 	req, _ := http.NewRequest(http.MethodGet, "http://169.254.169.254/latest/meta-data/", nil)
 	if err := check(req, []*http.Request{{}}); err == nil {
 		t.Error("redirect to the metadata address was followed")
@@ -424,7 +424,7 @@ func TestSOCKS5ChannelReachesProviderWithoutResolvingItLocally(t *testing.T) {
 	socksAddr := startSOCKS5(t, strings.TrimPrefix(provider.URL, "http://"), &seen)
 
 	s := buildProxySettings("socks5://"+socksAddr, nil, "")
-	clients := newDeliveryClients(5*time.Second, isBlockedIP, ChannelPolicy{}, s)
+	clients := newDeliveryClients(5*time.Second, ipPolicy(isBlockedIP), ChannelPolicy{}, s)
 
 	resp, err := clients["telegram"].Get("http://api.telegram.org/bot123/sendMessage")
 	if err != nil {
@@ -543,7 +543,7 @@ func TestTCPRelayReachesProviderKeepingTheDestinationHost(t *testing.T) {
 	relayAddr := startTCPRelay(t, strings.TrimPrefix(provider.URL, "http://"), &seen)
 
 	s := buildProxySettings("tcp://"+relayAddr, nil, "")
-	clients := newDeliveryClients(5*time.Second, isBlockedIP, ChannelPolicy{}, s)
+	clients := newDeliveryClients(5*time.Second, ipPolicy(isBlockedIP), ChannelPolicy{}, s)
 
 	resp, err := clients["telegram"].Get("http://api.telegram.org/bot123/sendMessage")
 	if err != nil {

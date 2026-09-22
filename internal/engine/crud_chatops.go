@@ -23,6 +23,10 @@ func (e *Engine) CreateChatopsChannel(ctx context.Context, payload map[string]an
 	if err := rejectInlineSecret("webhook_url", utils.StrVal(payload, "webhook_url")); err != nil {
 		return nil, err
 	}
+	headers, err := sanitizeOutboundHeaders(payload["headers"])
+	if err != nil {
+		return nil, err
+	}
 	ts := utils.ToISO(utils.UTCNow())
 	teamID := nilIfEmpty(utils.StrVal(payload, "team_id"))
 	userID := nilIfEmpty(utils.StrVal(payload, "user_id"))
@@ -55,6 +59,9 @@ func (e *Engine) CreateChatopsChannel(ctx context.Context, payload map[string]an
 				// be answered, but nothing can be pushed to it, and
 				// notifications for it are skipped rather than "delivered".
 				"webhook_url": utils.StrVal(payload, "webhook_url"),
+				// Sent with every post to webhook_url, for gateways that take
+				// their credential in a header rather than in the URL.
+				"headers": headers,
 				// Identifier of the channel on the platform itself (Slack
 				// channel id, Telegram chat id). Inbound slash commands arrive
 				// naming this, not our internal id.
@@ -125,6 +132,13 @@ func (e *Engine) UpdateChatopsChannel(ctx context.Context, channelID string, pay
 					return nil, err
 				}
 				channel["webhook_url"] = sv
+			}
+			if v, ok := payload["headers"]; ok {
+				headers, err := sanitizeOutboundHeaders(v)
+				if err != nil {
+					return nil, err
+				}
+				channel["headers"] = headers
 			}
 			if v, ok := payload["external_id"]; ok {
 				if err := duplicateChatopsBinding(state, channelID,
