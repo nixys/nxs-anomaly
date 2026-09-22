@@ -117,6 +117,38 @@ install/upgrade smoke в kind — `deploy/helm/nxs-anomaly/tests/e2e/kind-smoke.
 Ручные YAML-манифесты ниже описывают то же «под капотом» — для окружений без Helm
 или для понимания того, что рендерит чарт.
 
+### Приватный CA для исходящего TLS
+
+Внутренний приёмник webhook или чат-шлюз с сертификатом от корпоративного или
+кластерного CA падает с `x509: certificate signed by unknown authority`, а в
+distroless-образ CA во время работы не добавить. Укажите чарту существующий
+ConfigMap или Secret с PEM-bundle — цель `Bundle` от cert-manager trust-manager
+подходит как есть:
+
+```yaml
+customCA:
+  configMapName: corp-trust-bundle   # или secretName: …, но не оба
+  key: trust-bundle.pem              # по умолчанию ca.crt
+```
+
+Bundle монтируется в поды API и worker, а `SSL_CERT_DIR` перечисляет его
+рядом с `/etc/ssl/certs`, так что CA становится доверенным **в дополнение** к
+корням образа — публичные провайдеры продолжают проверяться. Это касается любого
+исходящего TLS бинаря: webhook, ChatOps, HTTPS-прокси, SMTP со STARTTLS, внешнего
+PostgreSQL. Bundle читается один раз за жизнь процесса, поэтому после
+его изменения перезапустите поды (`kubectl rollout restart`) или поручите это
+reloader-у. Собственный `SSL_CERT_DIR` в `api.extraEnv`/`worker.extraEnv` имеет
+приоритет.
+
+Получатель внутри кластера — это ещё и приватный адрес, который SSRF-гейт (в чарте
+включён) отвергает; пропустите его по имени через
+`config.NXS_ANOMALY_BLOCK_PRIVATE_WEBHOOKS_EXCEPT`, а не выключайте гейт — см.
+[SECURITY_PROFILE.md](SECURITY_PROFILE.md#исключения-для-внутренних-получателей).
+
+Для всего остального, что поду нужно на диске, есть
+`api.extraVolumes`/`api.extraVolumeMounts` и
+`worker.extraVolumes`/`worker.extraVolumeMounts` — тома передаются как написаны.
+
 ### Секреты
 
 Манифесты ниже показывают структуру, а не полную установку. Замените

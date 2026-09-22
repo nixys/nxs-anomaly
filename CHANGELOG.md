@@ -4,6 +4,67 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning once it reaches 1.0.
 
+## [1.8.0] — 2026-09-22
+
+### Added
+- **The SSRF guard takes exceptions for internal receivers.** A receiver
+  inside your own network — a chat gateway in the same cluster, as in
+  [#26](https://github.com/nixys/nxs-anomaly/issues/26) — has a private
+  address, and the only way to reach one was to switch the guard off for
+  everything, which the chart's production preflight refuses.
+  `NXS_ANOMALY_BLOCK_PRIVATE_WEBHOOKS_EXCEPT` names such destinations: host
+  names as written in the URL, `.domain` suffixes, or CIDRs matched against
+  the address actually dialled. The pre-flight, the connect-time check and
+  every redirect hop honour it alike. Only the private ranges can be excepted:
+  loopback, link-local — the cloud metadata endpoint included — and the
+  unspecified address stay refused whatever the list says.
+
+### Fixed
+- **SECURITY_PROFILE and CONFIGURATION described the guard on proxied channels
+  as it was before 1.4.3** — "the destination is not checked at all". An IP
+  literal or a name that resolves locally to a non-public address is refused
+  up front, and a redirect to such an IP literal too; only the connect-time
+  check is gone, because the proxy dials. PROXY.md already said so.
+
+### Security
+- **A `CREATE_ISSUE` step's inline tracker token is masked on reads.** It is
+  copied onto the step's notification so retries can use it, and
+  `/api/v1/notifications` and `/api/v1/history` returned it to anyone who
+  could see the group; the escalation chain returned it to every reader. It
+  is now masked on notifications for everyone and on chains for readers who
+  may not edit configuration. Notifications stored before this release are
+  covered too — the mask is applied when they are read. `token_env` is
+  unaffected, and remains the way to keep the token out of the database.
+
+## [1.7.0] — 2026-09-22
+
+### Added
+- **Outbound webhooks can carry custom headers**
+  ([#27](https://github.com/nixys/nxs-anomaly/issues/27)). A ChatOps channel
+  and a `TRIGGER_WEBHOOK` step take `headers` — an object of header name to
+  value sent with every post, retries included — so a gateway that
+  authenticates callers with `Authorization` or `X-API-Key` no longer needs its
+  key in the URL, where every proxy's access log keeps it. Values are secrets
+  like a channel's `webhook_url`: an `env:VARIABLE` reference is resolved at
+  send time, the production profile refuses an inline value, and reads mask
+  them for anyone who may not edit configuration (and on notifications, for
+  everyone). A reference to an unset variable skips the delivery with the
+  variable's name instead of sending a request without its credential.
+  Transport headers (`Host`, `Content-Length`, `Content-Type`,
+  `Transfer-Encoding`, `Connection`) cannot be set.
+- **The chart can trust a private CA for outbound TLS**
+  ([#26](https://github.com/nixys/nxs-anomaly/issues/26)). An internal HTTPS
+  receiver with a certificate from a company or cluster CA failed with
+  `x509: certificate signed by unknown authority`, and the distroless image
+  had no way to add one. `customCA.configMapName` or `customCA.secretName`
+  with `customCA.key` names an existing PEM bundle — a trust-manager `Bundle`
+  target works as is; it is mounted into the API, worker and report pods and
+  listed in `SSL_CERT_DIR` next to `/etc/ssl/certs`, so the image's public
+  roots keep working. The bundle is read at process start: restart the pods
+  after it changes.
+- **`api` and `worker` take `extraVolumes` and `extraVolumeMounts`**, passed
+  through as written.
+
 ## [1.6.0] — 2026-09-21
 
 ### Added

@@ -51,7 +51,7 @@ func redactForReader(ctx context.Context, collection string, item map[string]any
 		out["push_token"] = mask(utils.StrVal(item, "push_token"))
 		return out
 	case "chatops_channels":
-		if utils.StrVal(item, "webhook_url") == "" {
+		if utils.StrVal(item, "webhook_url") == "" && !hasOutboundHeaders(item["headers"]) {
 			return item
 		}
 		if authz.FromContext(ctx).Can(authz.ActionEdit) {
@@ -59,11 +59,79 @@ func redactForReader(ctx context.Context, collection string, item map[string]any
 		}
 		out := copyMap(item)
 		out["webhook_url"] = mask(utils.StrVal(item, "webhook_url"))
+		if hasOutboundHeaders(item["headers"]) {
+			out["headers"] = maskOutboundHeaders(item["headers"])
+		}
 		return out
 	case "integrations":
 		return redactIntegration(ctx, item)
+	case "notifications":
+		// A TRIGGER_WEBHOOK notification carries its step's headers and a
+		// CREATE_ISSUE one the step's inline tracker token: delivery needs them
+		// on the row so retries keep working. The notification is readable by
+		// anyone who can see the group — /notifications and /history — and
+		// nobody edits a notification, so the values are masked for everyone.
+		payload, _ := item["payload"].(map[string]any)
+		masked := maskStepSecrets(payload)
+		if masked == nil {
+			return item
+		}
+		out := copyMap(item)
+		out["payload"] = masked
+		return out
+	case "escalation_chains":
+		return redactChainSecrets(ctx, item)
 	}
 	return item
+}
+
+// redactChainSecrets masks the credentials escalation steps carry — the
+// headers of a TRIGGER_WEBHOOK step and the inline token of a CREATE_ISSUE
+// step — for actors who may not edit configuration. It is the same line as a
+// ChatOps channel's webhook_url, and for the same reason: the chain editor
+// round-trips the steps it read, so an editor must get the real values back.
+func redactChainSecrets(ctx context.Context, item map[string]any) map[string]any {
+	if authz.FromContext(ctx).Can(authz.ActionEdit) {
+		return item
+	}
+	steps, _ := item["steps"].([]any)
+	var out map[string]any
+	for i, raw := range steps {
+		step, _ := raw.(map[string]any)
+		masked := maskStepSecrets(step)
+		if masked == nil {
+			continue
+		}
+		if out == nil {
+			out = copyMap(item)
+			out["steps"] = append([]any(nil), steps...)
+		}
+		out["steps"].([]any)[i] = masked
+	}
+	if out == nil {
+		return item
+	}
+	return out
+}
+
+// maskStepSecrets returns a copy of m — an escalation step, or the payload a
+// step put on its notification — with headers values and an inline token
+// masked, or nil when it carries neither. token_env names a variable rather
+// than holding the secret, so it is left as is.
+func maskStepSecrets(m map[string]any) map[string]any {
+	hasHeaders := hasOutboundHeaders(m["headers"])
+	token := utils.StrVal(m, "token")
+	if !hasHeaders && token == "" {
+		return nil
+	}
+	out := copyMap(m)
+	if hasHeaders {
+		out["headers"] = maskOutboundHeaders(m["headers"])
+	}
+	if token != "" {
+		out["token"] = mask(token)
+	}
+	return out
 }
 
 // redactIntegration hides the two credentials an integration carries.
@@ -91,7 +159,7 @@ func redactIntegration(ctx context.Context, item map[string]any) map[string]any 
 // redactListForReader applies redactForReader to a page of rows.
 func redactListForReader(ctx context.Context, collection string, items []map[string]any) []map[string]any {
 	switch collection {
-	case "mobile_devices", "chatops_channels", "integrations":
+	case "mobile_devices", "chatops_channels", "integrations", "notifications", "escalation_chains":
 	default:
 		return items
 	}

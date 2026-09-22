@@ -68,7 +68,7 @@ func TestDeliveryTransportRefusesRedirectToBlockedAddress(t *testing.T) {
 		http.Redirect(w, r, secret.URL, http.StatusFound)
 	}))
 
-	client := newDeliveryHTTPClientWithPolicy(5*time.Second, blockOnly(privateHost), ChannelPolicy{})
+	client := newDeliveryHTTPClientWithPolicy(5*time.Second, ipPolicy(blockOnly(privateHost)), ChannelPolicy{})
 	resp, err := client.Get(hop.URL)
 	if err == nil {
 		_ = resp.Body.Close()
@@ -93,7 +93,7 @@ func TestDeliveryTransportFollowsRedirectBetweenPermittedHosts(t *testing.T) {
 		http.Redirect(w, r, final.URL, http.StatusFound)
 	}))
 
-	client := newDeliveryHTTPClientWithPolicy(5*time.Second, blockOnly(privateHost), ChannelPolicy{})
+	client := newDeliveryHTTPClientWithPolicy(5*time.Second, ipPolicy(blockOnly(privateHost)), ChannelPolicy{})
 	resp, err := client.Get(hop.URL)
 	if err != nil {
 		t.Fatalf("ordinary redirect was not followed: %v", err)
@@ -106,7 +106,7 @@ func TestDeliveryTransportFollowsRedirectBetweenPermittedHosts(t *testing.T) {
 
 func TestDeliveryTransportRefusesBlockedAddressOnFirstHop(t *testing.T) {
 	secret := serveOn(t, privateHost, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
-	client := newDeliveryHTTPClientWithPolicy(5*time.Second, blockOnly(privateHost), ChannelPolicy{})
+	client := newDeliveryHTTPClientWithPolicy(5*time.Second, ipPolicy(blockOnly(privateHost)), ChannelPolicy{})
 	resp, err := client.Get(secret.URL)
 	if err == nil {
 		_ = resp.Body.Close()
@@ -118,7 +118,7 @@ func TestDeliveryTransportRefusesBlockedAddressOnFirstHop(t *testing.T) {
 // is consulted against the address that is about to be dialled, inside the dial
 // itself, so there is no window between checking and connecting.
 func TestGuardedDialContextRefusesBlockedAnswer(t *testing.T) {
-	dial := guardedDialContext(&net.Dialer{Timeout: time.Second}, isBlockedIP)
+	dial := guardedDialContext(&net.Dialer{Timeout: time.Second}, ipPolicy(isBlockedIP))
 	// localhost is the one name guaranteed to resolve to a blocked address on
 	// every machine that runs this suite.
 	if _, err := dial(context.Background(), "tcp", "localhost:80"); err == nil {
@@ -190,7 +190,7 @@ func TestDeliveryClientRejectsNonHTTPRedirectScheme(t *testing.T) {
 	hop := serveOn(t, publicHost, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "file:///etc/passwd", http.StatusFound)
 	}))
-	client := newDeliveryHTTPClientWithPolicy(5*time.Second, blockOnly(privateHost), ChannelPolicy{})
+	client := newDeliveryHTTPClientWithPolicy(5*time.Second, ipPolicy(blockOnly(privateHost)), ChannelPolicy{})
 	resp, err := client.Get(hop.URL)
 	if err == nil {
 		_ = resp.Body.Close()

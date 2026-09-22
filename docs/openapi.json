@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "nxs-anomaly native API",
-    "version": "1.6.0",
+    "version": "1.8.0",
     "description": "The native /api/v1 contract for nxs-anomaly (API, worker, frontend). This is the authoritative contract; the Grafana-compatibility surface under /api/internal/v1 is a compatibility shim and is NOT part of this contract. The core payloads — user, team, schedule, escalation chain, integration, alert group, alert, notification, delivery attempt — are modelled field by field, with `required` reflecting exactly the keys the engine writes unconditionally; every one still allows additional properties because the underlying storage is JSONB. Remaining resources use the open `Entity` schema. Drift between this document and the router is gated by internal/server/openapi_contract_test.go, and the frontend compiles against types generated from this file (frontend/src/api/schema.d.ts).",
     "license": {
       "name": "Apache-2.0"
@@ -2737,6 +2737,16 @@
             "type": "string",
             "description": "Incoming-webhook URL of the channel. Empty means command-only: notifications for it are skipped, not delivered. Masked on read paths."
           },
+          "headers": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Extra request headers sent with every post to webhook_url, e.g. {\"Authorization\": \"env:NXS_ANOMALY_GATEWAY_AUTH\"}. Values may be env: references, resolved at send time; the production profile refuses inline values. Host, Content-Length, Content-Type, Transfer-Encoding and Connection cannot be set; at most 16. Values are masked for readers who may not edit configuration."
+          },
           "external_id": {
             "type": "string",
             "description": "Channel id on the platform itself (Slack channel id, Telegram chat id); inbound commands name this, not the internal id."
@@ -4075,6 +4085,16 @@
           },
           "webhook_url": {
             "type": "string"
+          },
+          "headers": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "TRIGGER_WEBHOOK only: extra request headers sent to webhook_url, with the same rules as ChatOpsChannel.headers. Values are masked for readers who may not edit configuration, and on notifications for everyone."
           },
           "notify_policy": {
             "type": "string"

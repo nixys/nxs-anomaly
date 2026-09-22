@@ -3024,6 +3024,10 @@ export interface components {
             commands_enabled: boolean;
             /** @description Incoming-webhook URL of the channel. Empty means command-only: notifications for it are skipped, not delivered. Masked on read paths. */
             webhook_url: string;
+            /** @description Extra request headers sent with every post to webhook_url, e.g. {"Authorization": "env:NXS_ANOMALY_GATEWAY_AUTH"}. Values may be env: references, resolved at send time; the production profile refuses inline values. Host, Content-Length, Content-Type, Transfer-Encoding and Connection cannot be set; at most 16. Values are masked for readers who may not edit configuration. */
+            headers?: {
+                [key: string]: string;
+            } | null;
             /** @description Channel id on the platform itself (Slack channel id, Telegram chat id); inbound commands name this, not the internal id. */
             external_id: string;
             notifications_enabled: boolean;
@@ -3402,6 +3406,10 @@ export interface components {
             fallback_to_all?: boolean;
             user_id?: string | null;
             webhook_url?: string;
+            /** @description TRIGGER_WEBHOOK only: extra request headers sent to webhook_url, with the same rules as ChatOpsChannel.headers. Values are masked for readers who may not edit configuration, and on notifications for everyone. */
+            headers?: {
+                [key: string]: string;
+            } | null;
             notify_policy?: string;
             tracker_type?: string;
             url?: string;

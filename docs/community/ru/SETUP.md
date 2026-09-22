@@ -189,6 +189,7 @@ export NXS_ANOMALY_DB_CONNECT_MAX_WAIT_SECONDS=0           # retry подклю�
 | `NXS_ANOMALY_WEB_SESSION_RETENTION_DAYS` | `0` | Удалять web-сессии старше N дней (в них IP и User-Agent) |
 | `NXS_ANOMALY_BLOCKED_CHANNELS` | — | Каналы, запрещённые на уровне инсталляции, через запятую |
 | `NXS_ANOMALY_EGRESS_ALLOWLIST` | — | Разрешённые адресаты исходящей доставки: хосты и/или CIDR |
+| `NXS_ANOMALY_BLOCK_PRIVATE_WEBHOOKS_EXCEPT` | — | Приватные адресаты, которые SSRF-гейт пропускает: хосты, суффиксы `.domain`, CIDR; loopback и link-local — никогда. См. [SECURITY_PROFILE.md](SECURITY_PROFILE.md#исключения-для-внутренних-получателей) |
 | `LOG_LEVEL` | `info` | Уровень логирования: `debug`/`info`/`warn`/`error`. `debug` включает диагностические логи (escalation_skipped, delivery_attempt и др.) |
 | `LOG_FORMAT` | `text` | Формат логов: `text` или `json` |
 

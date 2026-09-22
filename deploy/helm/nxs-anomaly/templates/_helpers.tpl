@@ -293,6 +293,62 @@ one expression so an edition that ships fewer of them drops whole lines.
 {{- if and .Values.tracing.enabled (not .Values.tracing.endpoint) -}}
 {{-   fail "tracing.enabled requires tracing.endpoint (an OTLP/HTTP collector URL)" -}}
 {{- end -}}
+{{- /*
+  Private CA. Both sources at once would mount one of them and silently ignore
+  the other; no key would mount an empty directory and trust nothing new.
+*/ -}}
+{{- with .Values.customCA -}}
+{{-   if and .configMapName .secretName -}}
+{{-     fail "customCA: set configMapName or secretName, not both — only one bundle can be mounted" -}}
+{{-   end -}}
+{{-   if and (or .configMapName .secretName) (not .key) -}}
+{{-     fail "customCA.key must name the key that holds the PEM bundle" -}}
+{{-   end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Private CA (customCA). Mounted as a directory and added to SSL_CERT_DIR next to
+/etc/ssl/certs, so Go trusts it on top of the image's roots rather than instead
+of them. The three helpers render nothing when no CA is configured.
+*/}}
+{{- define "nxs-anomaly.customCAEnabled" -}}
+{{- if or .Values.customCA.configMapName .Values.customCA.secretName }}true{{ end -}}
+{{- end -}}
+
+{{- define "nxs-anomaly.customCAEnv" -}}
+{{- if include "nxs-anomaly.customCAEnabled" . }}
+- name: SSL_CERT_DIR
+  value: "/etc/ssl/certs:/etc/nxs-anomaly/ca-certificates"
+{{- end }}
+{{- end -}}
+
+{{- define "nxs-anomaly.customCAVolumeMount" -}}
+{{- if include "nxs-anomaly.customCAEnabled" . }}
+- name: custom-ca
+  mountPath: /etc/nxs-anomaly/ca-certificates
+  readOnly: true
+{{- end }}
+{{- end -}}
+
+{{- define "nxs-anomaly.customCAVolume" -}}
+{{- with .Values.customCA }}
+{{- if .configMapName }}
+- name: custom-ca
+  configMap:
+    name: {{ .configMapName }}
+    items:
+      - key: {{ .key }}
+        path: ca.crt
+{{- else if .secretName }}
+- name: custom-ca
+  secret:
+    secretName: {{ .secretName }}
+    items:
+      - key: {{ .key }}
+        path: ca.crt
+{{- end }}
+{{- end }}
 {{- end -}}
 
 {{/*

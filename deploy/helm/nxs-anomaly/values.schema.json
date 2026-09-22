@@ -130,6 +130,22 @@
     "extraConfig": {
       "$ref": "#/$defs/envMap"
     },
+    "customCA": {
+      "type": "object",
+      "description": "An existing ConfigMap or Secret with a PEM bundle, trusted for outbound TLS in addition to the image's roots. Setting both names is refused by the preflight.",
+      "properties": {
+        "configMapName": {
+          "type": "string"
+        },
+        "secretName": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "rateLimits": {
       "type": "object",
       "description": "Cluster-wide rates; the chart divides by api.replicaCount. Empty string means 'leave it to the application'.",
@@ -479,6 +495,18 @@
           }
         },
         "extraEnv": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "extraVolumes": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "extraVolumeMounts": {
           "type": "array",
           "items": {
             "type": "object"

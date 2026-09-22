@@ -148,6 +148,8 @@ helm show values oci://ghcr.io/nixys/nxs-anomaly --version "$CHART_VERSION" > ch
 | `networkPolicy.enabled` | `false` | Enable chart NetworkPolicies; requires an enforcing CNI |
 | `serviceMonitor.enabled`, `prometheusRule.enabled` | `false`, `false` | Prometheus Operator integration |
 | `tracing.enabled` | `false` | OTLP/HTTP tracing; also set `tracing.endpoint` |
+| `customCA.configMapName` / `.secretName`, `.key` | `""`, `ca.crt` | Trust a private CA for outbound TLS, in addition to the image's roots |
+| `api.extraVolumes`, `api.extraVolumeMounts` (same for `worker`) | `[]` | Extra pod volumes and container mounts, passed through as written |
 | `tests.acceptance.enabled` | `false` | Opt-in test that writes a canary alert |
 
 Exactly one secret source must be enabled. Its resulting Secret must contain
@@ -172,6 +174,13 @@ policies against your cluster; API/worker outbound access is not restricted to a
 list of notification providers. `rateLimits.webhookRatePerCluster` and
 `rateLimits.apiRatePerCluster` divide a rate across API replicas with independent
 per-pod buckets; they are not a coordinated global quota.
+
+For an internal HTTPS endpoint whose certificate comes from a company or cluster
+CA, set `customCA` to an existing ConfigMap or Secret with a PEM bundle (a
+trust-manager `Bundle` target works). It is mounted into the API and worker
+pods and added to `SSL_CERT_DIR` next to `/etc/ssl/certs`, so public
+providers keep verifying. The bundle is read at process start: restart the pods
+after it changes.
 
 Helm validates types with `values.schema.json` and checks incompatible settings
 before rendering. The [deployment guide](https://github.com/nixys/nxs-anomaly/blob/main/docs/community/en/DEPLOY.md#kubernetes)

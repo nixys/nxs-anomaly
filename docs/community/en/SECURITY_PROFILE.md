@@ -47,6 +47,35 @@ With the guard off — the default outside the production profile — none of th
 applies and delivery to a local address works as before, which is what
 development environments rely on.
 
+### Exceptions for internal receivers
+
+A receiver inside your own network — a chat gateway in the same cluster, an
+internal ticket system — has a private address by definition, and the guard
+refuses it. Rather than switching the guard off for everything (which the
+production profile does not allow in the Helm chart), name that destination in
+`NXS_ANOMALY_BLOCK_PRIVATE_WEBHOOKS_EXCEPT`:
+
+```bash
+NXS_ANOMALY_BLOCK_PRIVATE_WEBHOOKS_EXCEPT=gw.chat.svc.cluster.local,.corp.example,10.20.0.0/16
+```
+
+Entries are comma-separated, in the syntax of `NXS_ANOMALY_EGRESS_ALLOWLIST`:
+
+| Entry | Matches |
+|---|---|
+| `gw.chat.svc.cluster.local` | that host name, as written in the URL or in a redirect |
+| `.corp.example` | `corp.example` and every subdomain (not `evilcorp.example`) |
+| `10.20.0.0/16`, `10.96.14.7` | the address actually dialled |
+
+Prefer a host name: it excepts one receiver, where a CIDR covering the service
+network excepts everything in it for anyone who can edit a chain. An exception
+lifts only the **private** ranges (RFC 1918 and `fc00::/7`). Loopback,
+link-local — the cloud metadata endpoint `169.254.169.254` is link-local — and the
+unspecified address stay refused whatever the list says. Everything else is
+unchanged: the address is still checked at connect time and on every redirect
+hop. The list does nothing with the guard off, and the service warns about that
+at startup.
+
 ### The guard and the delivery proxy
 
 If a channel is sent through a proxy (`NXS_ANOMALY_DELIVERY_PROXY_*`, see
@@ -55,10 +84,13 @@ deciding deliberately:
 
 - **the proxy's own address is always allowed**, private included: an egress
   proxy on `10.x` is an ordinary arrangement, and the operator named it;
-- **the destination's address is not checked at all** — the proxy resolves and
-  dials it, not this service, so neither the up-front check nor the connect-time
-  one could say anything meaningful (on a network with deliberately broken DNS
-  the up-front check would additionally refuse everything);
+- **the destination is checked as far as this service can see it** — the proxy
+  resolves and dials it, so there is no connect-time check. Up front, an IP
+  literal in a private, loopback or link-local range is refused, and so is a
+  name that resolves locally to one; a name with no local answer is let through
+  (on a network with deliberately broken DNS that is the normal case), and a
+  name only the proxy maps to an internal address is beyond what the service can
+  judge. Redirects to such an IP literal are refused too;
 - **what still applies**: `NXS_ANOMALY_EGRESS_ALLOWLIST`, against the written URL
   and at every redirect, and the refusal of non-HTTP schemes;
 - **channels without a proxy** — including those listed in
@@ -137,7 +169,8 @@ as `rate_limiter_unavailable`.
 ## Secret references (`env:VARIABLE`)
 
 Per-object secrets held in the database — an integration's `webhook_secret`, a
-ChatOps channel's `webhook_url`, a mobile device's `push_token` — can be written
+ChatOps channel's `webhook_url`, the `headers` of a ChatOps channel or a
+`TRIGGER_WEBHOOK` step, a mobile device's `push_token` — can be written
 as a reference instead of a literal:
 
 ```json

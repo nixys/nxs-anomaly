@@ -219,7 +219,10 @@ Two that are worth knowing by name:
 
 - `NXS_ANOMALY_BLOCK_PRIVATE_WEBHOOKS=true` — outbound delivery refuses private,
   loopback and link-local addresses. On by default under the production profile
-  and in the Helm chart's values; the binary's own default is off.
+  and in the Helm chart's values; the binary's own default is off. A receiver in
+  your own network is let through by naming it in
+  `NXS_ANOMALY_BLOCK_PRIVATE_WEBHOOKS_EXCEPT` (see
+  [SECURITY_PROFILE.md](SECURITY_PROFILE.md#exceptions-for-internal-receivers)).
 - `NXS_ANOMALY_TRUSTED_PROXIES` — CIDRs whose `X-Forwarded-For` is believed. The
   client is the nearest address that is not a trusted proxy. The sign-in rate limit
   is per client address: behind a proxy that is not trusted every user shares one

@@ -227,7 +227,7 @@ api -X POST "$API/api/v1/escalation-chains" -d '{
 | `NOTIFY_TEAM` | `team_id` | Pages every member of the team |
 | `NOTIFY_DUTY_USERS` | `team_id`, `fallback_to_all` | Pages whoever has the `on_duty` flag raised |
 | `NOTIFY_EMERGENCY` | `user_id` | The emergency recipient. Without `user_id`, `emergency_user_id` from the integration's policy is used |
-| `TRIGGER_WEBHOOK` | `webhook_url` | An outbound HTTP call |
+| `TRIGGER_WEBHOOK` | `webhook_url`, `headers` | An outbound HTTP call |
 | `CREATE_ISSUE` | `url`, `tracker_type`, `token_env`, `project`, templates | Opens a ticket in a tracker |
 | `RESOLVE` | — | Closes the group automatically |
 | `REPEAT` | `from_position`, `max_repeat_count`, `cooldown_minutes` | Returns to the step at `from_position` |
@@ -258,6 +258,25 @@ When `max_repeat_count` is exhausted, escalation stops and writes
 **`TRIGGER_WEBHOOK` obeys the SSRF gate.** In the production profile, addresses in
 private, loopback and link-local ranges are refused, redirects included — see
 [SECURITY_PROFILE.md](SECURITY_PROFILE.md).
+
+**`TRIGGER_WEBHOOK`: a credential goes in `headers`, not in the URL.** A URL ends
+up in the access logs of every proxy on the way; a header does not. `headers` is
+an object of header name to value, sent with every call to `webhook_url`,
+retries included:
+
+```json
+{"kind": "TRIGGER_WEBHOOK", "webhook_url": "https://gateway.example/hook",
+ "headers": {"Authorization": "env:NXS_ANOMALY_GATEWAY_AUTH"}}
+```
+
+A value is treated as a secret: it may be an `env:VARIABLE` reference (the
+variable holds the whole value, `Bearer …` included), read at send time, and the
+production profile refuses an inline one. If the variable is not set, the
+notification gets the status `skipped` naming it, and nothing is sent — a request
+without its credential would only come back as a 401. `Host`, `Content-Length`,
+`Content-Type`, `Transfer-Encoding` and `Connection` belong to the transport and
+cannot be set; at most 16 headers. ChatOps channels take the same field (see
+[section 8](#8-chatops)).
 
 **`CREATE_ISSUE`: the token goes through `token_env`.** In the production profile
 an inline secret in the `token` field is refused; use a reference to an
@@ -591,6 +610,11 @@ actually do:
 - `webhook_url` — outbound messages. **Without it the channel exists only inside
   the service**: nothing can be sent to it, and notifications for it get the status
   `skipped` rather than "delivered".
+- `headers` — extra request headers for every post to `webhook_url`, for a
+  gateway that authenticates callers with `Authorization` or `X-API-Key`
+  (`{"Authorization": "env:NXS_ANOMALY_GATEWAY_AUTH"}`). The rules are those of
+  `TRIGGER_WEBHOOK` headers ([section 4](#4-escalation-chains)); `null` or `{}` in
+  an update removes them.
 - `external_id` — the channel's identifier on the platform's side (a Slack channel
   id, a Telegram chat id). Incoming slash commands arrive with that rather than the
   internal `id`, so without it commands from this channel will not match.
@@ -803,8 +827,9 @@ Three things worth knowing before they surprise you:
 - **a mistake in a proxy URL does not turn into "we will send directly"** — the
   channel fails with a clear reason, and `/api/v1/readiness` counts it as a channel
   with no transport;
-- **the SSRF gate changes shape for a proxied channel** — the destination is no
-  longer checked by IP, because the proxy resolves it.
+- **the SSRF gate changes shape for a proxied channel** — the proxy resolves the
+  destination, so there is no connect-time check; an IP literal or a name that
+  resolves locally to a non-public address is still refused up front.
 
 The whole story — the channels, the interaction with the gate, Helm, diagnostics
 and common mistakes — is in its own document, [PROXY.md](PROXY.md).

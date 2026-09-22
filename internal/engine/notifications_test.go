@@ -43,7 +43,7 @@ func TestTriggerWebhookSchedulesDelivery(t *testing.T) {
 	group := newGroup(0, 0)
 
 	g := model.WrapAlertGroup(group)
-	e.triggerWebhook(s, g, "http://hook.test/escalation", "2026-05-10T10:00:00+00:00")
+	e.triggerWebhook(s, g, "http://hook.test/escalation", nil, "2026-05-10T10:00:00+00:00")
 	group = g.Raw()
 
 	if len(s.Notifications) != 1 {

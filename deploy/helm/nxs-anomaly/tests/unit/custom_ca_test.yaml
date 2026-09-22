@@ -1,0 +1,148 @@
+suite: private CA and extra volumes
+release:
+  name: rel
+  namespace: nxs
+set:
+  existingSecret.enabled: true
+  existingSecret.name: app-secret
+tests:
+  - it: adds no env, volume or mount by default — an existing installation must not change
+    templates:
+      - templates/api.yaml
+      - templates/worker.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+      matchMany: true
+    asserts:
+      - notExists: {path: spec.template.spec.volumes}
+      - notExists: {path: "spec.template.spec.containers[0].volumeMounts"}
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content: {name: SSL_CERT_DIR, value: "/etc/ssl/certs:/etc/nxs-anomaly/ca-certificates"}
+
+  # SSL_CERT_DIR, not SSL_CERT_FILE: the file variable replaces the image's
+  # bundle file. The directory list keeps /etc/ssl/certs, and Go reads the
+  # image's bundle file regardless, so the public roots stay.
+  - it: mounts a ConfigMap bundle and adds it to SSL_CERT_DIR next to the system roots
+    templates:
+      - templates/api.yaml
+      - templates/worker.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+      matchMany: true
+    set:
+      customCA.configMapName: trust-bundle
+      customCA.key: trust-bundle.pem
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: custom-ca
+            configMap:
+              name: trust-bundle
+              items: [{key: trust-bundle.pem, path: ca.crt}]
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content: {name: custom-ca, mountPath: /etc/nxs-anomaly/ca-certificates, readOnly: true}
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: SSL_CERT_DIR, value: "/etc/ssl/certs:/etc/nxs-anomaly/ca-certificates"}
+
+  - it: takes the bundle from a Secret instead
+    templates:
+      - templates/api.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      customCA.secretName: corp-ca
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: custom-ca
+            secret:
+              secretName: corp-ca
+              items: [{key: ca.crt, path: ca.crt}]
+
+  # A duplicate env name resolves to the last entry, so an operator's own
+  # SSL_CERT_DIR in extraEnv is the one the process sees.
+  - it: keeps extraEnv after the CA variable so an explicit override wins
+    templates:
+      - templates/api.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      customCA.configMapName: trust-bundle
+      api.extraEnv: [{name: SSL_CERT_DIR, value: /custom}]
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[0].name
+          value: SSL_CERT_DIR
+      - equal:
+          path: spec.template.spec.containers[0].env[1]
+          value: {name: SSL_CERT_DIR, value: /custom}
+
+  - it: passes extraVolumes and extraVolumeMounts through, alongside the CA
+    templates:
+      - templates/api.yaml
+      - templates/worker.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+      matchMany: true
+    set:
+      customCA.configMapName: trust-bundle
+      api.extraVolumes: [{name: scratch, emptyDir: {}}]
+      api.extraVolumeMounts: [{name: scratch, mountPath: /scratch}]
+      worker.extraVolumes: [{name: scratch, emptyDir: {}}]
+      worker.extraVolumeMounts: [{name: scratch, mountPath: /scratch}]
+    asserts:
+      - lengthEqual: {path: spec.template.spec.volumes, count: 2}
+      - contains:
+          path: spec.template.spec.volumes
+          content: {name: scratch, emptyDir: {}}
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content: {name: scratch, mountPath: /scratch}
+
+  - it: renders extraVolumes without a CA
+    templates:
+      - templates/worker.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+      matchMany: true
+    set:
+      worker.extraVolumes: [{name: scratch, emptyDir: {}}]
+      worker.extraVolumeMounts: [{name: scratch, mountPath: /scratch}]
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes
+          value: [{name: scratch, emptyDir: {}}]
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts
+          value: [{name: scratch, mountPath: /scratch}]
+
+  # No templates filter: the preflight runs from configmap.yaml (see
+  # preflight_validation_test.yaml).
+  - it: refuses a ConfigMap and a Secret at once
+    set:
+      customCA.configMapName: a
+      customCA.secretName: b
+    asserts:
+      - failedTemplate:
+          errorMessage: "customCA: set configMapName or secretName, not both — only one bundle can be mounted"
+
+  # No templates filter: the preflight runs from configmap.yaml (see
+  # preflight_validation_test.yaml).
+  - it: refuses a bundle with no key
+    set:
+      customCA.configMapName: a
+      customCA.key: ""
+    asserts:
+      - failedTemplate:
+          errorMessage: "customCA.key must name the key that holds the PEM bundle"

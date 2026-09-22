@@ -110,6 +110,7 @@ minimum password length is 12 characters.
 | `NXS_ANOMALY_WEB_SESSION_RETENTION_DAYS` | `0` | Delete web sessions older than N days. |
 | `NXS_ANOMALY_BLOCKED_CHANNELS` | — | Forbidden delivery channels, comma-separated. |
 | `NXS_ANOMALY_EGRESS_ALLOWLIST` | — | Permitted outbound delivery destinations: hosts and/or CIDRs. |
+| `NXS_ANOMALY_BLOCK_PRIVATE_WEBHOOKS_EXCEPT` | — | Private destinations the SSRF guard lets through: hosts, `.domain` suffixes and/or CIDRs. Loopback and link-local are never excepted. |
 
 Every event carries its request's `request_id` — the same value is returned in the
 `X-Request-ID` header and written to the access log — so "everything one request
@@ -460,8 +461,11 @@ than no button.
 | POST | `/api/v1/users/{id}/test-push` | Sends a real push through the relay and returns the provider's verdict per device; `push_configured: false` if the relay is not configured. Admin only, like the other writes under `/users`. |
 
 Reads mask fields that look like credentials: a device's `push_token` always, a
-ChatOps channel's `webhook_url` for everyone who may not change configuration.
-Delivery reads the same rows through the store and is unaffected.
+ChatOps channel's `webhook_url` and the values of the `headers` of a ChatOps
+channel or a `TRIGGER_WEBHOOK` step for everyone who may not change
+configuration, as is the inline `token` of a `CREATE_ISSUE` step; the header
+values and the tracker token a notification carries — for everyone. Delivery
+reads the same rows through the store and is unaffected.
 
 ### ChatOps and mobile clients
 

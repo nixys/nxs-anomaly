@@ -97,7 +97,7 @@ func (e *Engine) advanceGroupLocked(state *store.State, g model.AlertGroup, time
 			}
 
 		case StepTriggerWebhook:
-			e.triggerWebhook(state, g, utils.StrVal(step, "webhook_url"), timestamp)
+			e.triggerWebhook(state, g, utils.StrVal(step, "webhook_url"), step["headers"], timestamp)
 
 		case StepCreateIssue:
 			e.executeCreateIssue(state, g, step, timestamp)

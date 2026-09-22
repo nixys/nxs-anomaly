@@ -93,6 +93,7 @@ func (e *Engine) GetHistory(ctx context.Context, filters map[string]any) (map[st
 	}
 
 	notifications, _ := e.store.ListItemsIn(ctx, "notifications", "alert_group_id", groupIDs)
+	notifications = redactListForReader(ctx, "notifications", notifications)
 	notifsByGroup := map[string][]map[string]any{}
 	var notifIDs []any
 	for _, n := range notifications {
