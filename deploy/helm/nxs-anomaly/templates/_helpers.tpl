@@ -313,7 +313,10 @@ Private CA (customCA). Mounted as a directory and added to SSL_CERT_DIR next to
 of them. The three helpers render nothing when no CA is configured.
 */}}
 {{- define "nxs-anomaly.customCAEnabled" -}}
-{{- if or .Values.customCA.configMapName .Values.customCA.secretName }}true{{ end -}}
+{{- /* default dict: `helm upgrade --reuse-values` from a chart older than
+       1.7.0 carries that chart's values, with no customCA key at all. */ -}}
+{{- $ca := .Values.customCA | default dict -}}
+{{- if or $ca.configMapName $ca.secretName }}true{{ end -}}
 {{- end -}}
 
 {{- define "nxs-anomaly.customCAEnv" -}}

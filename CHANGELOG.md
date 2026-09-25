@@ -4,6 +4,57 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning once it reaches 1.0.
 
+## [1.9.1] — 2026-09-26
+
+### Fixed
+- **The phone's event stream reaches it through a proxy.** In 1.9.0 the
+  handler flushed the response to find out whether it could stream, which sent
+  the response head before `Content-Type: text/event-stream` and
+  `X-Accel-Buffering: no` were set — so neither left the server. The frontend's
+  nginx, and every ingress in front of it, then buffered the endless response,
+  and not a byte reached a phone: the app kept reconnecting and only its
+  fifteen-minute check announced anything. Straight to the API it worked, which
+  is what the tests and the emulator exercised. The same order turned the
+  stream cap's `503` with `Retry-After` into a `200`. Tests now read the
+  headers off a real connection.
+- **`helm upgrade --reuse-values` from a chart older than 1.7.0 renders
+  again.** That flag keeps the previous chart's values whole, so they have no
+  `customCA` key, and the template that asks whether a private CA is set failed
+  on it (`nil pointer evaluating interface {}.configMapName`). The upgrade
+  refused to start; nothing was changed. It is the command the chart README and
+  BACKUP_RESTORE gave — they now give `--reset-then-reuse-values` (Helm 3.14+),
+  which keeps your values and takes the new chart's defaults for the rest.
+  Checked against the default values of every chart from 1.0.0 to 1.8.0, in
+  both editions.
+
+### Documentation
+- **A phone needs a user with a role.** API.md now says so: a user created
+  without one — a notification recipient only — signs in neither on the web
+  nor from a phone, and a mobile session for them answers 401. Since 1.6.0 a
+  mobile session authenticates on its own, so an API key next to it no longer
+  stands in for the missing role.
+
+## [1.9.0] — 2026-09-25
+
+### Added
+- **An event stream for paired phones** (`GET /api/v1/mobile/events`). The app
+  had no way to hear about an alert except asking, and Android allows a
+  background check every fifteen minutes at best — which is not a way to wake
+  somebody at night. The phone now holds this Server-Sent Events stream open
+  and learns about a group within
+  `NXS_ANOMALY_MOBILE_STREAM_INTERVAL_SECONDS` (10 by default). Deliberately
+  stateless: every tick carries the whole set of groups that concern the
+  caller, plus which of them are new or changed, so a phone that reconnects
+  after a dead network is correct again immediately. The first tick is marked
+  as a baseline and announces nothing. A failed read keeps the stream open —
+  a restarting database must not send every phone into a reconnect loop.
+  The credentials are checked again on every tick, so a phone signed out from
+  the web, an expired session or a deleted person stops receiving groups at
+  once rather than when the connection happens to drop.
+  `NXS_ANOMALY_MOBILE_STREAM_MAX` caps concurrent streams per replica. This is
+  how the app reaches a phone without a push service: nothing about an alert
+  leaves the installation.
+
 ## [1.8.0] — 2026-09-22
 
 ### Added

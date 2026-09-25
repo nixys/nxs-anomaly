@@ -399,6 +399,29 @@ func (e *Engine) ListOwnMobileSessions(ctx context.Context) (map[string]any, err
 // GetMobileDashboard is the phone's home screen for userID: the groups that
 // concern them and the schedules they are on call in right now.
 func (e *Engine) GetMobileDashboard(ctx context.Context, userID string) (map[string]any, error) {
+	user, activeGroups, oncall, err := e.mobileSnapshot(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"user":                  user,
+		"assigned_alert_groups": activeGroups,
+		"on_call":               oncall,
+	}, nil
+}
+
+// MobileRelevantGroups is the dashboard's group list on its own, for the event
+// stream: it re-reads on every tick, and the user record and the on-call list
+// are not what it watches.
+func (e *Engine) MobileRelevantGroups(ctx context.Context, userID string) ([]map[string]any, error) {
+	_, groups, _, err := e.mobileSnapshot(ctx, userID)
+	return groups, err
+}
+
+// mobileSnapshot answers "what concerns this person right now": their user
+// record, the unresolved groups relevant to them, and the schedules they are
+// on call for.
+func (e *Engine) mobileSnapshot(ctx context.Context, userID string) (map[string]any, []map[string]any, []map[string]any, error) {
 
 	// Point reads instead of full-collection loads: the user by id, the
 	// user's notifications via the typed user_id index, unresolved groups via
@@ -407,28 +430,28 @@ func (e *Engine) GetMobileDashboard(ctx context.Context, userID string) (map[str
 	// collections from the short-TTL cache.
 	user, err := e.store.GetItem(ctx, "users", userID)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	userNotifs, err := e.store.ListItemsIn(ctx, "notifications", "user_id", []any{userID})
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	unresolvedGroups, err := e.store.ListItemsIn(ctx, "alert_groups", "status",
 		[]any{"open", "acknowledged", "silenced"})
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	chainsMap, err := e.refCollection(ctx, "escalation_chains")
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	teamsMap, err := e.refCollection(ctx, "teams")
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	schedsMap, err := e.refCollection(ctx, "schedules")
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	state := store.NewState()
 	state.EscalationChains = chainsMap
@@ -461,11 +484,7 @@ func (e *Engine) GetMobileDashboard(ctx context.Context, userID string) (map[str
 			}
 		}
 	}
-	return map[string]any{
-		"user":                  user,
-		"assigned_alert_groups": activeGroups,
-		"on_call":               oncall,
-	}, nil
+	return user, activeGroups, oncall, nil
 }
 
 // groupIsRelevantToUser returns true if this group is assigned to or affects userID.

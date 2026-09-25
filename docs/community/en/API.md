@@ -110,6 +110,8 @@ minimum password length is 12 characters.
 | `NXS_ANOMALY_WEB_SESSION_RETENTION_DAYS` | `0` | Delete web sessions older than N days. |
 | `NXS_ANOMALY_BLOCKED_CHANNELS` | — | Forbidden delivery channels, comma-separated. |
 | `NXS_ANOMALY_EGRESS_ALLOWLIST` | — | Permitted outbound delivery destinations: hosts and/or CIDRs. |
+| `NXS_ANOMALY_MOBILE_STREAM_INTERVAL_SECONDS` | `10` | How often the phone's event stream re-reads: the latency between an alert and a phone ringing. |
+| `NXS_ANOMALY_MOBILE_STREAM_MAX` | `200` | Concurrent event streams one replica serves; beyond it, 503 with Retry-After. |
 | `NXS_ANOMALY_BLOCK_PRIVATE_WEBHOOKS_EXCEPT` | — | Private destinations the SSRF guard lets through: hosts, `.domain` suffixes and/or CIDRs. Loopback and link-local are never excepted. |
 
 Every event carries its request's `request_id` — the same value is returned in the
@@ -482,8 +484,23 @@ reads the same rows through the store and is unaffected.
 | DELETE | `/api/v1/mobile/sessions/current` — sign the phone out |
 | GET | `/api/v1/mobile/sessions` — the caller's own phones |
 | DELETE | `/api/v1/mobile/sessions/{id}` — sign one of the caller's phones out (a lost one, say) |
+| GET | `/api/v1/mobile/events` — the alert groups that concern the caller, as a live stream |
 | GET | `/api/v1/mobile/dashboard` (a mobile session) |
 | POST | `/api/v1/mobile/alert-groups/{id}/acknowledge`, `/resolve` (a mobile session) |
+
+**The event stream** (`GET /api/v1/mobile/events`) is how a phone hears about an
+alert in seconds without a push service. It is Server-Sent Events: the app keeps
+it open, and on every tick (`NXS_ANOMALY_MOBILE_STREAM_INTERVAL_SECONDS`, 10 by
+default) the server sends the whole set of groups that concern this person plus
+which of them are `added` or `changed` since the previous tick. The first tick is
+a `baseline` and announces nothing, so a phone reconnecting after a dead network
+does not ring for what it already knows. A failed read sends an `error` event and
+keeps the stream open — a restarting database must not send every phone into a
+reconnect loop. SSE comments every 20 seconds keep proxies from closing an idle
+connection, and the response carries `X-Accel-Buffering: no` because nginx would
+otherwise hold events until its buffer filled. `NXS_ANOMALY_MOBILE_STREAM_MAX`
+caps how many streams one replica serves. An API key gets 400: there is no
+"concerns me" for one.
 
 **A mobile session** is a credential of its own: `Authorization: Bearer nxm_…`
 or the `X-Mobile-Session` header. A phone is connected under Settings → Mobile
@@ -495,7 +512,9 @@ role capped at `responder`: a phone answers pages, it does not change
 configuration. The app therefore calls the ordinary `/api/v1/alert-groups/*`
 rather than mobile copies of them. Only the token's SHA-256 is stored; a session
 unused for 30 days expires, and use extends it. An invalid mobile token is a
-failed sign-in (401) even next to a valid cookie.
+failed sign-in (401) even next to a valid cookie. A phone needs a user with a
+role: one created without a role — as a notification recipient only, say —
+signs in neither on the web nor from a phone, and its mobile session is 401 too.
 
 A channel's `external_id` is what an inbound command names, so only one channel
 per platform may carry it: a second one answers `409`. Commands from a shared

@@ -221,6 +221,12 @@ func (sr *statusRecorder) WriteHeader(code int) {
 	sr.ResponseWriter.WriteHeader(code)
 }
 
+// Unwrap lets http.ResponseController reach the real writer through this
+// wrapper. Without it a streaming handler cannot flush — the event stream a
+// phone listens on was answered with "streaming is not supported here" — and
+// cannot clear the write deadline either.
+func (sr *statusRecorder) Unwrap() http.ResponseWriter { return sr.ResponseWriter }
+
 func (sr *statusRecorder) Write(b []byte) (int, error) {
 	if !sr.wroteHeader {
 		sr.status = http.StatusOK

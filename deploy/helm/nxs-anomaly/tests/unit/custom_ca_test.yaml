@@ -21,6 +21,24 @@ tests:
           path: spec.template.spec.containers[0].env
           content: {name: SSL_CERT_DIR, value: "/etc/ssl/certs:/etc/nxs-anomaly/ca-certificates"}
 
+  # `helm upgrade --reuse-values` from a chart before 1.7.0 renders with that
+  # chart's values, which have no customCA key at all. 1.9.0 failed to render
+  # there (nil pointer on .Values.customCA.configMapName) and the documented
+  # upgrade command stopped working.
+  - it: renders without a customCA key at all (upgrade with --reuse-values from before 1.7.0)
+    templates:
+      - templates/api.yaml
+      - templates/worker.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+      matchMany: true
+    set:
+      customCA: null
+    asserts:
+      - notFailedTemplate: {}
+      - notExists: {path: "spec.template.spec.containers[0].volumeMounts"}
+
   # SSL_CERT_DIR, not SSL_CERT_FILE: the file variable replaces the image's
   # bundle file. The directory list keeps /etc/ssl/certs, and Go reads the
   # image's bundle file regardless, so the public roots stay.

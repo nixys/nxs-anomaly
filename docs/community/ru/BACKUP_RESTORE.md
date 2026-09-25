@@ -226,8 +226,11 @@ bash tests/pitr_drill.sh
 CHART_VERSION='REPLACE_WITH_CHART_VERSION'
 VALUES_FILE='/path/to/your/saved-values.yaml'
 helm upgrade nxs-anomaly oci://ghcr.io/nixys/nxs-anomaly \
-  --version "$CHART_VERSION" -f "$VALUES_FILE" --reuse-values
+  --version "$CHART_VERSION" -f "$VALUES_FILE" --reset-then-reuse-values
 ```
+
+`--reset-then-reuse-values` (Helm 3.14+), а не `--reuse-values`: второй флаг берёт
+values прошлого chart-а целиком, без ключей, которые добавил новый.
 
 Миграции применяются при старте. Следите за `/ready` worker-а и метриками доставки.
 
