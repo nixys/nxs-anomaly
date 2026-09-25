@@ -4,6 +4,27 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning once it reaches 1.0.
 
+## [1.9.0] — 2026-09-25
+
+### Added
+- **An event stream for paired phones** (`GET /api/v1/mobile/events`). The app
+  had no way to hear about an alert except asking, and Android allows a
+  background check every fifteen minutes at best — which is not a way to wake
+  somebody at night. The phone now holds this Server-Sent Events stream open
+  and learns about a group within
+  `NXS_ANOMALY_MOBILE_STREAM_INTERVAL_SECONDS` (10 by default). Deliberately
+  stateless: every tick carries the whole set of groups that concern the
+  caller, plus which of them are new or changed, so a phone that reconnects
+  after a dead network is correct again immediately. The first tick is marked
+  as a baseline and announces nothing. A failed read keeps the stream open —
+  a restarting database must not send every phone into a reconnect loop.
+  The credentials are checked again on every tick, so a phone signed out from
+  the web, an expired session or a deleted person stops receiving groups at
+  once rather than when the connection happens to drop.
+  `NXS_ANOMALY_MOBILE_STREAM_MAX` caps concurrent streams per replica. This is
+  how the app reaches a phone without a push service: nothing about an alert
+  leaves the installation.
+
 ## [1.8.0] — 2026-09-22
 
 ### Added

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "nxs-anomaly native API",
-    "version": "1.8.0",
+    "version": "1.9.0",
     "description": "The native /api/v1 contract for nxs-anomaly (API, worker, frontend). This is the authoritative contract; the Grafana-compatibility surface under /api/internal/v1 is a compatibility shim and is NOT part of this contract. The core payloads — user, team, schedule, escalation chain, integration, alert group, alert, notification, delivery attempt — are modelled field by field, with `required` reflecting exactly the keys the engine writes unconditionally; every one still allows additional properties because the underlying storage is JSONB. Remaining resources use the open `Entity` schema. Drift between this document and the router is gated by internal/server/openapi_contract_test.go, and the frontend compiles against types generated from this file (frontend/src/api/schema.d.ts).",
     "license": {
       "name": "Apache-2.0"
@@ -1351,6 +1351,33 @@
           },
           "400": {
             "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/events": {
+      "get": {
+        "summary": "Stream the alert groups that concern the caller (Server-Sent Events)",
+        "description": "A long-lived text/event-stream for a paired phone or a signed-in person: the app holds it open instead of polling, so an alert reaches the phone in seconds. Events: `hello` (interval and server time), `groups` (the whole current set plus `added`/`changed` since the previous tick; the first one is `baseline: true` and announces nothing), `error` (a read failed; the stream stays open). SSE comments keep it alive between ticks. Not for API keys — there is no \"concerns me\" for one. Interval: NXS_ANOMALY_MOBILE_STREAM_INTERVAL_SECONDS; concurrent streams are capped by NXS_ANOMALY_MOBILE_STREAM_MAX.",
+        "tags": [
+          "mobile"
+        ],
+        "responses": {
+          "200": {
+            "description": "The event stream.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The caller is an API key, which no groups concern."
+          },
+          "503": {
+            "description": "Too many open streams on this server; Retry-After says when to come back."
           }
         }
       }
