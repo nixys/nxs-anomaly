@@ -230,8 +230,11 @@ order, once.
 CHART_VERSION='REPLACE_WITH_CHART_VERSION'
 VALUES_FILE='/path/to/your/saved-values.yaml'
 helm upgrade nxs-anomaly oci://ghcr.io/nixys/nxs-anomaly \
-  --version "$CHART_VERSION" -f "$VALUES_FILE" --reuse-values
+  --version "$CHART_VERSION" -f "$VALUES_FILE" --reset-then-reuse-values
 ```
+
+`--reset-then-reuse-values` (Helm 3.14+), not `--reuse-values`: the latter keeps
+the previous chart's values whole, without the keys the new chart added.
 
 Migrations run at startup. Watch the worker's `/ready` and the delivery metrics.
 

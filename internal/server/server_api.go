@@ -308,6 +308,10 @@ func (srv *Server) routeAPI(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, http.StatusOK, v, err)
 
 	// Mobile
+	case method == http.MethodGet && path == "/api/v1/mobile/events":
+		// Long-lived: it streams rather than answering. Everything above it
+		// has already authenticated and authorised this request.
+		srv.handleMobileEvents(w, r)
 	case method == http.MethodGet && path == "/api/v1/mobile/devices":
 		v, err := eng.ListCollectionPage(ctx, "mobile_devices", pageParams(r))
 		writeResult(w, http.StatusOK, v, err)

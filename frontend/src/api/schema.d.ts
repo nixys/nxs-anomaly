@@ -1684,6 +1684,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mobile/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream the alert groups that concern the caller (Server-Sent Events)
+         * @description A long-lived text/event-stream for a paired phone or a signed-in person: the app holds it open instead of polling, so an alert reaches the phone in seconds. Events: `hello` (interval and server time), `groups` (the whole current set plus `added`/`changed` since the previous tick; the first one is `baseline: true` and announces nothing), `error` (a read failed; the stream stays open). SSE comments keep it alive between ticks. Not for API keys — there is no "concerns me" for one. Interval: NXS_ANOMALY_MOBILE_STREAM_INTERVAL_SECONDS; concurrent streams are capped by NXS_ANOMALY_MOBILE_STREAM_MAX.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The event stream. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/event-stream": string;
+                    };
+                };
+                /** @description The caller is an API key, which no groups concern. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Too many open streams on this server; Retry-After says when to come back. */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/mobile/sessions": {
         parameters: {
             query?: never;
