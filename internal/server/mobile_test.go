@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -306,5 +307,35 @@ func TestLostPhoneCanBeSignedOutFromTheWeb(t *testing.T) {
 	}
 	if code, _ := me(t, srv, withBearer(adaPhone)); code != http.StatusUnauthorized {
 		t.Errorf("revoked phone still authenticates: %d", code)
+	}
+}
+
+// A database that does not answer is not a sign-out. The session lookups
+// failing used to come back as 401, and the app forgets its session on 401:
+// a database restart signed out every paired phone, and the pages stopped
+// until someone paired it again.
+func TestUnknownCredentialIsNotASignOut(t *testing.T) {
+	srv, st := newSessionServer(t)
+	token := pairPhone(t, srv, "ada")
+	cookie := sessionCookieFrom(t, login(t, srv, "ada", testPassword))
+
+	st.SetLookupErr(errors.New("connection refused"))
+	for name, cred := range map[string]func(*http.Request){
+		"phone":   withBearer(token),
+		"browser": withCookie(cookie),
+	} {
+		w := srv.call(http.MethodGet, "/api/v1/auth/me", "", cred)
+		if w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") == "" {
+			t.Errorf("%s while the database is down: %d (Retry-After %q), want 503 with Retry-After",
+				name, w.Code, w.Header().Get("Retry-After"))
+		}
+	}
+
+	st.SetLookupErr(nil)
+	if code, _ := me(t, srv, withBearer(token)); code != http.StatusOK {
+		t.Errorf("the same phone after the database is back: %d, want 200", code)
+	}
+	if code, _ := me(t, srv, withBearer("nxm_not-a-session")); code != http.StatusUnauthorized {
+		t.Errorf("an unknown token with the database up: %d, want 401", code)
 	}
 }

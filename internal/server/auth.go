@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -30,18 +31,39 @@ import (
 // is not a fallback — an invalid mobile token is a failed authentication, not
 // a reason to try the cookie next to it.
 func (srv *Server) authenticate(r *http.Request) (authz.Actor, bool) {
+	actor, ok, _ := srv.authenticateRequest(r)
+	return actor, ok
+}
+
+// errAuthUnavailable means a credential could not be checked — the database
+// did not answer — as opposed to being wrong. The two must not share a 401: a
+// phone treats 401 as "signed out" and forgets its session, so a database
+// restart used to sign out every paired phone, silently, until someone noticed
+// the pages had stopped and paired it again.
+var errAuthUnavailable = errors.New("authentication is temporarily unavailable")
+
+// authenticateRequest is authenticate that also says when the answer is
+// unknown: errAuthUnavailable when a session could not be looked up.
+func (srv *Server) authenticateRequest(r *http.Request) (authz.Actor, bool, error) {
 	if token := mobileToken(r); token != "" {
 		return srv.mobileActor(r, token)
 	}
-	if actor, ok := srv.sessionActor(r); ok {
-		return actor, true
+	actor, ok, sessionErr := srv.sessionActor(r)
+	if ok {
+		return actor, true, nil
 	}
 	candidate := presentedToken(r)
 	if candidate == "" {
-		if srv.cfg.AllowAnonymous {
-			return anonymousActor, true
+		// A cookie that could not be checked is not a failed sign-in: an API
+		// key next to it still works without the database, but alone it is an
+		// unknown, and the browser should retry rather than go to the login page.
+		if sessionErr != nil {
+			return authz.Actor{}, false, sessionErr
 		}
-		return authz.Actor{}, false
+		if srv.cfg.AllowAnonymous {
+			return anonymousActor, true, nil
+		}
+		return authz.Actor{}, false, nil
 	}
 	// Constant-time compare against every key to avoid leaking which key matched.
 	// The loop runs to completion for the same reason.
@@ -52,14 +74,14 @@ func (srv *Server) authenticate(r *http.Request) (authz.Actor, bool) {
 		}
 	}
 	if !matched || !matchedRole.Valid() {
-		return authz.Actor{}, false
+		return authz.Actor{}, false, nil
 	}
 	return authz.Actor{
 		ID:          matchedID,
 		Kind:        authz.KindService,
 		DisplayName: "api-key " + matchedID,
 		Role:        matchedRole,
-	}, true
+	}, true, nil
 }
 
 // sessionActor resolves the session cookie to the person it belongs to.
@@ -68,18 +90,18 @@ func (srv *Server) authenticate(r *http.Request) (authz.Actor, bool) {
 // store.FindSessionUser), so a role change or a deletion takes effect
 // immediately instead of when the session happens to expire. That is the
 // property that makes "revoke this person's access" mean something.
-func (srv *Server) sessionActor(r *http.Request) (authz.Actor, bool) {
+func (srv *Server) sessionActor(r *http.Request) (authz.Actor, bool, error) {
 	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil || cookie.Value == "" {
-		return authz.Actor{}, false
+		return authz.Actor{}, false, nil
 	}
 	user, sessionID, err := srv.store.FindSessionUser(r.Context(), authz.HashSessionToken(cookie.Value))
 	if err != nil {
 		slog.Error("session_lookup_failed", "error", err)
-		return authz.Actor{}, false
+		return authz.Actor{}, false, errAuthUnavailable
 	}
 	if user == nil || sessionID == "" {
-		return authz.Actor{}, false
+		return authz.Actor{}, false, nil
 	}
 	role := authz.ParseRole(utils.StrVal(user, "role"))
 	if !role.Valid() {
@@ -87,7 +109,7 @@ func (srv *Server) sessionActor(r *http.Request) (authz.Actor, bool) {
 		// revoked here — an administrator restoring the role should restore
 		// access without forcing a fresh sign-in — it simply stops
 		// authenticating anything.
-		return authz.Actor{}, false
+		return authz.Actor{}, false, nil
 	}
 	actor := userActor(user, role)
 	if err := srv.applyTeamScope(r.Context(), &actor); err != nil {
@@ -95,9 +117,9 @@ func (srv *Server) sessionActor(r *http.Request) (authz.Actor, bool) {
 		// person is in no team", which would silently narrow their view, nor
 		// as "in every team", which would widen it.
 		slog.Error("team_scope_lookup_failed", "user_id", actor.ID, "error", err)
-		return authz.Actor{}, false
+		return authz.Actor{}, false, errAuthUnavailable
 	}
-	return actor, true
+	return actor, true, nil
 }
 
 // mobileSessionHeader is how the first mobile API carried the session. The app
@@ -120,21 +142,21 @@ func mobileToken(r *http.Request) string {
 // The person keeps their own role and team scope, capped at responder: a phone
 // is for answering pages, and a lost one should not be able to rewrite
 // escalation chains. A viewer's phone stays read-only.
-func (srv *Server) mobileActor(r *http.Request, token string) (authz.Actor, bool) {
+func (srv *Server) mobileActor(r *http.Request, token string) (authz.Actor, bool, error) {
 	if srv.eng == nil {
-		return authz.Actor{}, false
+		return authz.Actor{}, false, nil
 	}
 	_, user, err := srv.eng.AuthenticateMobileSession(r.Context(), token)
 	if err != nil {
 		slog.Error("mobile_session_lookup_failed", "error", err)
-		return authz.Actor{}, false
+		return authz.Actor{}, false, errAuthUnavailable
 	}
 	if user == nil {
-		return authz.Actor{}, false
+		return authz.Actor{}, false, nil
 	}
 	role := authz.ParseRole(utils.StrVal(user, "role"))
 	if !role.Valid() {
-		return authz.Actor{}, false
+		return authz.Actor{}, false, nil
 	}
 	if authz.RoleRank(role) > authz.RoleRank(authz.RoleResponder) {
 		role = authz.RoleResponder
@@ -142,9 +164,9 @@ func (srv *Server) mobileActor(r *http.Request, token string) (authz.Actor, bool
 	actor := userActor(user, role)
 	if err := srv.applyTeamScope(r.Context(), &actor); err != nil {
 		slog.Error("team_scope_lookup_failed", "user_id", actor.ID, "error", err)
-		return authz.Actor{}, false
+		return authz.Actor{}, false, errAuthUnavailable
 	}
-	return actor, true
+	return actor, true, nil
 }
 
 // applyTeamScope attaches the actor's team membership when scoping is enabled.

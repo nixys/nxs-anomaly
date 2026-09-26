@@ -369,7 +369,8 @@ context: membership in two teams does not make the chat of one an entrance to th
 other. Ownership comes from the group's integration; a group whose integration has
 disappeared is refused. Integrations without a team stay available to everyone.
 
-**Commands.** `status` (how many are open), `alerts [page]` (a list with a button
+**Commands.** `status` (how many are open; through the API the reply also lists the 50
+newest as `id`/`title`/`severity`/`status`, with `open_count` and `truncated`), `alerts [page]` (a list with a button
 per group), `ack <id>`, `resolve <id>`, `duty on|off`, `duty take [schedule id]
 [hours]`, `priority [username] <high|medium|low>`, `oncall <schedule id>`, `help`.
 The Telegram reply is returned as a `sendMessage` method call in the webhook
@@ -500,7 +501,13 @@ reconnect loop. SSE comments every 20 seconds keep proxies from closing an idle
 connection, and the response carries `X-Accel-Buffering: no` because nginx would
 otherwise hold events until its buffer filled. `NXS_ANOMALY_MOBILE_STREAM_MAX`
 caps how many streams one replica serves. An API key gets 400: there is no
-"concerns me" for one.
+"concerns me" for one. The first event, `hello`, carries `interval_seconds` and
+`can_respond` — whether this person may acknowledge and resolve, so a phone
+offers those buttons only to someone whose tap would not be refused.
+
+A credential that cannot be checked because the database does not answer gets
+`503` with `Retry-After`, not `401`: an app treats 401 as signed out and forgets
+its session, so a database restart used to sign out every paired phone.
 
 **A mobile session** is a credential of its own: `Authorization: Bearer nxm_…`
 or the `X-Mobile-Session` header. A phone is connected under Settings → Mobile

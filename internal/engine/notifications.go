@@ -273,6 +273,15 @@ func (e *Engine) fanoutMobileNotifications(state *store.State, g model.AlertGrou
 		if !utils.BoolVal(device, "active", true) {
 			continue
 		}
+		// A phone paired through the app has no push token: it hears about the
+		// group from the event stream it holds open. A notification for it could
+		// only ever be skipped — and every skipped one fired the chart's
+		// NotificationsSkippedNoTransport alert, "nobody was told", for a page
+		// the phone had rung for seconds earlier. Each re-pairing added another
+		// such device, and another skip per page.
+		if utils.StrVal(device, "push_token") == "" {
+			continue
+		}
 		deviceID := utils.StrVal(device, "id")
 		idemKey := fmt.Sprintf("%s:%s:mobile:%s:%s", groupID, userID, deviceID, stepKey)
 		ntf := buildNotification(g, userID, "mobile", deviceID, reason, timestamp, idemKey)

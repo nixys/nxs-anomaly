@@ -150,6 +150,9 @@ func TestMobileStreamAnnouncesANewGroup(t *testing.T) {
 	if len(events) < 2 || events[0]["_event"] != "hello" {
 		t.Fatalf("stream did not open with hello: %v", events)
 	}
+	if events[0]["can_respond"] != true {
+		t.Errorf("hello can_respond = %v for a responder, want true", events[0]["can_respond"])
+	}
 	var sawBaseline, sawAdded bool
 	for _, e := range events[1:] {
 		if e["_event"] != "groups" {
@@ -225,9 +228,13 @@ func TestMobileStreamEndsWhenThePhoneIsSignedOut(t *testing.T) {
 // streamOverHTTP serves the stream from a real server, wrapped as in
 // production, and returns the response a client gets.
 func streamOverHTTP(t *testing.T, srv *Server) *http.Response {
+	return streamOverHTTPAs(t, srv, authz.RoleResponder)
+}
+
+func streamOverHTTPAs(t *testing.T, srv *Server, role authz.Role) *http.Response {
 	t.Helper()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := authz.NewContext(r.Context(), authz.Actor{ID: "u-1", Kind: authz.KindUser, Role: authz.RoleResponder})
+		ctx := authz.NewContext(r.Context(), authz.Actor{ID: "u-1", Kind: authz.KindUser, Role: role})
 		srv.handleMobileEvents(&statusRecorder{ResponseWriter: w, status: http.StatusOK}, r.WithContext(ctx))
 	}))
 	t.Cleanup(ts.Close)
@@ -286,5 +293,19 @@ func TestMobileStreamRefusesOverTheCap(t *testing.T) {
 	}
 	if ra := resp.Header.Get("Retry-After"); ra != "30" {
 		t.Errorf("Retry-After = %q, want 30", ra)
+	}
+}
+
+// A viewer's phone must not offer Acknowledge on the notification: the tap is
+// refused, and the app read the refusal as being signed out.
+func TestMobileStreamTellsAViewerItCannotRespond(t *testing.T) {
+	t.Setenv("NXS_ANOMALY_MOBILE_STREAM_INTERVAL_SECONDS", "1")
+	srv, st := newTestServer()
+	st.Seed("users", map[string]any{"id": "u-1", "username": "alice"})
+	resp := streamOverHTTPAs(t, srv, authz.RoleViewer)
+	buf := make([]byte, 256)
+	n, _ := resp.Body.Read(buf)
+	if !strings.Contains(string(buf[:n]), `"can_respond":false`) {
+		t.Errorf("hello for a viewer = %q, want can_respond false", buf[:n])
 	}
 }
