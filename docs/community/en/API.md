@@ -486,7 +486,7 @@ reads the same rows through the store and is unaffected.
 | GET | `/api/v1/mobile/sessions` — the caller's own phones |
 | DELETE | `/api/v1/mobile/sessions/{id}` — sign one of the caller's phones out (a lost one, say) |
 | GET | `/api/v1/mobile/events` — the alert groups that concern the caller, as a live stream |
-| GET | `/api/v1/mobile/dashboard` (a mobile session) |
+| GET | `/api/v1/mobile/dashboard` (a mobile session) — the groups that concern the caller as list rows, without `logs` and `alert_ids` (read the group for those) |
 | POST | `/api/v1/mobile/alert-groups/{id}/acknowledge`, `/resolve` (a mobile session) |
 
 **The event stream** (`GET /api/v1/mobile/events`) is how a phone hears about an

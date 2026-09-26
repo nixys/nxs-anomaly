@@ -3,7 +3,11 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sort"
+	"strings"
 	"testing"
+	"time"
 )
 
 // These tests drive the engine CRUD mutators through the in-memory memStore
@@ -385,5 +389,90 @@ func TestSanitizersReportBadInputAsValidation(t *testing.T) {
 		if !errors.Is(err, ErrValidation) {
 			t.Errorf("%s: err = %v, want a validation error", name, err)
 		}
+	}
+}
+
+// The phone's view is read by the chains that name the person and the groups
+// they were notified about, not by loading every unresolved group — that cost
+// five seconds per event-stream tick on a stand with 89,000 open groups. The
+// answer must be the same set as before: direct, team and schedule steps, and
+// notifications, and nothing else.
+func TestMobileDashboardReadsOnlyWhatConcernsThePerson(t *testing.T) {
+	ms := newMemStore()
+	now := time.Now().UTC()
+	ms.seed("users", map[string]any{"id": "u1", "name": "One"}, map[string]any{"id": "u2", "name": "Two"})
+	ms.seed("teams", map[string]any{"id": "t1", "name": "T", "member_ids": []any{"u1"}})
+	ms.seed("schedules", map[string]any{"id": "s1", "name": "S", "timezone": "UTC", "enabled": true,
+		"shifts": []any{map[string]any{"user_id": "u1", "recurrence": "none",
+			"start_at": now.Add(-time.Hour).Format(time.RFC3339), "end_at": now.Add(time.Hour).Format(time.RFC3339)}}})
+	step := func(kind string, kv ...any) map[string]any {
+		s := map[string]any{"kind": kind}
+		for i := 0; i+1 < len(kv); i += 2 {
+			s[kv[i].(string)] = kv[i+1]
+		}
+		return s
+	}
+	ms.seed("escalation_chains",
+		map[string]any{"id": "c_direct", "steps": []any{step(StepNotifyUser, "user_ids", []any{"u1"})}},
+		map[string]any{"id": "c_team", "steps": []any{step(StepNotifyTeam, "team_id", "t1")}},
+		map[string]any{"id": "c_sched", "steps": []any{step(StepNotifySchedule, "schedule_id", "s1")}},
+		map[string]any{"id": "c_other", "steps": []any{step(StepNotifyUser, "user_ids", []any{"u2"})}})
+	group := func(id, chain, status string) map[string]any {
+		return map[string]any{"id": id, "escalation_chain_id": chain, "status": status, "title": id, "logs": []any{}}
+	}
+	ms.seed("alert_groups",
+		group("g_direct", "c_direct", "open"), group("g_team", "c_team", "acknowledged"),
+		group("g_sched", "c_sched", "silenced"), group("g_notified", "c_other", "open"),
+		group("g_other", "c_other", "open"), group("g_resolved", "c_direct", "resolved"))
+	for i := 0; i < 500; i++ {
+		ms.seed("alert_groups", group(fmt.Sprintf("g_noise_%d", i), "c_other", "open"))
+	}
+	ms.seed("notifications", map[string]any{"id": "n1", "user_id": "u1", "alert_group_id": "g_notified", "channel": "log"})
+
+	got, err := crudEngine(ms).MobileRelevantGroups(context.Background(), "u1")
+	if err != nil {
+		t.Fatalf("relevant groups: %v", err)
+	}
+	var ids []string
+	for _, g := range got {
+		ids = append(ids, g["id"].(string))
+	}
+	sort.Strings(ids)
+	want := []string{"g_direct", "g_notified", "g_sched", "g_team"}
+	if strings.Join(ids, ",") != strings.Join(want, ",") {
+		t.Errorf("relevant groups = %v, want %v", ids, want)
+	}
+}
+
+// The dashboard is the phone's list, polled every 30 seconds: it carries what
+// a row shows, not each group's logs and alert ids, which grow without bound.
+func TestMobileDashboardListsGroupsWithoutTheirLogs(t *testing.T) {
+	ms := newMemStore()
+	ms.seed("users", map[string]any{"id": "u1", "name": "One"})
+	ms.seed("escalation_chains", map[string]any{"id": "c1", "steps": []any{map[string]any{"kind": StepNotifyUser, "user_ids": []any{"u1"}}}})
+	ms.seed("alert_groups", map[string]any{"id": "g1", "escalation_chain_id": "c1", "status": "open", "title": "Disk",
+		"severity": "critical", "alert_count": 3, "alert_ids": []any{"a1", "a2", "a3"},
+		"logs": []any{map[string]any{"id": "l1", "message": "paged"}}})
+	d, err := crudEngine(ms).GetMobileDashboard(context.Background(), "u1")
+	if err != nil {
+		t.Fatalf("dashboard: %v", err)
+	}
+	groups, _ := d["assigned_alert_groups"].([]map[string]any)
+	if len(groups) != 1 {
+		t.Fatalf("groups = %v", groups)
+	}
+	g := groups[0]
+	if _, ok := g["logs"]; ok {
+		t.Error("dashboard still carries logs")
+	}
+	if _, ok := g["alert_ids"]; ok {
+		t.Error("dashboard still carries alert_ids")
+	}
+	if g["title"] != "Disk" || g["severity"] != "critical" || g["alert_count"] != 3 || g["status"] != "open" {
+		t.Errorf("row lost what the list shows: %v", g)
+	}
+	// The stored group is untouched.
+	if len(ms.row("alert_groups", "g1")["logs"].([]any)) != 1 {
+		t.Error("the stored group lost its logs")
 	}
 }

@@ -94,6 +94,7 @@ A version is the file name without its `.sql` extension:
 | `0029_silence_expiry` | Make time-limited silences end: silenced groups with `silenced_until` get it as `next_run_at`, so the worker returns them to open. Before this, a silence or maintenance window never expired. |
 | `0030_mobile_session_hardening` | Make mobile sessions a credential: an `expires_at` column, the token stored as SHA-256. Sessions issued before (48-bit plaintext tokens, no expiry) are revoked and their tokens erased. The `mobile_verification_tokens` table from 0014 is emptied and holds hashes of one-time phone pairing codes. |
 | `0031_chatops_status_replies` | Shrink stored ChatOps `status` replies to the shape 1.9.2 writes: at most 50 groups as id/title/severity/status plus `open_count` and `truncated`. Earlier replies carried every open group whole, logs included — megabytes per call. Data only, touches only replies in the old shape; the freed space returns to PostgreSQL after vacuum. |
+| `0032_alert_groups_chain_idx` | A partial index on `escalation_chain_id` of unresolved alert groups. A paired phone asks on every event-stream tick which open groups concern its person; that is now asked by the chains that name them, and this index keeps it a lookup. Index only; rolling back leaves it unused. |
 
 ## The connection to the store code
 

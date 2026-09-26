@@ -403,9 +403,23 @@ func (e *Engine) GetMobileDashboard(ctx context.Context, userID string) (map[str
 	if err != nil {
 		return nil, err
 	}
+	// The list, not the records: the phone polls this every 30 seconds and
+	// shows title, severity, status, count and age. A group's logs and alert
+	// ids grow with its life — 1.7 KB a group on the sandbox, and far more for
+	// a long-running one — and the card reads the group itself when opened.
+	listed := make([]map[string]any, 0, len(activeGroups))
+	for _, g := range activeGroups {
+		row := make(map[string]any, len(g))
+		for k, v := range g {
+			if k != "logs" && k != "alert_ids" {
+				row[k] = v
+			}
+		}
+		listed = append(listed, row)
+	}
 	return map[string]any{
 		"user":                  user,
-		"assigned_alert_groups": activeGroups,
+		"assigned_alert_groups": listed,
 		"on_call":               oncall,
 	}, nil
 }
@@ -436,11 +450,6 @@ func (e *Engine) mobileSnapshot(ctx context.Context, userID string) (map[string]
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	unresolvedGroups, err := e.store.ListItemsIn(ctx, "alert_groups", "status",
-		[]any{"open", "acknowledged", "silenced"})
-	if err != nil {
-		return nil, nil, nil, err
-	}
 	chainsMap, err := e.refCollection(ctx, "escalation_chains")
 	if err != nil {
 		return nil, nil, nil, err
@@ -465,6 +474,42 @@ func (e *Engine) mobileSnapshot(ctx context.Context, userID string) (map[string]
 	}
 
 	now := utils.UTCNow()
+	// Read only the groups that can concern this person: those of chains that
+	// name them, and those they were notified about. This ran on every
+	// event-stream tick of every paired phone and used to read every
+	// unresolved group in the installation — on a stand with 89,000 of them,
+	// five seconds and half a gigabyte of API memory per tick for one phone,
+	// most of it for groups nobody would show them.
+	var chainIDs []any
+	for id, chain := range chainsMap {
+		if chainConcernsUser(state, chain, userID, now) {
+			chainIDs = append(chainIDs, id)
+		}
+	}
+	notifiedIDs := make([]any, 0, len(userGroupSet))
+	for id := range userGroupSet {
+		if id != "" {
+			notifiedIDs = append(notifiedIDs, id)
+		}
+	}
+	unresolvedGroups, err := e.unresolvedGroupsIn(ctx, "escalation_chain_id", chainIDs)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	notifiedGroups, err := e.unresolvedGroupsIn(ctx, "id", notifiedIDs)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	seenGroup := make(map[string]bool, len(unresolvedGroups))
+	for _, g := range unresolvedGroups {
+		seenGroup[utils.StrVal(g, "id")] = true
+	}
+	for _, g := range notifiedGroups {
+		if !seenGroup[utils.StrVal(g, "id")] {
+			unresolvedGroups = append(unresolvedGroups, g)
+		}
+	}
+
 	var activeGroups []map[string]any
 	for _, group := range unresolvedGroups {
 		if groupIsRelevantToUser(state, group, userID, userGroupSet, now) {
@@ -496,8 +541,32 @@ func groupIsRelevantToUser(state *store.State, group map[string]any, userID stri
 	if userGroupSet[g.ID()] {
 		return true
 	}
-	chainID := g.EscalationChainID()
-	chain := state.EscalationChains[chainID]
+	return chainConcernsUser(state, state.EscalationChains[g.EscalationChainID()], userID, now)
+}
+
+// unresolvedGroupsIn reads unresolved alert groups by id or chain in batches,
+// keeping each query well inside PostgreSQL's parameter limit however long a
+// person's notification history is.
+func (e *Engine) unresolvedGroupsIn(ctx context.Context, field string, values []any) ([]map[string]any, error) {
+	const batch = 5000
+	var out []map[string]any
+	for start := 0; start < len(values); start += batch {
+		end := start + batch
+		if end > len(values) {
+			end = len(values)
+		}
+		rows, err := e.store.ListUnresolvedAlertGroups(ctx, field, values[start:end])
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rows...)
+	}
+	return out, nil
+}
+
+// chainConcernsUser reports whether an escalation chain names userID: directly,
+// through a team, or through a schedule they are on call in at now.
+func chainConcernsUser(state *store.State, chain map[string]any, userID string, now time.Time) bool {
 	if chain == nil {
 		return false
 	}
