@@ -359,6 +359,32 @@ func (s *pgStore) ListUnresolvedAlertGroups(ctx context.Context, field string, v
 	return scanRows(rows)
 }
 
+// PageUnresolvedAlertGroups: see the Store interface. Counting and ordering
+// happen in the database — migration 0033 indexes unresolved groups by their
+// latest alert — so a chat's "status" does not read every open group.
+func (s *pgStore) PageUnresolvedAlertGroups(ctx context.Context, hiddenIntegrations []string, limit, offset int) ([]map[string]any, int, error) {
+	where := "status <> 'resolved'"
+	args := []any{}
+	if len(hiddenIntegrations) > 0 {
+		args = append(args, hiddenIntegrations)
+		where += " AND (integration_id IS NULL OR NOT (integration_id = ANY($1)))"
+	}
+	table := EntityTables["alert_groups"]
+	var total int
+	if err := s.pool.QueryRow(ctx, "SELECT COUNT(*) FROM "+table+" WHERE "+where, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	args = append(args, limit, offset)
+	rows, err := s.pool.Query(ctx, fmt.Sprintf(
+		"SELECT data FROM %s WHERE %s ORDER BY last_received_at DESC NULLS LAST, id LIMIT $%d OFFSET $%d",
+		table, where, len(args)-1, len(args)), args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	items, err := scanRows(rows)
+	return items, total, err
+}
+
 // ListItemsByIDs returns items from a collection matching the given IDs.
 func (s *pgStore) ListItemsByIDs(ctx context.Context, collection string, ids []string) ([]map[string]any, error) {
 	if len(ids) == 0 {

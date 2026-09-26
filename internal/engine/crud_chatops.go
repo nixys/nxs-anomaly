@@ -221,9 +221,13 @@ func (e *Engine) postChatopsCommand(ctx context.Context, payload map[string]any,
 	cmdParts := strings.Fields(commandLine)
 	if len(cmdParts) > 0 {
 		switch strings.ToLower(strings.TrimPrefix(cmdParts[0], "/")) {
-		case "status", "alerts", "bulk":
+		case "bulk":
 			loads = append(loads, store.LoadSpec{Collection: "alert_groups",
 				Filters: map[string]any{"status": store.NotEqualFilter{Value: "resolved"}}})
+			// status and alerts load no groups: they count and page in the
+			// database (chatopsOpenGroups). Loading every unresolved group
+			// under the command lock took 12 s on a stand with 89,000 of them,
+			// and every other chat command waited behind it.
 		case "ack", "resolve", "show", "silence", "unack", "unacknowledge", "unresolve", "reopen":
 			if len(cmdParts) > 1 {
 				loads = append(loads, loadItems("alert_groups", cmdParts[1])...)
@@ -614,17 +618,6 @@ func chatopsGroupBrief(g model.AlertGroup) map[string]any {
 	}
 }
 
-// sortNewestFirst orders groups by their latest alert, the group that just
-// woke someone first. Ties break on id so a list or page is stable.
-func sortNewestFirst(groups []model.AlertGroup) {
-	sort.Slice(groups, func(i, j int) bool {
-		if a, b := groups[i].LastReceivedAt(), groups[j].LastReceivedAt(); a != b {
-			return a > b
-		}
-		return groups[i].ID() < groups[j].ID()
-	})
-}
-
 // pageArg reads the 1-based page number a command was given, defaulting to the
 // first page for anything that is not a page number.
 func pageArg(args []string) int {
@@ -644,24 +637,42 @@ func pageArg(args []string) int {
 // colleagues acknowledge and resolve, and a stale "next" tap should show the
 // last page rather than an error about a page that existed a minute ago.
 func alertsPage(groups []model.AlertGroup, page int) map[string]any {
-	pages := (len(groups) + alertsPageSize - 1) / alertsPageSize
+	page = clampAlertsPage(len(groups), page)
+	start := (page - 1) * alertsPageSize
+	end := start + alertsPageSize
+	if end > len(groups) {
+		end = len(groups)
+	}
+	return alertsPageReply(groups[start:end], len(groups), page)
+}
+
+// clampAlertsPage keeps a requested page inside the pages total groups make.
+func clampAlertsPage(total, page int) int {
+	pages := (total + alertsPageSize - 1) / alertsPageSize
 	if pages < 1 {
 		pages = 1
 	}
 	if page > pages {
 		page = pages
 	}
-	start := (page - 1) * alertsPageSize
-	end := start + alertsPageSize
-	if end > len(groups) {
-		end = len(groups)
+	if page < 1 {
+		page = 1
 	}
-	items := make([]map[string]any, 0, end-start)
-	for _, g := range groups[start:end] {
+	return page
+}
+
+// alertsPageReply is the alerts reply for one page of groups out of total.
+func alertsPageReply(pageGroups []model.AlertGroup, total, page int) map[string]any {
+	pages := (total + alertsPageSize - 1) / alertsPageSize
+	if pages < 1 {
+		pages = 1
+	}
+	items := make([]map[string]any, 0, len(pageGroups))
+	for _, g := range pageGroups {
 		items = append(items, chatopsGroupBrief(g))
 	}
-	text := fmt.Sprintf("Open alert groups: %d", len(groups))
-	if len(groups) == 0 {
+	text := fmt.Sprintf("Open alert groups: %d", total)
+	if total == 0 {
 		text = "No open alert groups"
 	} else if pages > 1 {
 		text = fmt.Sprintf("%s — page %d of %d", text, page, pages)
@@ -672,6 +683,31 @@ func alertsPage(groups []model.AlertGroup, page int) map[string]any {
 		"page":        page,
 		"pages":       pages,
 	}
+}
+
+// chatopsOpenGroups counts the unresolved groups this chat may see and returns
+// one page of them, newest first, from the database. Visibility follows
+// chatopsGroupAccess, which is decided by a group's integration: the hidden
+// integrations are worked out here (the collection is small and loaded), and
+// the database leaves their groups out.
+func (e *Engine) chatopsOpenGroups(ctx context.Context, state *store.State, channel map[string]any, principal authz.Actor, limit, offset int) ([]model.AlertGroup, int, error) {
+	var hidden []string
+	channelTeam := utils.StrVal(channel, "team_id")
+	for id, integration := range state.Integrations {
+		teamID := utils.StrVal(integration, "team_id")
+		if !principal.MayAccessTeam(teamID) || (channelTeam != "" && teamID != "" && teamID != channelTeam) {
+			hidden = append(hidden, id)
+		}
+	}
+	rows, total, err := e.store.PageUnresolvedAlertGroups(ctx, hidden, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	groups := make([]model.AlertGroup, 0, len(rows))
+	for _, r := range rows {
+		groups = append(groups, model.WrapAlertGroup(r))
+	}
+	return groups, total, nil
 }
 
 // guardChatopsGroupCommand refuses a group command this principal may not run:
@@ -719,54 +755,37 @@ func (e *Engine) executeChatopsCommand(ctx context.Context, state *store.State, 
 		}, nil
 
 	case "status", "/status":
-		var open []model.AlertGroup
-		for _, rec := range state.AlertGroups {
-			g, ok := groupAG(rec)
-			if !ok {
-				continue
-			}
-			if !chatopsGroupAccess(state, channel, principal, g) {
-				continue
-			}
-			if g.Status() != model.StatusResolved {
-				open = append(open, g)
-			}
-		}
-		sortNewestFirst(open)
-		listed := open
-		if len(listed) > statusListLimit {
-			listed = listed[:statusListLimit]
+		listed, total, err := e.chatopsOpenGroups(ctx, state, channel, principal, statusListLimit, 0)
+		if err != nil {
+			return nil, err
 		}
 		briefs := make([]map[string]any, 0, len(listed))
 		for _, g := range listed {
 			briefs = append(briefs, chatopsGroupBrief(g))
 		}
 		return map[string]any{
-			"text":              fmt.Sprintf("Open alert groups: %d", len(open)),
-			"open_count":        len(open),
+			"text":              fmt.Sprintf("Open alert groups: %d", total),
+			"open_count":        total,
 			"open_alert_groups": briefs,
-			"truncated":         len(open) > len(listed),
+			"truncated":         total > len(listed),
 		}, nil
 
 	case "alerts", "/alerts":
 		// status answers "how many"; alerts answers "which ones, and let me act
 		// on them" — the same set, ordered and cut into pages a phone can show.
-		var open []model.AlertGroup
-		for _, rec := range state.AlertGroups {
-			g, ok := groupAG(rec)
-			if !ok || g.Status() == model.StatusResolved {
-				continue
-			}
-			if !chatopsGroupAccess(state, channel, principal, g) {
-				continue
-			}
-			open = append(open, g)
-		}
 		// Newest first: the group that just woke someone is the one they came to
 		// act on. Ties break on id so paging is stable — without that a repeated
 		// tap on "next" can show the same group twice and skip another.
-		sortNewestFirst(open)
-		return alertsPage(open, pageArg(args)), nil
+		_, total, err := e.chatopsOpenGroups(ctx, state, channel, principal, 0, 0)
+		if err != nil {
+			return nil, err
+		}
+		page := clampAlertsPage(total, pageArg(args))
+		pageGroups, total, err := e.chatopsOpenGroups(ctx, state, channel, principal, alertsPageSize, (page-1)*alertsPageSize)
+		if err != nil {
+			return nil, err
+		}
+		return alertsPageReply(pageGroups, total, clampAlertsPage(total, page)), nil
 
 	case "duty", "/duty":
 		if len(args) == 0 {

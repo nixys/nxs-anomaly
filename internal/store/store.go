@@ -527,6 +527,10 @@ type PostgreSQLStore interface {
 	// field (id or escalation_chain_id) is one of values: the groups one person
 	// can be concerned with, read without loading every open group.
 	ListUnresolvedAlertGroups(ctx context.Context, field string, values []any) ([]map[string]any, error)
+	// PageUnresolvedAlertGroups counts the unresolved alert groups outside the
+	// hidden integrations and returns one page of them, newest alert first
+	// (ties by id). A group with no integration is never hidden.
+	PageUnresolvedAlertGroups(ctx context.Context, hiddenIntegrations []string, limit, offset int) ([]map[string]any, int, error)
 	QueryHistoryGroups(ctx context.Context, filters map[string]any, limit, offset int) ([]map[string]any, int, error)
 	// InsightsSummaryQuery answers the whole insights screen at once — the
 	// counts it shows and the daily trend behind them.
