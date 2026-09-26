@@ -473,7 +473,7 @@ editor: расставлять себя в очереди можно самом�
 | GET | `/api/v1/mobile/sessions` — свои подключённые телефоны |
 | DELETE | `/api/v1/mobile/sessions/{id}` — отключить свой телефон (например, потерянный) |
 | GET | `/api/v1/mobile/events` — поток групп, которые касаются вызывающего |
-| GET | `/api/v1/mobile/dashboard` (мобильная сессия) |
+| GET | `/api/v1/mobile/dashboard` (мобильная сессия) — группы, которые касаются вызывающего, строками списка, без `logs` и `alert_ids` (их отдаёт сама группа) |
 | POST | `/api/v1/mobile/alert-groups/{id}/acknowledge`, `/resolve` (мобильная сессия) |
 
 **Поток событий** (`GET /api/v1/mobile/events`) — то, как телефон узнаёт об

@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning once it reaches 1.0.
 
+## [1.9.3] — 2026-09-26
+
+### Fixed
+- **A paired phone no longer costs the server a full read of every open
+  group.** The phone's view — the dashboard, and every tick of the event
+  stream, every ten seconds for as long as it is connected — was answered by
+  loading all unresolved alert groups in the installation and keeping those
+  that concern the person. On a sandbox with 89,000 open groups one phone made
+  the dashboard take five seconds, took the API pod from 4 MiB to 524 MiB and
+  PostgreSQL from 58m to 429m of CPU; locally, 20 phones on 90,000 groups used
+  all cores and 8.7 GB, and the dashboard request was dropped. The groups are
+  now read by the escalation chains that name the person (directly, through a
+  team, or through a schedule they are on call in) and the groups they were
+  notified about — the same set as before. Same data: 100 phones now use 11 s
+  of CPU a minute and 55 MiB, and the dashboard answers in 10 ms. Migration
+  `0032_alert_groups_chain_idx` adds the index this needs.
+- **The phone's dashboard lists groups, not their records.** It returned each
+  group whole — its logs and alert ids included, 1.7 KB a group on the sandbox
+  and far more for a long-running one — and the app polls it every 30 seconds
+  to show a title, a severity, a count and an age. `logs` and `alert_ids` are
+  left out; the app reads the group itself when it opens one.
+
 ## [1.9.2] — 2026-09-26
 
 ### Fixed

@@ -336,6 +336,29 @@ func (s *pgStore) ListItemsIn(ctx context.Context, collection, field string, val
 	return scanRows(rows)
 }
 
+// ListUnresolvedAlertGroups returns the unresolved alert groups whose field is
+// in values. Only id and escalation_chain_id are accepted: both are indexed for
+// unresolved groups (the primary key; migration 0032).
+func (s *pgStore) ListUnresolvedAlertGroups(ctx context.Context, field string, values []any) ([]map[string]any, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	if field != "id" && field != "escalation_chain_id" {
+		return nil, fmt.Errorf("unsupported field %q for unresolved alert groups", field)
+	}
+	placeholders := make([]string, len(values))
+	for i := range values {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+	}
+	q := fmt.Sprintf("SELECT data FROM %s WHERE %s IN (%s) AND status <> 'resolved'",
+		EntityTables["alert_groups"], field, strings.Join(placeholders, ","))
+	rows, err := s.pool.Query(ctx, q, values...)
+	if err != nil {
+		return nil, err
+	}
+	return scanRows(rows)
+}
+
 // ListItemsByIDs returns items from a collection matching the given IDs.
 func (s *pgStore) ListItemsByIDs(ctx context.Context, collection string, ids []string) ([]map[string]any, error) {
 	if len(ids) == 0 {

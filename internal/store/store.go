@@ -523,6 +523,10 @@ type PostgreSQLStore interface {
 	ListCollectionPage(ctx context.Context, collection string, filters map[string]any, limit, offset int, sort SortSpec) ([]map[string]any, int, error)
 	ListItemsIn(ctx context.Context, collection, field string, values []any) ([]map[string]any, error)
 	ListItemsByIDs(ctx context.Context, collection string, ids []string) ([]map[string]any, error)
+	// ListUnresolvedAlertGroups returns the alert groups not resolved whose
+	// field (id or escalation_chain_id) is one of values: the groups one person
+	// can be concerned with, read without loading every open group.
+	ListUnresolvedAlertGroups(ctx context.Context, field string, values []any) ([]map[string]any, error)
 	QueryHistoryGroups(ctx context.Context, filters map[string]any, limit, offset int) ([]map[string]any, int, error)
 	// InsightsSummaryQuery answers the whole insights screen at once — the
 	// counts it shows and the daily trend behind them.

@@ -574,6 +574,20 @@ func (m *Store) ListItemsIn(_ context.Context, col, field string, values []any) 
 	}), nil
 }
 
+func (m *Store) ListUnresolvedAlertGroups(_ context.Context, field string, values []any) ([]map[string]any, error) {
+	return m.where("alert_groups", func(r map[string]any) bool {
+		if r["status"] == "resolved" {
+			return false
+		}
+		for _, v := range values {
+			if r[field] == v {
+				return true
+			}
+		}
+		return false
+	}), nil
+}
+
 func (m *Store) ListItemsByIDs(_ context.Context, col string, ids []string) ([]map[string]any, error) {
 	idset := make(map[string]bool, len(ids))
 	for _, id := range ids {
