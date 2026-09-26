@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning once it reaches 1.0.
 
+## [1.9.4] — 2026-09-26
+
+### Fixed
+- **ChatOps `status` and `alerts` answer in milliseconds, not seconds.** Both
+  loaded every unresolved alert group under the ChatOps command lock to count
+  them and cut a page of five: on a sandbox with 89,000 open groups `status`
+  took 12 seconds — Slack gives a slash command three — and every other chat
+  command, `ack` included, waited behind it. They now count and page in the
+  database with the same visibility rules (a chat sees the groups of the
+  integrations its team may see, and groups with none): on 90,000 groups
+  7.9 s → 0.06 s for `status`, 6–8 s → 0.05 s for any page of `alerts`, with
+  the same replies. Migration `0033_alert_groups_recent_unresolved_idx` adds
+  the index for the newest-first order.
+
 ## [1.9.3] — 2026-09-26
 
 ### Fixed

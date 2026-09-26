@@ -574,6 +574,39 @@ func (m *Store) ListItemsIn(_ context.Context, col, field string, values []any) 
 	}), nil
 }
 
+func (m *Store) PageUnresolvedAlertGroups(_ context.Context, hidden []string, limit, offset int) ([]map[string]any, int, error) {
+	hide := make(map[string]bool, len(hidden))
+	for _, id := range hidden {
+		hide[id] = true
+	}
+	rows := m.where("alert_groups", func(r map[string]any) bool {
+		if r["status"] == "resolved" {
+			return false
+		}
+		integ, _ := r["integration_id"].(string)
+		return integ == "" || !hide[integ]
+	})
+	sort.SliceStable(rows, func(i, j int) bool {
+		a, _ := rows[i]["last_received_at"].(string)
+		b, _ := rows[j]["last_received_at"].(string)
+		if a != b {
+			return a > b
+		}
+		ai, _ := rows[i]["id"].(string)
+		bi, _ := rows[j]["id"].(string)
+		return ai < bi
+	})
+	total := len(rows)
+	if offset > total {
+		offset = total
+	}
+	rows = rows[offset:]
+	if limit < len(rows) {
+		rows = rows[:limit]
+	}
+	return rows, total, nil
+}
+
 func (m *Store) ListUnresolvedAlertGroups(_ context.Context, field string, values []any) ([]map[string]any, error) {
 	return m.where("alert_groups", func(r map[string]any) bool {
 		if r["status"] == "resolved" {
