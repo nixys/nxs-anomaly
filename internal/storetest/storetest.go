@@ -43,6 +43,9 @@ type Store struct {
 	// test drive the database-down branch of readiness.
 	metadata map[string]any
 	pingErr  error
+	// lookupErr makes the credential lookups fail, as they do while the
+	// database is restarting.
+	lookupErr error
 	// buckets models the cluster-wide token buckets for real, so a test can
 	// exhaust the sign-in limit and see the same answer the SQL would give.
 	buckets map[string]*rateBucket
@@ -501,6 +504,9 @@ func (m *Store) FindIntegrationByKey(_ context.Context, key string) (map[string]
 // FindMobileSessionByToken mirrors the SQL: the hash matches, the session is
 // not revoked and has not expired.
 func (m *Store) FindMobileSessionByToken(_ context.Context, tokenHash string) (map[string]any, error) {
+	if err := m.lookupFailure(); err != nil {
+		return nil, err
+	}
 	now := time.Now()
 	rows := m.where("mobile_sessions", func(r map[string]any) bool {
 		if r["token"] != tokenHash || r["revoked_at"] != nil {
@@ -1041,6 +1047,9 @@ func (m *Store) CreateWebSession(_ context.Context, sess store.WebSession) error
 // FindSessionUser mirrors the SQL join, including the two ways a session stops
 // resolving: revoked, and expired.
 func (m *Store) FindSessionUser(_ context.Context, tokenHash string) (map[string]any, string, error) {
+	if err := m.lookupFailure(); err != nil {
+		return nil, "", err
+	}
 	m.mu.Lock()
 	sess, ok := m.sessions[tokenHash]
 	revoked := m.revoked[tokenHash]
@@ -1252,6 +1261,20 @@ func (m *Store) Ping(context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.pingErr
+}
+
+// SetLookupErr makes the web and mobile session lookups fail (or succeed again
+// with nil), standing in for a database that does not answer.
+func (m *Store) SetLookupErr(err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.lookupErr = err
+}
+
+func (m *Store) lookupFailure() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.lookupErr
 }
 
 // SetPingErr makes Ping fail (or succeed again with nil).

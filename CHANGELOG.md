@@ -4,6 +4,44 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning once it reaches 1.0.
 
+## [1.9.2] — 2026-09-26
+
+### Fixed
+- **ChatOps `status` answers with a number, not the database.** The reply
+  carried every open alert group whole, logs included, and was stored with the
+  chat message: on an installation with 7,000 open groups one `status` was a
+  10 MB reply, took 2.8 s and added 1.7 MB to `nxs_anomaly_chatops_messages` —
+  so anyone in a bound chat could grow the database by repeating it, all to say
+  one number. The chat still gets "Open alert groups: N"; the reply now lists
+  at most the 50 newest groups as `id`, `title`, `severity`, `status`, with the
+  exact `open_count` and `truncated`. Migration `0031_chatops_status_replies`
+  rewrites replies stored before to the same shape.
+- **Paging someone with a paired phone no longer raises a false alarm.** A
+  phone paired through the app has no push token — it hears about groups from
+  the event stream — yet every page made a `mobile` notification for it, which
+  could only be skipped. Each skip counted in
+  `nxs_anomaly_notifications_skipped_total` and fired the chart's
+  `NotificationsSkippedNoTransport` alert ("nobody was told through it") for a
+  page the phone had rung for seconds earlier; every re-pairing added one more
+  such device, and one more skip per page. Devices without a push token are now
+  left out of the mobile fan-out.
+- **A database restart no longer signs every phone out.** While the session
+  lookup could not reach the database, the API answered `401`, and the app
+  takes 401 for a revoked session: the watch forgot its session and stopped,
+  while the app still looked signed in — the pages simply stopped until someone
+  noticed and paired again. Reproduced on the emulator by stopping PostgreSQL
+  for 25 seconds. A credential that cannot be checked now gets `503` with
+  `Retry-After` (a browser retries instead of landing on the login page), and
+  the event stream stays open through such a tick instead of closing.
+
+### Added
+- **The event stream tells the phone whether its person may respond.** The
+  `hello` event carries `can_respond`. A viewer's paired phone offered
+  Acknowledge and Resolve on every notification; the server refused the tap
+  with `403`, and the app 0.3.0 reported that as "This phone is signed out"
+  while it went on watching. The app now offers those buttons only when the
+  server says so.
+
 ## [1.9.1] — 2026-09-26
 
 ### Fixed

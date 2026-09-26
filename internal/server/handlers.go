@@ -112,7 +112,13 @@ func (srv *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		srv.handleOIDC(w, r)
 		return
 	}
-	actor, ok := srv.authenticate(r)
+	actor, ok, authErr := srv.authenticateRequest(r)
+	if authErr != nil {
+		// Unknown is not "signed out": a phone forgets its session on 401.
+		w.Header().Set("Retry-After", "5")
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": authErr.Error()})
+		return
+	}
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
 		return

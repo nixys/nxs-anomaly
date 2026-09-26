@@ -455,3 +455,33 @@ func TestMaskKeepsOnlyATail(t *testing.T) {
 		}
 	}
 }
+
+// A phone paired through the app has no push token — it hears about groups
+// from the event stream. Paging its owner created a mobile notification for it
+// anyway, which could only be skipped and fired the chart's
+// NotificationsSkippedNoTransport alert for a page the phone had rung for.
+func TestMobileFanoutSkipsPairedPhonesWithoutPushToken(t *testing.T) {
+	state := store.NewState()
+	state.MobileDevices["dev_paired"] = map[string]any{"id": "dev_paired", "user_id": "u_a", "platform": "android", "active": true}
+	state.MobileDevices["dev_paired_again"] = map[string]any{"id": "dev_paired_again", "user_id": "u_a", "platform": "android", "active": true, "push_token": ""}
+	state.MobileDevices["dev_push"] = map[string]any{"id": "dev_push", "user_id": "u_a", "platform": "ios", "active": true, "push_token": "env:PUSH_TOKEN_A"}
+	state.MobileDevices["dev_other"] = map[string]any{"id": "dev_other", "user_id": "u_b", "platform": "ios", "active": true, "push_token": "tok"}
+	group := model.WrapAlertGroup(map[string]any{
+		"id": "grp_1", "integration_id": "int_1", "title": "Boom",
+		"severity": "critical", "status": "open", "log": []any{},
+	})
+	user := map[string]any{"id": "u_a", "name": "A", "username": "a"}
+
+	e := honestyEngine(newMemStore(), DeliveryConfig{MobilePushURL: "https://relay.example/push"})
+	e.fanoutMobileNotifications(state, group, user, "test", utils.ToISO(utils.UTCNow()), map[string]struct{}{})
+
+	var targets []string
+	for _, rec := range state.Notifications {
+		if n, ok := rec.(model.Notification); ok && n.Channel() == "mobile" {
+			targets = append(targets, n.Target())
+		}
+	}
+	if len(targets) != 1 || targets[0] != "dev_push" {
+		t.Errorf("mobile notifications went to %v, want only the device with a push token", targets)
+	}
+}

@@ -596,6 +596,35 @@ func redactUserForChat(user map[string]any) map[string]any {
 // this stops being something a person can scan at 4am.
 const alertsPageSize = 5
 
+// statusListLimit caps the groups a status reply lists. The reply is stored
+// with the chat message and returned to the caller; it used to carry every
+// open group whole, logs included — 10 MB and 1.7 MB of database per call on a
+// stand with 7,000 open groups, to say one number. The count is exact; the
+// list is the newest groups, for a client that wants a glance.
+const statusListLimit = 50
+
+// chatopsGroupBrief is what a chat reply says about a group: enough to
+// recognise it and act on it by id, never the record with its logs.
+func chatopsGroupBrief(g model.AlertGroup) map[string]any {
+	return map[string]any{
+		"id":       g.ID(),
+		"title":    g.Title(),
+		"severity": g.Severity(),
+		"status":   string(g.Status()),
+	}
+}
+
+// sortNewestFirst orders groups by their latest alert, the group that just
+// woke someone first. Ties break on id so a list or page is stable.
+func sortNewestFirst(groups []model.AlertGroup) {
+	sort.Slice(groups, func(i, j int) bool {
+		if a, b := groups[i].LastReceivedAt(), groups[j].LastReceivedAt(); a != b {
+			return a > b
+		}
+		return groups[i].ID() < groups[j].ID()
+	})
+}
+
 // pageArg reads the 1-based page number a command was given, defaulting to the
 // first page for anything that is not a page number.
 func pageArg(args []string) int {
@@ -629,12 +658,7 @@ func alertsPage(groups []model.AlertGroup, page int) map[string]any {
 	}
 	items := make([]map[string]any, 0, end-start)
 	for _, g := range groups[start:end] {
-		items = append(items, map[string]any{
-			"id":       g.ID(),
-			"title":    g.Title(),
-			"severity": g.Severity(),
-			"status":   string(g.Status()),
-		})
+		items = append(items, chatopsGroupBrief(g))
 	}
 	text := fmt.Sprintf("Open alert groups: %d", len(groups))
 	if len(groups) == 0 {
@@ -695,7 +719,7 @@ func (e *Engine) executeChatopsCommand(ctx context.Context, state *store.State, 
 		}, nil
 
 	case "status", "/status":
-		var open []map[string]any
+		var open []model.AlertGroup
 		for _, rec := range state.AlertGroups {
 			g, ok := groupAG(rec)
 			if !ok {
@@ -705,12 +729,23 @@ func (e *Engine) executeChatopsCommand(ctx context.Context, state *store.State, 
 				continue
 			}
 			if g.Status() != model.StatusResolved {
-				open = append(open, g.Raw())
+				open = append(open, g)
 			}
+		}
+		sortNewestFirst(open)
+		listed := open
+		if len(listed) > statusListLimit {
+			listed = listed[:statusListLimit]
+		}
+		briefs := make([]map[string]any, 0, len(listed))
+		for _, g := range listed {
+			briefs = append(briefs, chatopsGroupBrief(g))
 		}
 		return map[string]any{
 			"text":              fmt.Sprintf("Open alert groups: %d", len(open)),
-			"open_alert_groups": open,
+			"open_count":        len(open),
+			"open_alert_groups": briefs,
+			"truncated":         len(open) > len(listed),
 		}, nil
 
 	case "alerts", "/alerts":
@@ -730,12 +765,7 @@ func (e *Engine) executeChatopsCommand(ctx context.Context, state *store.State, 
 		// Newest first: the group that just woke someone is the one they came to
 		// act on. Ties break on id so paging is stable — without that a repeated
 		// tap on "next" can show the same group twice and skip another.
-		sort.Slice(open, func(i, j int) bool {
-			if a, b := open[i].LastReceivedAt(), open[j].LastReceivedAt(); a != b {
-				return a > b
-			}
-			return open[i].ID() < open[j].ID()
-		})
+		sortNewestFirst(open)
 		return alertsPage(open, pageArg(args)), nil
 
 	case "duty", "/duty":

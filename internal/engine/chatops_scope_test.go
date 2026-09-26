@@ -2,6 +2,9 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/nixys/nxs-anomaly/internal/authz"
@@ -233,4 +236,51 @@ func groupStatus(t *testing.T, ms *memStore, id string) string {
 	}
 	status, _ := row["status"].(string)
 	return status
+}
+
+// status answered "how many" by returning every open group whole, logs
+// included, and the reply is stored with the chat message: 10 MB per call and
+// 1.7 MB of database on a stand with 7,000 open groups. It now carries the
+// exact count and a short, newest-first list of briefs.
+func TestChatopsStatusReplyIsBounded(t *testing.T) {
+	ms := chatopsFixture("", "")
+	bigLogs := make([]any, 20)
+	for i := range bigLogs {
+		bigLogs[i] = map[string]any{"id": fmt.Sprintf("log-%d", i), "message": strings.Repeat("x", 200)}
+	}
+	for i := 0; i < statusListLimit+10; i++ {
+		ms.seed("alert_groups", map[string]any{
+			"id": fmt.Sprintf("grp-many-%03d", i), "status": "open", "title": fmt.Sprintf("group %d", i),
+			"severity": "critical", "integration_id": "int-1", "logs": bigLogs,
+			"last_received_at": fmt.Sprintf("2026-09-26T10:%02d:00Z", i%60),
+		})
+	}
+	e := crudEngine(ms)
+
+	result, err := postCommand(t, e, scopedCtx(authz.RoleResponder), "status")
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	response, _ := result["response"].(map[string]any)
+	total := statusListLimit + 11 // the fixture's own group and the seeded ones
+	if response["open_count"] != total || response["text"] != fmt.Sprintf("Open alert groups: %d", total) {
+		t.Errorf("count = %v, text = %v, want %d", response["open_count"], response["text"], total)
+	}
+	groups, _ := response["open_alert_groups"].([]map[string]any)
+	if len(groups) != statusListLimit || response["truncated"] != true {
+		t.Errorf("listed %d, truncated %v; want %d and true", len(groups), response["truncated"], statusListLimit)
+	}
+	for _, g := range groups {
+		if len(g) != 4 || g["logs"] != nil {
+			t.Fatalf("a listed group is not a brief: %v", g)
+		}
+	}
+	// And the stored chat message is the same small reply.
+	stored := ms.row("chatops_messages", result["id"].(string))
+	if stored == nil {
+		t.Fatal("the chat message was not stored")
+	}
+	if b, _ := json.Marshal(stored); strings.Contains(string(b), "log-0") {
+		t.Fatal("the stored chat message still carries group logs")
+	}
 }

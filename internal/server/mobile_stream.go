@@ -122,6 +122,10 @@ func (srv *Server) handleMobileEvents(w http.ResponseWriter, r *http.Request) {
 	if !send("hello", map[string]any{
 		"interval_seconds": int(interval / time.Second),
 		"server_time":      utils.ToISO(utils.UTCNow()),
+		// Whether this person may acknowledge and resolve. A phone offers
+		// those buttons on the notification only when it is so: a viewer's tap
+		// is refused, and the refusal read on the phone as "signed out".
+		"can_respond": actor.Can(authz.ActionRespond),
 	}) {
 		return
 	}
@@ -160,7 +164,10 @@ func (srv *Server) handleMobileEvents(w http.ResponseWriter, r *http.Request) {
 			// phone signed out from the web, an expired session or a deleted
 			// person must stop receiving groups now, not when the connection
 			// happens to drop. The phone reconnects, is refused, and stops.
-			if again, ok := srv.authenticate(r); !ok || again.ID != actor.ID {
+			// A lookup that failed says nothing about the session: the stream
+			// stays, and its own read reports the database as it always has.
+			again, ok, err := srv.authenticateRequest(r)
+			if err == nil && (!ok || again.ID != actor.ID) {
 				slog.Info("mobile_stream_signed_out", "user_id", actor.ID)
 				return
 			}
