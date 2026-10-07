@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning once it reaches 1.0.
 
+## [1.9.21] — 2026-10-07
+
+### Fixed
+- **Single alerts are no longer refused while there is time to accept them.**
+  Since 1.9.17 an ingest waited at most 10 s for its integration's turn —
+  a bound sized for Alertmanager envelopes of a hundred alerts. Beside forty
+  API readers on a sandbox, one integration at 50 alerts/s had 6–7 % of its
+  alerts answered `503` after exactly 10 s, with twenty seconds of the write
+  timeout still left; senders that do not retry lost them. The wait now ends
+  when the answer is due (the request's start plus
+  `NXS_ANOMALY_HTTP_WRITE_TIMEOUT_SECONDS`) less a reserve for the work —
+  2 s plus 100 ms per alert — so a single alert waits up to about 28 s and an
+  envelope of a hundred about 18 s, and no answer runs into the write timeout.
+
 ## [1.9.20] — 2026-10-06
 
 ### Security

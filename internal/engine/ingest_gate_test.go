@@ -11,14 +11,14 @@ func TestIngestGateBoundsHoldersPerKey(t *testing.T) {
 	g := newIngestGate()
 	var releases []func()
 	for range ingestGateHolders {
-		r, err := g.enter(context.Background(), "k1")
+		r, err := g.enter(context.Background(), "k1", 1)
 		if err != nil {
 			t.Fatal(err)
 		}
 		releases = append(releases, r)
 	}
 	// Another key is not held up.
-	other, err := g.enter(context.Background(), "k2")
+	other, err := g.enter(context.Background(), "k2", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +26,7 @@ func TestIngestGateBoundsHoldersPerKey(t *testing.T) {
 
 	got := make(chan struct{})
 	go func() {
-		r, err := g.enter(context.Background(), "k1")
+		r, err := g.enter(context.Background(), "k1", 1)
 		if err != nil {
 			t.Error(err)
 			return
@@ -56,7 +56,7 @@ func TestIngestGateRefusesPastTheQueue(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	for i := 0; i < ingestGateHolders+ingestGateMaxWaiting; i++ {
-		go func() { _, _ = g.enter(ctx, "k1") }()
+		go func() { _, _ = g.enter(ctx, "k1", 1) }()
 	}
 	deadline := time.Now().Add(time.Second)
 	for {
@@ -74,7 +74,7 @@ func TestIngestGateRefusesPastTheQueue(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if _, err := g.enter(context.Background(), "k1"); !errors.Is(err, ErrIngestBusy) {
+	if _, err := g.enter(context.Background(), "k1", 1); !errors.Is(err, ErrIngestBusy) {
 		t.Fatalf("enter past a full queue = %v, want ErrIngestBusy", err)
 	}
 }
@@ -85,7 +85,7 @@ func TestIngestGateCancelledWaiterLeaves(t *testing.T) {
 	g := newIngestGate()
 	var releases []func()
 	for range ingestGateHolders {
-		r, err := g.enter(context.Background(), "k1")
+		r, err := g.enter(context.Background(), "k1", 1)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -93,7 +93,7 @@ func TestIngestGateCancelledWaiterLeaves(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := g.enter(ctx, "k1"); !errors.Is(err, context.Canceled) {
+	if _, err := g.enter(ctx, "k1", 1); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled enter = %v, want context.Canceled", err)
 	}
 	for _, r := range releases {
@@ -115,14 +115,14 @@ func TestIngestGateRefusesAfterMaxWait(t *testing.T) {
 	g.maxWait = 50 * time.Millisecond
 	var releases []func()
 	for range ingestGateHolders {
-		r, err := g.enter(context.Background(), "k1")
+		r, err := g.enter(context.Background(), "k1", 1)
 		if err != nil {
 			t.Fatal(err)
 		}
 		releases = append(releases, r)
 	}
 	t0 := time.Now()
-	if _, err := g.enter(context.Background(), "k1"); !errors.Is(err, ErrIngestBusy) {
+	if _, err := g.enter(context.Background(), "k1", 1); !errors.Is(err, ErrIngestBusy) {
 		t.Fatalf("enter with every holder busy past maxWait = %v, want ErrIngestBusy", err)
 	}
 	if waited := time.Since(t0); waited > time.Second {
@@ -140,4 +140,65 @@ func TestIngestGateRefusesAfterMaxWait(t *testing.T) {
 	if ingestGateMaxWait >= 30*time.Second {
 		t.Fatalf("ingestGateMaxWait = %v must stay well under the 30 s HTTP write timeout", ingestGateMaxWait)
 	}
+}
+
+// An ingest that says when its answer is due waits until then, less the
+// reserve for its own work — not the fixed bound. Before, a single alert was
+// refused after 10 s with twenty seconds of the write timeout still left.
+func TestIngestGateWaitsUntilTheAnswerIsDue(t *testing.T) {
+	g := newIngestGate()
+	g.maxWait = 50 * time.Millisecond // the bound without a deadline
+	var releases []func()
+	for range ingestGateHolders {
+		r, err := g.enter(context.Background(), "k1", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		releases = append(releases, r)
+	}
+	go func() {
+		time.Sleep(300 * time.Millisecond) // past maxWait, before the answer is due
+		releases[0]()
+	}()
+	due := time.Now().Add(ingestReserveBase + ingestReservePerAlert + 2*time.Second)
+	r, err := g.enter(WithAnswerBy(context.Background(), due), "k1", 1)
+	if err != nil {
+		t.Fatalf("enter with the answer due in 2 s, turn after 0.3 s = %v, want a turn", err)
+	}
+	r()
+	releases[1]()
+}
+
+// The reserve grows with the alerts a request carries: an envelope whose work
+// would not fit before its answer is due is refused at once, while a free
+// place is still taken whatever the limit.
+func TestIngestGateReservesTimeForTheWork(t *testing.T) {
+	g := newIngestGate()
+	due := time.Now().Add(ingestReserveBase + 50*ingestReservePerAlert)
+	ctx := WithAnswerBy(context.Background(), due)
+	var releases []func()
+	for range ingestGateHolders {
+		r, err := g.enter(ctx, "k1", 100) // free places: taken though the wait limit is spent
+		if err != nil {
+			t.Fatalf("enter with a free place = %v, want a turn", err)
+		}
+		releases = append(releases, r)
+	}
+	t0 := time.Now()
+	if _, err := g.enter(ctx, "k1", 100); !errors.Is(err, ErrIngestBusy) {
+		t.Fatalf("100 alerts with time for 50 = %v, want ErrIngestBusy", err)
+	}
+	if waited := time.Since(t0); waited > 200*time.Millisecond {
+		t.Fatalf("refused after %v, want at once", waited)
+	}
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		releases[0]()
+	}()
+	r, err := g.enter(ctx, "k1", 1) // one alert fits in the same time
+	if err != nil {
+		t.Fatalf("1 alert with time for 50 = %v, want a turn", err)
+	}
+	r()
+	releases[1]()
 }

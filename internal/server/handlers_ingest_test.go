@@ -6,6 +6,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/nixys/nxs-anomaly/internal/engine"
 )
 
 // seedIntegration creates a webhook integration under key "k1" through the engine
@@ -244,5 +247,24 @@ func TestHandleLegacyPool(t *testing.T) {
 	srv.handleLegacyPool(w, r)
 	if w.Code != http.StatusNotFound {
 		t.Errorf("unknown key: code=%d, want 404", w.Code)
+	}
+}
+
+// An ingest is due when the write timeout would cut its answer off; without a
+// write timeout nothing is due, and the engine keeps its own bound — a due
+// time of "now" would refuse every ingest that has to wait at all.
+func TestIngestContextAnswerIsDueAtTheWriteTimeout(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/integrations/v1/webhook/k", nil)
+	start := time.Now()
+
+	srv := &Server{cfg: Config{WriteTimeout: 30 * time.Second}}
+	by, ok := engine.AnswerBy(srv.ingestContext(r, start))
+	if !ok || !by.Equal(start.Add(30*time.Second)) {
+		t.Fatalf("answer due = %v (%v), want start + 30 s", by, ok)
+	}
+
+	srv = &Server{cfg: Config{}}
+	if by, ok := engine.AnswerBy(srv.ingestContext(r, start)); ok {
+		t.Fatalf("answer due = %v without a write timeout, want none", by)
 	}
 }
