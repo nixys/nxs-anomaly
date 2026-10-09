@@ -374,88 +374,6 @@ func (g AlertGroup) AddNotifiedUser(userID string) {
 	g.d.Extra["notified_user_ids"] = append(next, userID)
 }
 
-// ChatChannelRef is a ChatOps channel a group was posted to, with the
-// notification channel and target the post went out on: "chatops" and the
-// channel id for a webhook-backed channel, "telegram" and the chat id for a
-// Telegram one. NotificationID is the latest alert message posted there — the
-// one a status change edits, when the channel can edit messages.
-type ChatChannelRef struct {
-	ID             string
-	Channel        string
-	Target         string
-	NotificationID string
-}
-
-// NotifiedChatChannels are the ChatOps channels this group was posted to, in
-// the order they first were.
-//
-// Kept on the group for the reason NotifiedUserIDs is: telling a channel that
-// the alert it showed was acknowledged or resolved must cost no extra load on
-// any path that changes a group's status, ingest included. Only channels that
-// had somewhere to send to are recorded — one without a transport never showed
-// the alert, so it has nothing to update.
-func (g AlertGroup) NotifiedChatChannels() []ChatChannelRef {
-	raw, _ := g.d.Extra["notified_chatops_channels"].([]any)
-	out := make([]ChatChannelRef, 0, len(raw))
-	for _, item := range raw {
-		m, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		ref := ChatChannelRef{
-			ID:             utils.StrVal(m, "id"),
-			Channel:        utils.StrVal(m, "channel"),
-			Target:         utils.StrVal(m, "target"),
-			NotificationID: utils.StrVal(m, "notification_id"),
-		}
-		if ref.ID != "" && ref.Channel != "" {
-			out = append(out, ref)
-		}
-	}
-	return out
-}
-
-// AddNotifiedChatChannel records that the group was posted to a channel. A
-// repeat does not grow the list; it moves the channel's notification_id to the
-// newer message, which is the one people in the channel are looking at.
-func (g AlertGroup) AddNotifiedChatChannel(ref ChatChannelRef) {
-	if ref.ID == "" || ref.Channel == "" {
-		return
-	}
-	entry := map[string]any{"id": ref.ID, "channel": ref.Channel, "target": ref.Target}
-	if ref.NotificationID != "" {
-		entry["notification_id"] = ref.NotificationID
-	}
-	existing, _ := g.d.Extra["notified_chatops_channels"].([]any)
-	next := make([]any, 0, len(existing)+1)
-	replaced := false
-	for _, item := range existing {
-		if m, ok := item.(map[string]any); ok && utils.StrVal(m, "id") == ref.ID {
-			item, replaced = entry, true
-		}
-		next = append(next, item)
-	}
-	if !replaced {
-		next = append(next, entry)
-	}
-	g.d.Extra["notified_chatops_channels"] = next
-}
-
-// ChatopsStatusSeq counts the status changes the group's ChatOps channels
-// were told about; 0 when there were none.
-func (g AlertGroup) ChatopsStatusSeq() int { return utils.IntVal(g.d.Extra, "chatops_status_seq") }
-
-// NextChatopsStatusSeq numbers a new status change and returns its number.
-//
-// A counter rather than the transition's timestamp: timestamps are kept to the
-// second, and an acknowledge, an undo and a second acknowledge inside one
-// second are three changes the channel must hear about, not one.
-func (g AlertGroup) NextChatopsStatusSeq() int {
-	n := g.ChatopsStatusSeq() + 1
-	g.d.Extra["chatops_status_seq"] = n
-	return n
-}
-
 // ResolveNotifiedAt is when the "this is over" notice went out, empty when it
 // has not. Resolve itself is idempotent and allowed from any state, so without
 // this a second resolve would page everyone again.
@@ -463,44 +381,6 @@ func (g AlertGroup) ResolveNotifiedAt() string { return utils.StrVal(g.d.Extra, 
 
 // MarkResolveNotified records that the resolution notice has been sent.
 func (g AlertGroup) MarkResolveNotified(ts string) { g.d.Extra["resolve_notified_at"] = ts }
-
-// SourceLinks are the links the source sent with the group's latest alert that
-// carried any — the rule or query that fired (generator_url) and, for Grafana,
-// the dashboard, the panel and a ready-made silence. Keyed by those names.
-//
-// Kept on the group because the notification is built from the group, not from
-// an alert: the escalation step that pages somebody minutes later never sees
-// the alert that started it. Same reasoning as TraceParent.
-func (g AlertGroup) SourceLinks() map[string]string {
-	raw, _ := g.d.Extra["source_links"].(map[string]any)
-	if len(raw) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(raw))
-	for k, v := range raw {
-		if s, ok := v.(string); ok && s != "" {
-			out[k] = s
-		}
-	}
-	return out
-}
-
-// SetSourceLinks replaces the links with the ones an incoming alert carried.
-// An alert that carried none leaves the previous set alone: a source that sends
-// a link on the first event and drops it on repeats should not lose it, and an
-// absent key keeps the canonical shape of groups whose sources send no links.
-func (g AlertGroup) SetSourceLinks(links map[string]string) {
-	m := make(map[string]any, len(links))
-	for k, v := range links {
-		if v != "" {
-			m[k] = v
-		}
-	}
-	if len(m) == 0 {
-		return
-	}
-	g.d.Extra["source_links"] = m
-}
 
 // Optional fields not always present (direct-paging shape, silenced state).
 func (g AlertGroup) Description() string     { return utils.StrVal(g.d.Extra, "description") }

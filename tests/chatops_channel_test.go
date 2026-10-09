@@ -2,11 +2,6 @@ package tests
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"sync"
 	"testing"
 
 	"github.com/nixys/nxs-anomaly/internal/authz"
@@ -15,75 +10,6 @@ import (
 	"github.com/nixys/nxs-anomaly/internal/store"
 	"github.com/nixys/nxs-anomaly/internal/utils"
 )
-
-// The ChatOps channel round trip against the real store: the alert is posted
-// and the platform's message id is saved on its notification by the delivery
-// stage, the acknowledgement writes the status message from the API path —
-// which used to save alert groups only — and the next delivery cycle edits the
-// message by that id.
-func TestChatopsChannelStatusEditsTheAlertInPostgres(t *testing.T) {
-	ctx := context.Background()
-	t.Setenv("NXS_ANOMALY_CHATOPS_STATUS_UPDATES", "true")
-	st, eng := newIntegrationEngine(t, ctx)
-	defer st.Close()
-	clearStore(t, ctx, st)
-
-	var mu sync.Mutex
-	var requests []string
-	var editBody map[string]any
-	chat := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		defer mu.Unlock()
-		requests = append(requests, r.Method+" "+r.URL.Path)
-		if r.Method == http.MethodPost {
-			_, _ = w.Write([]byte(`{"id": "m-7"}`))
-			return
-		}
-		_ = json.NewDecoder(r.Body).Decode(&editBody)
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer chat.Close()
-
-	adminCtx := chatopsAdmin(ctx)
-	groupID, _, _ := pagedChatopsGroup(t, ctx, eng, chat.URL, map[string]any{
-		"method": "PUT", "url": chat.URL + "/api/messages/{message_id}",
-	})
-	if _, err := eng.ProcessNotificationDeliveries(ctx); err != nil {
-		t.Fatalf("deliver alert: %v", err)
-	}
-
-	group, err := st.GetItem(ctx, "alert_groups", groupID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	refs := model.WrapAlertGroup(group).NotifiedChatChannels()
-	if len(refs) != 1 || refs[0].NotificationID == "" {
-		t.Fatalf("group channel record = %+v", refs)
-	}
-	alertNtf, err := st.GetItem(ctx, "notifications", refs[0].NotificationID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := model.WrapNotification(alertNtf).ProviderMessageID(); got != "m-7" {
-		t.Fatalf("saved message id = %q, want m-7", got)
-	}
-
-	if _, err := eng.AcknowledgeGroup(adminCtx, groupID); err != nil {
-		t.Fatalf("acknowledge: %v", err)
-	}
-	if _, err := eng.ProcessNotificationDeliveries(ctx); err != nil {
-		t.Fatalf("deliver status: %v", err)
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-	if got := strings.Join(requests, ","); got != "POST /hooks/1,PUT /api/messages/m-7" {
-		t.Fatalf("requests = %s", got)
-	}
-	if text, _ := editBody["text"].(string); !strings.Contains(text, "acknowledged by") {
-		t.Errorf("edit text = %q", text)
-	}
-}
 
 func chatopsAdmin(ctx context.Context) context.Context {
 	return authz.NewContext(ctx, authz.Actor{ID: "usr-admin", Kind: "user", Role: authz.RoleAdmin})
@@ -149,34 +75,6 @@ func chatopsRows(t *testing.T, ctx context.Context, st store.PostgreSQLStore, gr
 		}
 	}
 	return out
-}
-
-// The unique idempotency key is the database's, so this is where a key built
-// from a second-resolution timestamp would have dropped the second
-// acknowledge.
-func TestChatopsStatusWithinOneSecondInPostgres(t *testing.T) {
-	ctx := context.Background()
-	t.Setenv("NXS_ANOMALY_CHATOPS_STATUS_UPDATES", "true")
-	st, eng := newIntegrationEngine(t, ctx)
-	defer st.Close()
-	clearStore(t, ctx, st)
-
-	groupID, _, _ := pagedChatopsGroup(t, ctx, eng, "https://chat.example.com", nil)
-	adminCtx := chatopsAdmin(ctx)
-	for _, step := range []func(context.Context, string) (map[string]any, error){
-		eng.AcknowledgeGroup, eng.UnacknowledgeGroup, eng.AcknowledgeGroup,
-	} {
-		if _, err := step(adminCtx, groupID); err != nil {
-			t.Fatal(err)
-		}
-	}
-	events := map[string]int{}
-	for _, n := range chatopsRows(t, ctx, st, groupID) {
-		events[utils.StrVal(n.Payload(), "chatops_event")]++
-	}
-	if events["acknowledged"] != 2 || events["unacknowledged"] != 1 {
-		t.Errorf("status messages = %v, want two acknowledged and one unacknowledged", events)
-	}
 }
 
 // The channel's message survives the member it was sent on behalf of.

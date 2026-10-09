@@ -542,9 +542,6 @@ function TemplatesTab({ integration }: { integration: Integration }) {
             {t('integration.addTemplate')}
           </Button>
         </Group>
-        <Text size="xs" c="dimmed">
-          {t('integration.templateVariables')}
-        </Text>
         {entries.length === 0 && (
           <Text size="sm" c="dimmed">
             {t('integration.noTemplates')}
