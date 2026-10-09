@@ -409,16 +409,16 @@ curl -X PUT "$API/api/v1/integrations/{id}" -d '{
 }'
 ```
 
-**Which channels read a template.** Today only `telegram` and `email`; each takes
-the key with its own name and falls back to `default`. The other channels ignore
-templates, which is worth remembering when writing a `default`:
+**Which channels read a template.** `telegram`, `email` and ChatOps channels;
+each takes the key with its own name and falls back to `default`. The other
+channels ignore templates, which is worth remembering when writing a `default`:
 
 | Channel | Message text |
 |---|---|
 | `telegram` | `templates.telegram` → `templates.default` → built-in |
 | `email` | `templates.email` → `templates.default` → built-in |
 | `slack`, `mattermost` | always the built-in format |
-| `chatops` | always the built-in format |
+| `chatops` | `templates.chatops` → `templates.<platform>` (the channel's `platform`, e.g. `slack`) → `templates.default` → built-in |
 | `log` | always the built-in format (the `notification_log_delivery` line) |
 | `webhook` | not text: JSON in the Alertmanager shape |
 | `call` | a phrase for speech synthesis: `Alert. <title>. See messages for details.` (`Emergency alert.` when `critical`) |
@@ -430,6 +430,11 @@ worker's poll interval. An edit through the API clears the cache in the pod that
 served it; other replicas pick it up when the TTL expires — not instantly, but
 not only after a restart either.
 
+A ChatOps channel on the `telegram` platform is sent through the Telegram bot, and
+it reads the same chain as any other ChatOps channel — `chatops` → `telegram` →
+`default` — so one `chatops` template covers every team channel whatever it runs
+on, while a person's own Telegram chat keeps `templates.telegram`.
+
 ### 5.2. The built-in format
 
 ```
@@ -438,6 +443,10 @@ not only after a restart either.
 <labels other than alertname and severity, as k=v, k=v>
 Alert group: <group_id>
 ```
+
+A ChatOps channel posted to through its `webhook_url` adds one more line, the
+group's page (`<NXS_ANOMALY_PUBLIC_URL>/alert-groups/<group_id>`), when
+`NXS_ANOMALY_PUBLIC_URL` is set. A template decides for itself, with `{{ .group_url }}`.
 
 The label line is sorted, so the same alert always reads the same way, and cut at
 400 characters with an ellipsis: Telegram and SMS have their own limits, and an
@@ -454,7 +463,16 @@ Alertmanager alert can carry dozens of labels.
 | `status` | the group's status (`open` by default) |
 | `labels` | every label on one line, `k=v, k=v` |
 | `label_<name>` | one label's value |
-| `user_name`, `user_username` | the recipient |
+| `user_name`, `user_username` | the recipient; empty on a ChatOps status message, which has none |
+| `event` | on a ChatOps status message, what happened: `acknowledged`, `unacknowledged` or `resolved` (`reason` then says who did it); empty on the alert itself, so `{{ if .event }}…{{ else }}…{{ end }}` lets one template serve both |
+| `group_url` | the group's page, `<NXS_ANOMALY_PUBLIC_URL>/alert-groups/<group_id>`; empty without `NXS_ANOMALY_PUBLIC_URL` |
+| `generator_url` | the source's link to what fired (the rule, the query); from the latest alert that sent one |
+| `dashboard_url`, `panel_url`, `silence_url` | Grafana Alerting's dashboard, panel and new-silence links; from the latest alert that sent them |
+
+The link variables are always defined and empty when there is nothing to put
+there, so a template that uses `{{ .panel_url }}` works on an alert without a
+panel as well — it prints an empty string rather than falling back to the raw
+template.
 
 For `label_<name>` the name is lowercased and anything outside `[a-z0-9_]`
 becomes an underscore — `kubernetes.io/name` is available as

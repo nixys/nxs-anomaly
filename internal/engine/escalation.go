@@ -56,7 +56,7 @@ func (e *Engine) AcknowledgeGroup(ctx context.Context, groupID string) (map[stri
 	}
 	ts := utils.ToISO(utils.UTCNow())
 	actor := authz.FromContext(ctx)
-	result, err := e.store.UpdateCollectionsFiltered(ctx, loadGroups(groupID), e.withAnalyticsOutbox([]string{"alert_groups"}),
+	result, err := e.store.UpdateCollectionsFiltered(ctx, loadGroups(groupID), e.withAnalyticsOutbox(chatopsStatusSaveCols),
 		func(state *store.State) (any, error) {
 			g, err := getGroupOrError(state, groupID)
 			if err != nil {
@@ -75,6 +75,7 @@ func (e *Engine) AcknowledgeGroup(ctx context.Context, groupID string) (map[stri
 					"actor_kind": actor.Kind,
 					"actor_role": string(actor.Role),
 				})
+				e.notifyChatopsStatus(state, g, chatopsEventAcknowledged, actor, ts)
 			}
 			e.auditIn(state, ctx, AuditAcknowledge, "alert_group", groupID, nil)
 			return g.Raw(), nil
@@ -123,7 +124,7 @@ func (e *Engine) ResolveGroup(ctx context.Context, groupID string) (map[string]a
 	if err != nil {
 		return nil, err
 	}
-	result, err := e.store.UpdateCollectionsFiltered(ctx, loadGroups(groupID), e.withAnalyticsOutbox([]string{"alert_groups", "notifications"}),
+	result, err := e.store.UpdateCollectionsFiltered(ctx, loadGroups(groupID), e.withAnalyticsOutbox(chatopsStatusSaveCols),
 		func(state *store.State) (any, error) {
 			state.Users, state.Integrations = users, integrations
 			g, err := getGroupOrError(state, groupID)
@@ -141,6 +142,7 @@ func (e *Engine) ResolveGroup(ctx context.Context, groupID string) (map[string]a
 					"actor_role": string(actor.Role),
 					"resolution": "operator",
 				})
+				e.notifyChatopsStatus(state, g, chatopsEventResolved, actor, ts)
 			}
 			e.notifyGroupResolved(state, g, ts)
 			e.auditIn(state, ctx, AuditResolve, "alert_group", groupID, nil)
@@ -194,7 +196,7 @@ func (e *Engine) UnacknowledgeGroup(ctx context.Context, groupID string) (map[st
 	}
 	ts := utils.ToISO(utils.UTCNow())
 	actor := authz.FromContext(ctx)
-	result, err := e.store.UpdateCollectionsFiltered(ctx, loadGroups(groupID), e.withAnalyticsOutbox([]string{"alert_groups"}),
+	result, err := e.store.UpdateCollectionsFiltered(ctx, loadGroups(groupID), e.withAnalyticsOutbox(chatopsStatusSaveCols),
 		func(state *store.State) (any, error) {
 			g, err := getGroupOrError(state, groupID)
 			if err != nil {
@@ -208,6 +210,7 @@ func (e *Engine) UnacknowledgeGroup(ctx context.Context, groupID string) (map[st
 			e.emitGroupEvent(state, g, EventGroupUnacknowledged, ts, map[string]any{
 				"actor_kind": actor.Kind,
 			})
+			e.notifyChatopsStatus(state, g, chatopsEventUnacknowledged, actor, ts)
 			e.auditIn(state, ctx, AuditUnacknowledge, "alert_group", groupID, nil)
 			return g.Raw(), nil
 		}, advisoryLock["unacknowledge_group"])
@@ -261,7 +264,7 @@ func (e *Engine) BulkAcknowledgeGroups(ctx context.Context, groupIDs []string) (
 	}
 	ts := utils.ToISO(utils.UTCNow())
 	actor := authz.FromContext(ctx)
-	result, err := e.store.UpdateCollectionsFiltered(ctx, loadGroups(groupIDs...), e.withAnalyticsOutbox([]string{"alert_groups"}),
+	result, err := e.store.UpdateCollectionsFiltered(ctx, loadGroups(groupIDs...), e.withAnalyticsOutbox(chatopsStatusSaveCols),
 		func(state *store.State) (any, error) {
 			var acknowledged, notFound, skipped []string
 			for _, gid := range groupIDs {
@@ -288,6 +291,7 @@ func (e *Engine) BulkAcknowledgeGroups(ctx context.Context, groupIDs []string) (
 					"actor_role": string(actor.Role),
 					"bulk":       true,
 				})
+				e.notifyChatopsStatus(state, g, chatopsEventAcknowledged, actor, ts)
 				acknowledged = append(acknowledged, gid)
 			}
 			e.auditBulkIn(state, ctx, AuditAcknowledge, acknowledged)
@@ -378,7 +382,7 @@ func (e *Engine) BulkResolveGroups(ctx context.Context, groupIDs []string) (map[
 	if err != nil {
 		return nil, err
 	}
-	result, err := e.store.UpdateCollectionsFiltered(ctx, loadGroups(groupIDs...), e.withAnalyticsOutbox([]string{"alert_groups", "notifications"}),
+	result, err := e.store.UpdateCollectionsFiltered(ctx, loadGroups(groupIDs...), e.withAnalyticsOutbox(chatopsStatusSaveCols),
 		func(state *store.State) (any, error) {
 			state.Users, state.Integrations = users, integrations
 			var resolved, notFound, alreadyResolved []string
@@ -400,6 +404,7 @@ func (e *Engine) BulkResolveGroups(ctx context.Context, groupIDs []string) (map[
 					"bulk":       true,
 				})
 				e.notifyGroupResolved(state, g, ts)
+				e.notifyChatopsStatus(state, g, chatopsEventResolved, actor, ts)
 				resolved = append(resolved, gid)
 			}
 			e.auditBulkIn(state, ctx, AuditResolve, resolved)

@@ -44,6 +44,14 @@ type deliveryOutcome struct {
 	// and retrying on the usual schedule turns a rate limit into a queue of
 	// requests that are all refused again.
 	RetryAfter time.Duration
+	// MessageID is the platform's id for the message just posted, when the
+	// adapter was asked to keep it (see ChatOps message_update). Saved onto the
+	// notification on delivery.
+	MessageID string
+	// NotSent marks a failure that never reached the provider — a delivery
+	// waiting on another one. It is retried like any failure, but the circuit
+	// breaker does not count it: the provider said nothing.
+	NotSent bool
 }
 
 // Delivery statuses an adapter may report.

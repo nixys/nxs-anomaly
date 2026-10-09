@@ -256,6 +256,7 @@ shows the button disabled on the sign-in screen rather than hiding it, and
 | `NXS_ANOMALY_DEAD_LETTER_WEBHOOK_URL` | where to report a notification that has permanently failed |
 | `NXS_ANOMALY_WORKER_HEARTBEAT_URL` | an external dead-man's switch (healthchecks.io, Cronitor, an Uptime Kuma push monitor). The worker sends it a `GET` after a successful cycle, at most once a minute; when the pings stop, the worker, its database or the network is down. See [ALERTING_RULES.md](ALERTING_RULES.md) |
 | `NXS_ANOMALY_NOTIFY_ON_RESOLVE` | `false`. With it on, whoever was woken is told the alert closed — the recipients come from the group, not from who happens to be on call now |
+| `NXS_ANOMALY_CHATOPS_STATUS_UPDATES` | `false`. With it on, the ChatOps channels a group was posted to are told when it is acknowledged, unacknowledged or resolved. Independent of `NXS_ANOMALY_NOTIFY_ON_RESOLVE` — see [CONFIGURATION.md](CONFIGURATION.md#8-chatops) |
 
 Provider credentials for email, Telegram, Slack and Mattermost are covered with
 the channels themselves in [CONFIGURATION.md](CONFIGURATION.md) — §7 for SMTP,

@@ -308,6 +308,24 @@ func nilString(s string) any {
 // IsSkipped reports the terminal "no transport" outcome.
 func (n Notification) IsSkipped() bool { return n.Status() == NotificationSkipped }
 
+// ProviderMessageID is the platform's id for the message this notification
+// became, when the platform returned one and the channel asked for it to be
+// kept (a ChatOps channel with message_update). Empty otherwise.
+//
+// It lives on the notification because the notification is the message: the
+// delivery result is saved onto exactly this row, so recording the id costs
+// nothing extra, and it is pruned with the row it describes.
+func (n Notification) ProviderMessageID() string {
+	return utils.StrVal(n.d.Extra, "provider_message_id")
+}
+
+// SetProviderMessageID records the platform's id for the delivered message.
+func (n Notification) SetProviderMessageID(id string) {
+	if id != "" {
+		n.d.Extra["provider_message_id"] = id
+	}
+}
+
 // MarkDelivered finalizes a successful delivery attempt.
 func (n Notification) MarkDelivered(ts, providerStatus string) {
 	n.d.Status = NotificationDelivered

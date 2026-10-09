@@ -353,22 +353,36 @@ func postWebhook(ctx context.Context, client *http.Client, url string, payload m
 // with «channel archived»" needs both, and neither survived the old two-string
 // return. The SSRF pre-flight is the one chosen for the channel (ssrfGuardFor).
 func postWebhookGuarded(ctx context.Context, client *http.Client, url string, payload map[string]any, guard ssrfGuard, headers map[string]string) deliveryOutcome {
+	res, _ := sendJSONGuarded(ctx, client, http.MethodPost, url, payload, guard, headers, 0)
+	return res
+}
+
+// maxMessageIDBody bounds how much of a response is kept to find a message id
+// in. A chat API answers a post with the message it created, which is small;
+// this is generous for that and still bounded for an endpoint that is not one.
+const maxMessageIDBody = 64 << 10
+
+// sendJSONGuarded sends payload as JSON with the given method and returns the
+// outcome together with up to keepBody bytes of the response body — the
+// excerpt on the outcome is redacted and truncated for storage, which is right
+// for a diagnosis and useless for reading a message id out of the answer.
+func sendJSONGuarded(ctx context.Context, client *http.Client, method, url string, payload map[string]any, guard ssrfGuard, headers map[string]string, keepBody int64) (deliveryOutcome, []byte) {
 	if err := checkWebhookURL(ctx, url, guard); err != nil {
 		// A failed lookup is not a verdict: DNS that answers on the next
 		// attempt makes the destination deliverable, so it is retried like any
 		// other transport failure, and dead-letters if it never recovers.
 		if isUnresolvedHost(err) {
-			return failed("dns_lookup", err.Error(), 0, "")
+			return failed("dns_lookup", err.Error(), 0, ""), nil
 		}
 		// Terminal, like a refusal by the channel policy: the destination does
 		// not change between attempts, so retrying it twice only delays the
 		// moment the reason reaches the timeline.
-		return skipped(skipBlockedDestination, err.Error())
+		return skipped(skipBlockedDestination, err.Error()), nil
 	}
 	body := []byte(utils.JSONDumps(payload))
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
 	if err != nil {
-		return failed("http_post", err.Error(), 0, "")
+		return failed("http_post", err.Error(), 0, ""), nil
 	}
 	req.Header.Set("Content-Type", "application/json")
 	for k, v := range headers {
@@ -376,13 +390,22 @@ func postWebhookGuarded(ctx context.Context, client *http.Client, url string, pa
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return failed("http_post", err.Error(), 0, "")
+		return failed("http_post", err.Error(), 0, ""), nil
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	// Read a bounded prefix: the excerpt is capped anyway, and an endpoint that
 	// streams megabytes must not stall the delivery cycle.
-	excerpt, _ := io.ReadAll(io.LimitReader(resp.Body, maxProviderResponse*2))
-	return httpOutcome("http_post", resp.StatusCode, string(excerpt), "", resp.Header.Get("Retry-After"))
+	limit := max(int64(maxProviderResponse*2), keepBody)
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, limit))
+	excerpt := raw
+	if len(excerpt) > maxProviderResponse*2 {
+		excerpt = excerpt[:maxProviderResponse*2]
+	}
+	res := httpOutcome("http_post", resp.StatusCode, string(excerpt), "", resp.Header.Get("Retry-After"))
+	if keepBody > 0 {
+		return res, raw
+	}
+	return res, nil
 }
 
 func sendTelegram(ctx context.Context, client *http.Client, chatID, text, token, groupID string, shift telegramShiftOptions, publicURL string) (status, errMsg, providerResp string) {

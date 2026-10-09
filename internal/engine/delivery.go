@@ -251,7 +251,7 @@ func (e *Engine) ProcessNotificationDeliveries(ctx context.Context) ([]map[strin
 		e.sink().ObserveDeliveryLatency(n.Channel(), elapsed.Seconds())
 		// A skip is not a provider verdict: it never reached one, so it must
 		// not push the breaker in either direction.
-		if outcome.Status != deliverySkipped {
+		if outcome.Status != deliverySkipped && !outcome.NotSent {
 			e.breaker.Record(breakerKey, outcome.Status == deliveryDelivered, utils.UTCNow())
 		}
 		tEnd := utils.ToISO(utils.UTCNow())
@@ -370,8 +370,14 @@ func (e *Engine) applyOutcome(n model.Notification, res deliveryOutcome, ts stri
 	switch res.Status {
 	case deliveryDelivered:
 		n.MarkDelivered(ts, strDefault(res.ProviderStatus, "delivered"))
+		n.SetProviderMessageID(res.MessageID)
 	case deliverySkipped:
 		n.MarkSkipped(ts, strDefault(res.ProviderStatus, skipNotConfigured), res.Err)
+		if res.ProviderStatus == skipSuperseded {
+			// A status edit a newer one replaced: nobody went untold, so it
+			// must not reach the "no transport" metric and its alert.
+			break
+		}
 		e.sink().IncNotificationSkipped(n.Channel(), strDefault(res.ProviderStatus, skipNotConfigured))
 		slog.Warn("notification_skipped",
 			"notification_id", n.ID(), "channel", n.Channel(),
@@ -545,7 +551,7 @@ func (e *Engine) ProcessNotificationRetries(ctx context.Context) ([]map[string]a
 		outcome := e.deliverNotificationViaAdapter(ctx, ntfCopy)
 		elapsed := time.Since(callStart)
 		e.sink().ObserveDeliveryLatency(nc.Channel(), elapsed.Seconds())
-		if outcome.Status != deliverySkipped {
+		if outcome.Status != deliverySkipped && !outcome.NotSent {
 			e.breaker.Record(breakerKey, outcome.Status == deliveryDelivered, utils.UTCNow())
 		}
 		tEnd := utils.ToISO(utils.UTCNow())

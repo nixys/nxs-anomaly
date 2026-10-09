@@ -314,7 +314,8 @@ func renderTemplate(tmpl string, ctx map[string]any) string {
 				// already fell back and shipped raw "{{ ... }}" text, so the
 				// reader needs to know what they could have written instead.
 				"hint", "unknown placeholder; supported keys are title, severity, reason, group_id, status, "+
-					"user_name, user_username, labels, and label_<name> for each label on the alert "+
+					"user_name, user_username, group_url, generator_url, dashboard_url, panel_url, silence_url, "+
+					"labels, and label_<name> for each label on the alert "+
 					"(non-alphanumeric characters become underscores: kubernetes.io/name is label_kubernetes_io_name)")
 		})
 		return legacyRenderTemplate(tmpl, ctx)

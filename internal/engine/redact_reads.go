@@ -51,7 +51,8 @@ func redactForReader(ctx context.Context, collection string, item map[string]any
 		out["push_token"] = mask(utils.StrVal(item, "push_token"))
 		return out
 	case "chatops_channels":
-		if utils.StrVal(item, "webhook_url") == "" && !hasOutboundHeaders(item["headers"]) {
+		update, _ := item["message_update"].(map[string]any)
+		if utils.StrVal(item, "webhook_url") == "" && !hasOutboundHeaders(item["headers"]) && utils.StrVal(update, "url") == "" {
 			return item
 		}
 		if authz.FromContext(ctx).Can(authz.ActionEdit) {
@@ -61,6 +62,13 @@ func redactForReader(ctx context.Context, collection string, item map[string]any
 		out["webhook_url"] = mask(utils.StrVal(item, "webhook_url"))
 		if hasOutboundHeaders(item["headers"]) {
 			out["headers"] = maskOutboundHeaders(item["headers"])
+		}
+		// The edit URL is an API address of the same platform and as often
+		// carries its credential as the webhook URL does.
+		if utils.StrVal(update, "url") != "" {
+			masked := copyMap(update)
+			masked["url"] = mask(utils.StrVal(update, "url"))
+			out["message_update"] = masked
 		}
 		return out
 	case "integrations":

@@ -27,6 +27,10 @@ func (e *Engine) CreateChatopsChannel(ctx context.Context, payload map[string]an
 	if err != nil {
 		return nil, err
 	}
+	messageUpdate, err := sanitizeChatopsMessageUpdate(payload["message_update"])
+	if err != nil {
+		return nil, err
+	}
 	ts := utils.ToISO(utils.UTCNow())
 	teamID := nilIfEmpty(utils.StrVal(payload, "team_id"))
 	userID := nilIfEmpty(utils.StrVal(payload, "user_id"))
@@ -62,13 +66,21 @@ func (e *Engine) CreateChatopsChannel(ctx context.Context, payload map[string]an
 				// Sent with every post to webhook_url, for gateways that take
 				// their credential in a header rather than in the URL.
 				"headers": headers,
+				// How to edit a message posted through webhook_url, so a status
+				// change rewrites the alert rather than adding a line under it.
+				// Absent means status changes are posted as new messages.
+				"message_update": messageUpdate,
 				// Identifier of the channel on the platform itself (Slack
 				// channel id, Telegram chat id). Inbound slash commands arrive
 				// naming this, not our internal id.
 				"external_id":           utils.StrVal(payload, "external_id"),
 				"notifications_enabled": utils.BoolVal(payload, "notifications_enabled", true),
-				"created_at":            ts,
-				"updated_at":            ts,
+				// Post Slack and Mattermost alerts with their buttons, as
+				// personal notifications have them. Off unless asked for: see
+				// chatopsAlertBody.
+				"interactive": utils.BoolVal(payload, "interactive", false),
+				"created_at":  ts,
+				"updated_at":  ts,
 			}
 			stampProvisioner(ctx, channel)
 			state.ChatopsChannels[channel["id"].(string)] = channel
@@ -140,6 +152,13 @@ func (e *Engine) UpdateChatopsChannel(ctx context.Context, channelID string, pay
 				}
 				channel["headers"] = headers
 			}
+			if v, ok := payload["message_update"]; ok {
+				messageUpdate, err := sanitizeChatopsMessageUpdate(v)
+				if err != nil {
+					return nil, err
+				}
+				channel["message_update"] = messageUpdate
+			}
 			if v, ok := payload["external_id"]; ok {
 				if err := duplicateChatopsBinding(state, channelID,
 					utils.StrVal(channel, "platform"), fmt.Sprintf("%v", v)); err != nil {
@@ -149,6 +168,9 @@ func (e *Engine) UpdateChatopsChannel(ctx context.Context, channelID string, pay
 			}
 			if v, ok := payload["commands_enabled"]; ok {
 				channel["commands_enabled"] = utils.BoolVal(map[string]any{"v": v}, "v", true)
+			}
+			if v, ok := payload["interactive"]; ok {
+				channel["interactive"] = utils.BoolVal(map[string]any{"v": v}, "v", false)
 			}
 			if teamIDSet {
 				channel["team_id"] = teamID
@@ -905,8 +927,12 @@ func (e *Engine) executeChatopsCommand(ctx context.Context, state *store.State, 
 			return nil, err
 		}
 		ts := utils.ToISO(utils.UTCNow())
+		firstAck := !g.IsAcknowledged()
 		if err := g.Acknowledge(ts, "Alert group acknowledged from ChatOps by "+chatHandle, principal); err != nil {
 			return nil, errValidation(err.Error())
+		}
+		if firstAck {
+			e.notifyChatopsStatus(state, g, chatopsEventAcknowledged, principal, ts)
 		}
 		return map[string]any{
 			"text":        "Acknowledged " + groupLabel(g) + " — " + principal.Describe(),
@@ -925,8 +951,12 @@ func (e *Engine) executeChatopsCommand(ctx context.Context, state *store.State, 
 			return nil, err
 		}
 		ts := utils.ToISO(utils.UTCNow())
+		firstResolve := !g.IsResolved()
 		g.Resolve(ts, "Resolved from ChatOps by "+chatHandle, principal)
 		e.notifyGroupResolved(state, g, ts)
+		if firstResolve {
+			e.notifyChatopsStatus(state, g, chatopsEventResolved, principal, ts)
+		}
 		return map[string]any{
 			"text":        "Resolved " + groupLabel(g) + " — " + principal.Describe(),
 			"alert_group": g.Raw(),
@@ -1011,9 +1041,11 @@ func (e *Engine) executeChatopsCommand(ctx context.Context, state *store.State, 
 		if err := guardChatopsGroupCommand(state, channel, principal, g); err != nil {
 			return nil, err
 		}
-		if err := g.Unacknowledge(utils.ToISO(utils.UTCNow()), principal); err != nil {
+		ts := utils.ToISO(utils.UTCNow())
+		if err := g.Unacknowledge(ts, principal); err != nil {
 			return nil, errValidation(err.Error())
 		}
+		e.notifyChatopsStatus(state, g, chatopsEventUnacknowledged, principal, ts)
 		return map[string]any{
 			"text":        "Acknowledgement taken back, escalation resumes: " + groupLabel(g),
 			"alert_group": g.Raw(),
@@ -1181,7 +1213,11 @@ func (e *Engine) chatopsBulk(state *store.State, channel map[string]any, princip
 		var err error
 		switch verb {
 		case "ack":
+			firstAck := !g.IsAcknowledged()
 			err = g.Acknowledge(ts, "Alert group acknowledged from ChatOps by "+chatHandle, principal)
+			if err == nil && firstAck {
+				e.notifyChatopsStatus(state, g, chatopsEventAcknowledged, principal, ts)
+			}
 		case "silence":
 			err = g.Silence(ts, until, "Alert group silenced from ChatOps by "+chatHandle, minutes, principal)
 		case "resolve":
@@ -1200,6 +1236,7 @@ func (e *Engine) chatopsBulk(state *store.State, channel map[string]any, princip
 	// actually written.
 	for _, g := range resolved {
 		e.notifyGroupResolved(state, g, ts)
+		e.notifyChatopsStatus(state, g, chatopsEventResolved, principal, ts)
 	}
 	what := verb
 	if verb == "silence" {

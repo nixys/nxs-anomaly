@@ -859,7 +859,9 @@ export const en = {
   'integration.templatesHelp': 'Per-channel message templates. Empty values are dropped by the backend.',
   'integration.addTemplate': 'Add template',
   'integration.noTemplates': 'No templates defined — default formatting is used.',
-  'integration.templateChannel': 'channel (telegram, email, …)',
+  'integration.templateChannel': 'channel (telegram, email, chatops, …)',
+  'integration.templateVariables':
+    'Keys: telegram, email, chatops (any ChatOps channel; then its platform, e.g. slack), default. Variables: {{ .title }}, {{ .severity }}, {{ .reason }}, {{ .group_id }}, {{ .status }}, {{ .labels }}, {{ .label_<name> }}, {{ .user_name }}, {{ .group_url }}, {{ .generator_url }}, {{ .dashboard_url }}, {{ .panel_url }}, {{ .silence_url }}.',
   'integration.removeTemplate': 'Remove template',
   'integration.saveTemplates': 'Save templates',
   'integration.debugHelp': "Sends a payload through this integration's routing rules without ingesting it.",

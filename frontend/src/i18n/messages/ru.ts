@@ -868,7 +868,9 @@ export const ru: Messages = {
   'integration.templatesHelp': 'Шаблоны сообщений для каждого канала. Пустые значения сервер отбрасывает.',
   'integration.addTemplate': 'Добавить шаблон',
   'integration.noTemplates': 'Шаблонов нет — используется стандартное форматирование.',
-  'integration.templateChannel': 'канал (telegram, email, …)',
+  'integration.templateChannel': 'канал (telegram, email, chatops, …)',
+  'integration.templateVariables':
+    'Ключи: telegram, email, chatops (любой ChatOps-канал; затем его платформа, например slack), default. Переменные: {{ .title }}, {{ .severity }}, {{ .reason }}, {{ .group_id }}, {{ .status }}, {{ .labels }}, {{ .label_<name> }}, {{ .user_name }}, {{ .group_url }}, {{ .generator_url }}, {{ .dashboard_url }}, {{ .panel_url }}, {{ .silence_url }}.',
   'integration.removeTemplate': 'Удалить шаблон',
   'integration.saveTemplates': 'Сохранить шаблоны',
   'integration.debugHelp': 'Проверяет данные запроса по правилам маршрутизации, не сохраняя алерт.',

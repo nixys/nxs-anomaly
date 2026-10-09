@@ -157,6 +157,32 @@ func (e *Engine) prepareAlert(ctx context.Context, integration, payload map[stri
 	}, nil
 }
 
+// sourceLinkKeys are the source links a notification template can reference.
+// Every one of them is always present in the template context, empty when the
+// source did not send it: the renderer refuses unknown keys, and a template
+// written for a Grafana integration must not break on an alert that has no
+// panel.
+var sourceLinkKeys = []string{"generator_url", "dashboard_url", "panel_url", "silence_url"}
+
+// alertSourceLinks collects the links a normalised alert payload carries.
+// generator_url sits at the top level for every source that has one; the
+// Grafana-only links stay inside the grafana_alerting block the normaliser
+// builds, because that is where the rest of the Grafana envelope is kept.
+func alertSourceLinks(payload map[string]any) map[string]string {
+	links := map[string]string{}
+	if u := utils.StrVal(payload, "generator_url"); u != "" {
+		links["generator_url"] = u
+	}
+	if grafana, ok := payload["grafana_alerting"].(map[string]any); ok {
+		for _, k := range []string{"dashboard_url", "panel_url", "silence_url"} {
+			if u := utils.StrVal(grafana, k); u != "" {
+				links[k] = u
+			}
+		}
+	}
+	return links
+}
+
 // IngestAlert processes a raw webhook alert payload for the given integration key.
 // IngestAlert is the head of the chain a trace follows: this span is the parent
 // of the grouping work, and — through the alert group id attribute — the thing
@@ -442,6 +468,7 @@ func (e *Engine) ingestOneLocked(state *store.State, integration map[string]any,
 				"actor_kind": authz.SystemActor.Kind,
 				"resolution": "source",
 			})
+			e.notifyChatopsStatus(state, g, chatopsEventResolved, sourceActor, ts)
 		}
 		e.notifyGroupResolved(state, g, ts)
 		state.AlertGroups[g.ID()] = g
@@ -547,6 +574,7 @@ func (e *Engine) ingestOneLocked(state *store.State, integration map[string]any,
 	g.IncAlertCount()
 	g.SetLabels(labelsAny(p.labels))
 	g.SetLastReceivedAt(ts)
+	g.SetSourceLinks(alertSourceLinks(p.payload))
 
 	// Escalation is advanced only when this alert started a chain: a new group,
 	// or a group this alert took back to open. A repeat firing on a group that

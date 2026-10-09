@@ -106,6 +106,7 @@ func (e *Engine) advanceGroupLocked(state *store.State, g model.AlertGroup, time
 			// An escalation policy step runs unattended: no principal is behind it.
 			g.Resolve(timestamp, "Resolved by escalation policy", authz.SystemActor)
 			e.notifyGroupResolved(state, g, timestamp)
+			e.notifyChatopsStatus(state, g, chatopsEventResolved, policyActor, timestamp)
 			return
 
 		case StepRepeat:
