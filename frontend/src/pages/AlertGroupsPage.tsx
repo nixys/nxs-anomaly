@@ -36,6 +36,7 @@ import {
   useList,
   useSilenceGroup,
 } from '../api/hooks';
+import { RoleNotice, useCan } from '../auth/permissions';
 import type { AlertGroup } from '../api/types';
 import {
   IncidentAge,
@@ -212,6 +213,7 @@ export function AlertGroupsPage() {
   const groupAction = useGroupAction();
   const silence = useSilenceGroup();
   const bulk = useBulkGroupAction();
+  const canRespond = useCan('respond');
 
   const integrationName = useMemo(() => {
     const map = new Map<string, string>();
@@ -254,7 +256,7 @@ export function AlertGroupsPage() {
 
   const current = items[cursor];
   const actOnCursor = (action: 'acknowledge' | 'resolve') => {
-    if (!current) return;
+    if (!current || !canRespond) return;
     groupAction.mutate({ id: current.id, action });
   };
 
@@ -299,6 +301,7 @@ export function AlertGroupsPage() {
           </>
         }
       />
+      <RoleNotice need="respond" />
 
       <Tabs value={view || 'custom'} onChange={applyView} mb="md">
         <Tabs.List>
@@ -373,7 +376,7 @@ export function AlertGroupsPage() {
 
       {/* The bulk bar exists only while something is selected. Three permanently
           disabled buttons taught people to read this strip as decoration. */}
-      {selected.length > 0 && (
+      {selected.length > 0 && canRespond && (
         <Paper
           withBorder
           p="sm"
@@ -511,6 +514,7 @@ export function AlertGroupsPage() {
                       onSilence={(minutes) =>
                         silence.mutate({ id: group.id, durationMinutes: minutes })
                       }
+                      canRespond={canRespond}
                     />
                   ))}
                 </Table.Tbody>
@@ -570,6 +574,7 @@ function Row({
   onToggle,
   onAction,
   onSilence,
+  canRespond,
 }: {
   group: AlertGroup;
   integrationName: string | undefined;
@@ -581,6 +586,7 @@ function Row({
   onToggle: () => void;
   onAction: (action: 'acknowledge' | 'unacknowledge' | 'resolve' | 'unresolve') => void;
   onSilence: (minutes: number) => void;
+  canRespond: boolean;
 }) {
   const { t } = useI18n();
   const reduce = useReducedMotion();
@@ -637,6 +643,7 @@ function Row({
         <RelativeTime value={group.last_received_at ?? group.created_at} />
       </Table.Td>
       <Table.Td>
+        {canRespond && (
         <Menu withinPortal position="bottom-end">
           <Menu.Target>
             <ActionIcon variant="subtle" aria-label={t('common.actions')}>
@@ -684,6 +691,7 @@ function Row({
             ))}
           </Menu.Dropdown>
         </Menu>
+        )}
       </Table.Td>
     </Table.Tr>
   );

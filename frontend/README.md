@@ -4,7 +4,7 @@ Standalone web UI for nxs-anomaly. It replaces the Grafana OnCall plugin as the
 product's frontend and talks **only** to the native management API (`/api/v1`) —
 the Grafana compatibility layer (`/api/internal/v1`) is not used anywhere.
 
-Stack: Vite + React + TypeScript, Mantine v7, TanStack Query, React Router.
+Stack: Vite + React + TypeScript, Mantine 9, TanStack Query, React Router.
 
 ## Pages
 
@@ -62,13 +62,22 @@ rm -rf node_modules && npm ci && npm test
 
 ## Authentication
 
-The backend has no user accounts — it authenticates with a single static API key
-(`NXS_ANOMALY_API_KEY`). On startup the UI probes the API:
+On startup the UI asks `GET /api/v1/auth/methods` which sign-in methods the
+deployment offers, then `GET /api/v1/auth/me` who the browser is:
 
-- if unauthenticated requests succeed, the backend has no key configured and the
-  UI goes straight in (Settings shows a warning about exposing it);
-- otherwise the UI asks for the key, stores it in `localStorage`, and sends it as
-  `X-API-Key` on every request.
+- **password** — people sign in with a login and password; the session lives in
+  an HttpOnly cookie, nothing is stored in the tab;
+- **API key** — for service accounts and bootstrap; the key is kept in
+  `localStorage` and sent as `X-API-Key`;
+- **SSO (OIDC)** — Enterprise only; Community shows the button disabled with the
+  reason;
+- **anonymous** — no authentication configured; the UI goes straight in.
+
+A `401` from `/auth/me` shows the sign-in screen and drops a stored key that no
+longer works. Any other failure means the API is unreachable, not that the
+credential is wrong: the UI says so, keeps the key and offers a retry. What a
+role may do comes from `permissions` in the `/auth/me` answer; the UI disables
+or explains actions the role lacks, and the backend still enforces them.
 
 ## Production
 

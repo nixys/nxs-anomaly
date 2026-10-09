@@ -19,10 +19,12 @@ import type { Team } from '../api/types';
 import { ConfirmDeleteButton, PageHeader, ProvisionedBadge, QueryState } from '../components/common';
 import { ListPager, ListSearch, usePagedList } from '../components/PagedList';
 import { EMPTY_VALUE } from '../i18n/format';
+import { RoleNotice, useCan } from '../auth/permissions';
 import { useI18n } from '../i18n/I18nProvider';
 
 export function TeamsPage() {
   const { t } = useI18n();
+  const canEdit = useCan('edit');
   const teams = useFullList('teams');
   const rows = usePagedList(teams.data?.items, ['name']);
   const users = useAllOf('users');
@@ -38,11 +40,12 @@ export function TeamsPage() {
         title={t('teams.title')}
         description={t('teams.description')}
         actions={
-          <Button leftSection={<IconUsersPlus size={16} />} onClick={() => setCreating(true)}>
+          <Button leftSection={<IconUsersPlus size={16} />} disabled={!canEdit} onClick={() => setCreating(true)}>
             {t('teams.add')}
           </Button>
         }
       />
+      <RoleNotice need="edit" />
 
       <Paper withBorder>
         <ListSearch list={rows} />
@@ -88,7 +91,7 @@ export function TeamsPage() {
                         <ActionIcon
                           variant="subtle"
                           onClick={() => setEditing(team)}
-                          disabled={Boolean(team.provisioned_by)}
+                          disabled={!canEdit || Boolean(team.provisioned_by)}
                           aria-label={t('teams.edit', { name: team.name })}
                         >
                           <IconPencil size={16} />
@@ -96,7 +99,7 @@ export function TeamsPage() {
                         <ConfirmDeleteButton
                           label={team.name}
                           loading={remove.isPending}
-                          disabled={Boolean(team.provisioned_by)}
+                          disabled={!canEdit || Boolean(team.provisioned_by)}
                           disabledReason={t('common.provisionedHint', { tool: team.provisioned_by ?? '' })}
                           onConfirm={() => remove.mutate(team.id)}
                         />

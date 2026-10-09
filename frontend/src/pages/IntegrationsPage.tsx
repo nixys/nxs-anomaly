@@ -20,6 +20,7 @@ import { useAllOf, useCreate, useDelete, useFullList } from '../api/hooks';
 import { INTEGRATION_TYPES, type Integration } from '../api/types';
 import { ConfirmDeleteButton, PageHeader, ProvisionedBadge, QueryState } from '../components/common';
 import { ListPager, ListSearch, usePagedList } from '../components/PagedList';
+import { RoleNotice, useCan } from '../auth/permissions';
 import { useI18n } from '../i18n/I18nProvider';
 import { EMPTY_VALUE } from '../i18n/format';
 
@@ -53,6 +54,7 @@ export function CopyField({ value }: { value: string }) {
 
 export function IntegrationsPage() {
   const { t } = useI18n();
+  const canEdit = useCan('edit');
   const integrations = useFullList('integrations');
   const rows = usePagedList(integrations.data?.items, ['name']);
   const remove = useDelete('integrations');
@@ -64,11 +66,12 @@ export function IntegrationsPage() {
         title={t('integrations.title')}
         description={t('integrations.description')}
         actions={
-          <Button leftSection={<IconPlus size={16} />} onClick={() => setCreating(true)}>
+          <Button leftSection={<IconPlus size={16} />} disabled={!canEdit} onClick={() => setCreating(true)}>
             {t('integrations.add')}
           </Button>
         }
       />
+      <RoleNotice need="edit" />
 
       <Paper withBorder>
         <ListSearch list={rows} />
@@ -135,7 +138,7 @@ export function IntegrationsPage() {
                           <ConfirmDeleteButton
                             label={integration.name}
                             loading={remove.isPending}
-                            disabled={Boolean(integration.provisioned_by)}
+                            disabled={!canEdit || Boolean(integration.provisioned_by)}
                             disabledReason={t('common.provisionedHint', { tool: integration.provisioned_by ?? '' })}
                             onConfirm={() => remove.mutate(integration.id)}
                           />

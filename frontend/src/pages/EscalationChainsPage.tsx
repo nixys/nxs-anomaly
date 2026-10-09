@@ -37,6 +37,7 @@ import {
   stepSentence,
   type ChainNames,
 } from './chain-sentence';
+import { RoleNotice, useCan } from '../auth/permissions';
 import { useI18n } from '../i18n/I18nProvider';
 import { useSubmitShortcut } from '../ui/useSubmitShortcut';
 import type { Messages } from '../i18n/messages';
@@ -72,6 +73,7 @@ function useStepHint() {
 
 export function EscalationChainsPage() {
   const { t } = useI18n();
+  const canEdit = useCan('edit');
   const stepHint = useStepHint();
   const names = useChainNames();
   const chains = useFullList('escalation-chains');
@@ -86,11 +88,12 @@ export function EscalationChainsPage() {
         title={t('chains.title')}
         description={t('chains.description')}
         actions={
-          <Button leftSection={<IconPlus size={16} />} onClick={() => setCreating(true)}>
+          <Button leftSection={<IconPlus size={16} />} disabled={!canEdit} onClick={() => setCreating(true)}>
             {t('chains.add')}
           </Button>
         }
       />
+      <RoleNotice need="edit" />
 
       <ListSearch list={rows} />
 
@@ -114,7 +117,7 @@ export function EscalationChainsPage() {
                     <Button
                       size="compact-sm"
                       variant="light"
-                      disabled={Boolean(chain.provisioned_by)}
+                      disabled={!canEdit || Boolean(chain.provisioned_by)}
                       onClick={() => setSelected(chain)}
                     >
                       {t('chains.editSteps')}
@@ -122,7 +125,7 @@ export function EscalationChainsPage() {
                     <ConfirmDeleteButton
                       label={chain.name}
                       loading={remove.isPending}
-                      disabled={Boolean(chain.provisioned_by)}
+                      disabled={!canEdit || Boolean(chain.provisioned_by)}
                       disabledReason={t('common.provisionedHint', { tool: chain.provisioned_by ?? '' })}
                       onConfirm={() => remove.mutate(chain.id)}
                     />

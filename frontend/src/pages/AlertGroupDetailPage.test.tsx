@@ -18,6 +18,13 @@ vi.mock('../api/client', () => ({
   ApiError: class ApiError extends Error {},
 }));
 
+// null: no provider, as on most pages rendered alone; set per test for a role.
+let identity: { role: string; permissions: Record<string, boolean> } | null = null;
+
+vi.mock('../auth/AuthProvider', () => ({
+  useOptionalAuth: () => (identity ? { identity } : null),
+}));
+
 const group = {
   id: 'grp_1',
   integration_id: 'int_1',
@@ -75,7 +82,10 @@ function renderPage(notifications: ReturnType<typeof notification>[]) {
   );
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  identity = null;
+});
 
 describe('AlertGroupDetailPage delivery health', () => {
   it('says nothing when every notification reached someone', async () => {
@@ -213,5 +223,23 @@ describe('AlertGroupDetailPage timeline', () => {
     const story = within(screen.getByRole('tabpanel'));
     const items = story.getAllByText(/Alert group opened|Acknowledged/);
     expect(items[0].textContent).toBe('Acknowledged');
+  });
+});
+
+// A viewer used to be offered Acknowledge and Resolve, pressed them at 3am and
+// got a 403. The backend still decides; the page just stops offering.
+describe('AlertGroupDetailPage permissions', () => {
+  it('offers acknowledge and resolve to a responder', async () => {
+    identity = { role: 'responder', permissions: { read: true, respond: true, edit: false, admin: false } };
+    renderPage([]);
+    expect(await screen.findByRole('button', { name: 'Acknowledge' })).toBeInTheDocument();
+  });
+
+  it('explains instead of offering them to a viewer', async () => {
+    identity = { role: 'viewer', permissions: { read: true, respond: false, edit: false, admin: false } };
+    renderPage([]);
+    expect(await screen.findByText(/Your role \(viewer\) can view this page/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Acknowledge' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Resolve' })).not.toBeInTheDocument();
   });
 });

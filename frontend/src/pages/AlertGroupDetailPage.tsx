@@ -24,6 +24,7 @@ import {
 } from '@tabler/icons-react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useAllOf, useGroupAction, useItem, useList, useSilenceGroup } from '../api/hooks';
+import { RoleNotice, useCan } from '../auth/permissions';
 import type { ReactNode } from 'react';
 import type { AlertGroup, Notification } from '../api/types';
 import {
@@ -57,14 +58,15 @@ export function AlertGroupDetailPage() {
   );
   const action = useGroupAction();
   const silence = useSilenceGroup();
+  const canRespond = useCan('respond');
 
   // The same letters as the queue. Somebody who learned `a` and `r` on the list
   // should not have to reach for the pointer the moment they open one incident —
   // and this is the screen they open when a page woke them.
   useHotkeys([
-    ['a', () => id && action.mutate({ id, action: 'acknowledge' })],
-    ['r', () => id && action.mutate({ id, action: 'resolve' })],
-    ['s', () => id && silence.mutate({ id, durationMinutes: 60 })],
+    ['a', () => canRespond && id && action.mutate({ id, action: 'acknowledge' })],
+    ['r', () => canRespond && id && action.mutate({ id, action: 'resolve' })],
+    ['s', () => canRespond && id && silence.mutate({ id, durationMinutes: 60 })],
     ['Escape', () => navigate('/alert-groups')],
   ]);
 
@@ -83,10 +85,13 @@ export function AlertGroupDetailPage() {
             >
               {t('common.back')}
             </Button>
-            {id && (
+            {id && canRespond && (
               <>
                 <Button
                   variant="light"
+                  // One press, one request: a second tap while the first is in
+                  // flight would toggle the state straight back.
+                  loading={action.isPending}
                   onClick={() =>
                     action.mutate({
                       id,
@@ -101,6 +106,7 @@ export function AlertGroupDetailPage() {
                 <Button
                   color="teal"
                   variant="light"
+                  loading={action.isPending}
                   onClick={() =>
                     action.mutate({
                       id,
@@ -117,6 +123,7 @@ export function AlertGroupDetailPage() {
                       color="gray"
                       rightSection={<IconChevronDown size={14} />}
                       leftSection={<IconBellOff size={16} />}
+                      loading={silence.isPending}
                     >
                       {t('groups.silence')}
                     </Button>
@@ -137,6 +144,7 @@ export function AlertGroupDetailPage() {
           </>
         }
       />
+      <RoleNotice need="respond" />
 
       <QueryState query={group}>
         {(data) => (

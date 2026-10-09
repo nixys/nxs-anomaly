@@ -17,6 +17,7 @@ import { useAllOf, useCreate, useDelete, useFullList } from '../api/hooks';
 import type { MaintenanceWindow } from '../api/types';
 import { AbsoluteTime, ConfirmDeleteButton, PageHeader, ProvisionedBadge, QueryState } from '../components/common';
 import { ListPager, ListSearch, usePagedList } from '../components/PagedList';
+import { RoleNotice, useCan } from '../auth/permissions';
 import { useI18n } from '../i18n/I18nProvider';
 
 /**
@@ -26,6 +27,7 @@ import { useI18n } from '../i18n/I18nProvider';
  */
 export function MaintenancePage() {
   const { t } = useI18n();
+  const canEdit = useCan('edit');
   const windows = useFullList('maintenance-windows');
   const rows = usePagedList(windows.data?.items, ['name']);
   const remove = useDelete('maintenance-windows');
@@ -42,11 +44,12 @@ export function MaintenancePage() {
         title={t('maintenance.title')}
         description={t('maintenance.description')}
         actions={
-          <Button leftSection={<IconPlus size={16} />} onClick={() => setCreating(true)}>
+          <Button leftSection={<IconPlus size={16} />} disabled={!canEdit} onClick={() => setCreating(true)}>
             {t('maintenance.plan')}
           </Button>
         }
       />
+      <RoleNotice need="edit" />
 
       <Paper withBorder>
         <ListSearch list={rows} />
@@ -111,7 +114,7 @@ export function MaintenancePage() {
                         <ConfirmDeleteButton
                           label={window.name}
                           loading={remove.isPending}
-                          disabled={Boolean(window.provisioned_by)}
+                          disabled={!canEdit || Boolean(window.provisioned_by)}
                           disabledReason={t('common.provisionedHint', { tool: window.provisioned_by ?? '' })}
                           onConfirm={() => remove.mutate(window.id)}
                         />

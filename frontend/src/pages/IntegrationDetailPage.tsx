@@ -31,6 +31,7 @@ import {
 } from '../api/types';
 import { JsonBlock, PageHeader, ProvisionedNotice, QueryState } from '../components/common';
 import { CopyField, ingestUrl } from './IntegrationsPage';
+import { RoleNotice, useCan } from '../auth/permissions';
 import { useI18n } from '../i18n/I18nProvider';
 import { useChannelLabel } from '../i18n/domain';
 
@@ -55,6 +56,7 @@ export function IntegrationDetailPage() {
           </Button>
         }
       />
+      <RoleNotice need="edit" />
       <QueryState query={integration}>
         {(data) => (
           <>
@@ -101,6 +103,7 @@ function OverviewTab({ integration }: { integration: Integration }) {
   const [secret, setSecret] = useState('');
   const secretSet = Boolean(integration.webhook_secret_set);
   const { t } = useI18n();
+  const canEdit = useCan('edit');
 
   useEffect(() => {
     setName(integration.name);
@@ -157,7 +160,7 @@ function OverviewTab({ integration }: { integration: Integration }) {
                 leftSection={<IconTrash size={14} />}
                 onClick={removeSecret}
                 loading={update.isPending}
-                disabled={Boolean(integration.provisioned_by)}
+                disabled={!canEdit || Boolean(integration.provisioned_by)}
               >
                 {t('integration.webhookSecretRemove')}
               </Button>
@@ -168,7 +171,7 @@ function OverviewTab({ integration }: { integration: Integration }) {
               leftSection={<IconDeviceFloppy size={16} />}
               onClick={save}
               loading={update.isPending}
-              disabled={Boolean(integration.provisioned_by)}
+              disabled={!canEdit || Boolean(integration.provisioned_by)}
             >
               {t('common.save')}
             </Button>
@@ -199,6 +202,7 @@ function OverviewTab({ integration }: { integration: Integration }) {
               color="orange"
               leftSection={<IconRefresh size={16} />}
               loading={rotate.isPending}
+              disabled={!canEdit}
               onClick={() => rotate.mutate(integration.id)}
             >
               {t('integration.rotateKey')}
@@ -235,6 +239,7 @@ function RoutesTab({ integration }: { integration: Integration }) {
   const chains = useAllOf('escalation-chains');
   const [routes, setRoutes] = useState<RouteDraft[]>(integration.routes ?? []);
   const { t } = useI18n();
+  const canEdit = useCan('edit');
 
   useEffect(() => setRoutes(integration.routes ?? []), [integration]);
 
@@ -266,7 +271,7 @@ function RoutesTab({ integration }: { integration: Integration }) {
             leftSection={<IconDeviceFloppy size={16} />}
             onClick={save}
             loading={update.isPending}
-            disabled={defaultCount !== 1 || Boolean(integration.provisioned_by)}
+            disabled={defaultCount !== 1 || !canEdit || Boolean(integration.provisioned_by)}
           >
             {t('integration.saveRoutes')}
           </Button>
@@ -421,6 +426,7 @@ function PolicyTab({ integration }: { integration: Integration }) {
     },
   );
   const { t } = useI18n();
+  const canEdit = useCan('edit');
   const channelLabel = useChannelLabel();
 
   useEffect(() => {
@@ -494,7 +500,7 @@ function PolicyTab({ integration }: { integration: Integration }) {
           <Button
             leftSection={<IconDeviceFloppy size={16} />}
             loading={update.isPending}
-            disabled={Boolean(integration.provisioned_by)}
+            disabled={!canEdit || Boolean(integration.provisioned_by)}
             onClick={() =>
               update.mutate({ id: integration.id, body: { notification_policy: policy } })
             }
@@ -511,6 +517,7 @@ function TemplatesTab({ integration }: { integration: Integration }) {
   const update = useUpdate('integrations');
   const [templates, setTemplates] = useState<Record<string, string>>(integration.templates ?? {});
   const { t } = useI18n();
+  const canEdit = useCan('edit');
 
   useEffect(() => setTemplates(integration.templates ?? {}), [integration]);
 
@@ -577,7 +584,7 @@ function TemplatesTab({ integration }: { integration: Integration }) {
           <Button
             leftSection={<IconDeviceFloppy size={16} />}
             loading={update.isPending}
-            disabled={Boolean(integration.provisioned_by)}
+            disabled={!canEdit || Boolean(integration.provisioned_by)}
             onClick={() => update.mutate({ id: integration.id, body: { templates } })}
           >
             {t('integration.saveTemplates')}

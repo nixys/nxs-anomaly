@@ -250,16 +250,19 @@ and the legacy pool), `404` for an unknown key, `400` on a validation error, `42
 when the rate limit is exceeded, and `503` with `Retry-After` when the sender
 should come back: the database is unavailable, the transaction collided with
 another, the integration already has 128 ingests queued on this replica, this
-one waited 10 s for its turn, or the integration's `webhook_secret` is an `env:`
+one waited for its turn until there was just time left to answer, or the integration's `webhook_secret` is an `env:`
 reference this instance cannot resolve.
 
 Ingests of one integration are written one after another, so one integration
 takes on the order of 25–100 alerts a second depending on the database. Each
 replica sends at most two of an integration's ingests to the database at a time
 and queues up to 128 more without holding a connection; past that it answers
-`503` at once, and an ingest still waiting after 10 s gets `503` too — an
-Alertmanager envelope of a hundred alerts is a hundred times the work of one,
-and a longer wait would run into the 30 s HTTP write timeout. A storm on one integration therefore slows only that integration,
+`503` at once. An ingest waits for its turn until its answer is due (the
+request's start plus `NXS_ANOMALY_HTTP_WRITE_TIMEOUT_SECONDS`, 30 s by
+default) less a reserve for its own work — 2 s plus 100 ms per alert it
+carries — and then gets `503` too, so the answer is never cut off by the write
+timeout: a single alert waits up to about 28 s, an Alertmanager envelope of a
+hundred alerts about 18 s. A storm on one integration therefore slows only that integration,
 not the rest of the API, and a sender that retries on `503` (Alertmanager,
 Grafana, most webhook clients) loses nothing.
 

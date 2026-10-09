@@ -1,8 +1,9 @@
-import { Center, Loader } from '@mantine/core';
+import { Button, Center, Loader, Stack, Text } from '@mantine/core';
 import { Suspense, lazy } from 'react';
 import { Navigate, Route, Routes } from 'react-router';
 import { EnterprisePage } from './pages/EnterprisePage';
 import { useAuth } from './auth/AuthProvider';
+import { useI18n } from './i18n/I18nProvider';
 import { SignInScreen } from './auth/SignInScreen';
 import { Shell } from './components/Shell';
 import { HomePage } from './pages/HomePage';
@@ -71,12 +72,28 @@ const SetupPage = lazy(() =>
 );
 
 export function App() {
-  const { state } = useAuth();
+  const { state, retry } = useAuth();
+  const { t } = useI18n();
 
   if (state === 'checking') {
     return (
       <Center mih="100vh">
         <Loader />
+      </Center>
+    );
+  }
+
+  // The API did not answer: the credential is unknown, not wrong, so this is
+  // not the sign-in screen.
+  if (state === 'unavailable') {
+    return (
+      <Center mih="100vh">
+        <Stack align="center" gap="sm">
+          <Text>{t('signIn.apiUnavailable')}</Text>
+          <Button variant="light" onClick={() => void retry()}>
+            {t('signIn.retry')}
+          </Button>
+        </Stack>
       </Center>
     );
   }

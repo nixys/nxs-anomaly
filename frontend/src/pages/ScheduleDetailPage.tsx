@@ -53,6 +53,7 @@ import {
 import { PageHeader, ProvisionedNotice, QueryState } from '../components/common';
 import { ScheduleCalendar } from '../components/ScheduleCalendar';
 import { formatInZone, toIso, toLocalInput } from './schedule-utils';
+import { RoleNotice, useCan } from '../auth/permissions';
 import { useI18n } from '../i18n/I18nProvider';
 import { EMPTY_VALUE } from '../i18n/format';
 
@@ -67,6 +68,7 @@ const emptyRotation: Rotation = {
 
 export function ScheduleDetailPage() {
   const { t, fmt, locale } = useI18n();
+  const canEdit = useCan('edit');
   const { id } = useParams<{ id: string }>();
   const schedule = useItem('schedules', id);
   const users = useAllOf('users');
@@ -93,6 +95,9 @@ export function ScheduleDetailPage() {
   const userOptions = (users.data ?? []).map((user) => ({ value: user.id, label: user.name }));
   const userName = new Map((users.data ?? []).map((user) => [user.id, user.name]));
   const names = (ids: string[]) => ids.map((uid) => userName.get(uid) ?? uid).join(', ');
+  // Every time on this page — inputs, preview, calendar — is a wall clock in
+  // the schedule's zone, so one rota reads the same to everyone.
+  const zone = schedule.data?.timezone;
 
   const patch = (index: number, changes: Partial<Shift>) =>
     setShifts(shifts.map((shift, i) => (i === index ? { ...shift, ...changes } : shift)));
@@ -106,8 +111,8 @@ export function ScheduleDetailPage() {
       body: {
         shifts: shifts.map((shift) => ({
           ...shift,
-          start_at: toIso(shift.start_at),
-          end_at: toIso(shift.end_at),
+          start_at: toIso(shift.start_at, zone),
+          end_at: toIso(shift.end_at, zone),
         })),
       },
     });
@@ -119,7 +124,7 @@ export function ScheduleDetailPage() {
       body: {
         rotation: {
           ...rotation,
-          start_at: toIso(rotation.start_at),
+          start_at: toIso(rotation.start_at, zone),
           restriction: restricted ? rotation.restriction : null,
         },
       },
@@ -144,6 +149,7 @@ export function ScheduleDetailPage() {
           </Button>
         }
       />
+      <RoleNotice need="edit" />
 
       <QueryState query={schedule}>
         {(data) => (
@@ -191,7 +197,12 @@ export function ScheduleDetailPage() {
                   </Text>
                   <Group gap={6} mt={4}>
                     {onCall.isPending && <Text size="sm">…</Text>}
-                    {(onCall.data?.user_ids ?? []).length === 0 && !onCall.isPending && (
+                    {onCall.isError && (
+                      <Text size="sm" c="red">
+                        {t('schedule.onCallUnavailable')}
+                      </Text>
+                    )}
+                    {onCall.isSuccess && (onCall.data.user_ids ?? []).length === 0 && (
                       <Text size="sm" c="dimmed">
                         {t('schedule.nobody')}
                       </Text>
@@ -212,7 +223,11 @@ export function ScheduleDetailPage() {
                   <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
                     {t('schedule.next')}
                   </Text>
-                  {onCall.data?.next ? (
+                  {!onCall.isSuccess ? (
+                    <Text size="sm" c="dimmed" mt={4}>
+                      {onCall.isError ? t('schedule.onCallUnavailable') : '…'}
+                    </Text>
+                  ) : onCall.data.next ? (
                     <Group gap={6} mt={4}>
                       <Text size="sm">
                         {onCall.data.next.user_ids.length
@@ -233,14 +248,20 @@ export function ScheduleDetailPage() {
                   <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
                     {t('schedule.coverage4w')}
                   </Text>
-                  <Group gap="xs" mt={6} w={180}>
-                    <Progress
-                      value={(preview.data?.coverage_ratio ?? 0) * 100}
-                      color={(preview.data?.coverage_ratio ?? 0) > 0.999 ? 'teal' : 'orange'}
-                      style={{ flex: 1 }}
-                    />
-                    <Text size="sm">{Math.round((preview.data?.coverage_ratio ?? 0) * 100)}%</Text>
-                  </Group>
+                  {preview.isSuccess ? (
+                    <Group gap="xs" mt={6} w={180}>
+                      <Progress
+                        value={(preview.data.coverage_ratio ?? 0) * 100}
+                        color={(preview.data.coverage_ratio ?? 0) > 0.999 ? 'teal' : 'orange'}
+                        style={{ flex: 1 }}
+                      />
+                      <Text size="sm">{Math.round((preview.data.coverage_ratio ?? 0) * 100)}%</Text>
+                    </Group>
+                  ) : (
+                    <Text size="sm" c={preview.isError ? 'red' : 'dimmed'} mt={4}>
+                      {preview.isError ? t('schedule.coverageUnavailable') : '…'}
+                    </Text>
+                  )}
                 </div>
               </Group>
             </Paper>
@@ -252,7 +273,7 @@ export function ScheduleDetailPage() {
                   <Switch
                     label={t('schedule.notifyHandoff')}
                     checked={notifyOnShiftChange}
-                    disabled={Boolean(data.provisioned_by)}
+                    disabled={!canEdit || Boolean(data.provisioned_by)}
                     onChange={(event) => {
                       const on = event.currentTarget.checked;
                       setNotifyOnShiftChange(on);
@@ -262,7 +283,7 @@ export function ScheduleDetailPage() {
                   <Switch
                     label={t('common.enabled')}
                     checked={rotation.enabled}
-                    disabled={Boolean(data.provisioned_by)}
+                    disabled={!canEdit || Boolean(data.provisioned_by)}
                     onChange={(event) => patchRotation({ enabled: event.currentTarget.checked })}
                   />
                   <Button
@@ -271,6 +292,7 @@ export function ScheduleDetailPage() {
                     disabled={
                       rotation.participant_ids.length === 0 ||
                       !rotation.start_at ||
+                      !canEdit ||
                       Boolean(data.provisioned_by)
                     }
                     onClick={saveRotation}
@@ -291,7 +313,8 @@ export function ScheduleDetailPage() {
                 <TextInput
                   label={t('schedule.rotationStart')}
                   type="datetime-local"
-                  value={toLocalInput(rotation.start_at)}
+                  value={toLocalInput(rotation.start_at, zone)}
+                  description={t('schedule.timesIn', { timezone: zone ?? '' })}
                   onChange={(event) => patchRotation({ start_at: event.currentTarget.value })}
                 />
                 <NumberInput
@@ -449,7 +472,7 @@ export function ScheduleDetailPage() {
                   <Button
                     leftSection={<IconDeviceFloppy size={16} />}
                     loading={update.isPending}
-                    disabled={Boolean(data.provisioned_by)}
+                    disabled={!canEdit || Boolean(data.provisioned_by)}
                     onClick={saveShifts}
                   >
                     {t('schedule.saveShifts')}
@@ -482,14 +505,15 @@ export function ScheduleDetailPage() {
                       />
                       <TextInput
                         label={t('schedule.start')}
+                        description={t('schedule.timesIn', { timezone: zone ?? '' })}
                         type="datetime-local"
-                        value={toLocalInput(shift.start_at)}
+                        value={toLocalInput(shift.start_at, zone)}
                         onChange={(event) => patch(index, { start_at: event.currentTarget.value })}
                       />
                       <TextInput
                         label={t('schedule.end')}
                         type="datetime-local"
-                        value={toLocalInput(shift.end_at)}
+                        value={toLocalInput(shift.end_at, zone)}
                         onChange={(event) => patch(index, { end_at: event.currentTarget.value })}
                       />
                       <Group align="flex-end" wrap="nowrap">
@@ -520,9 +544,12 @@ export function ScheduleDetailPage() {
             </Paper>
 
             <Paper withBorder p="lg">
-              <Title order={5} mb="md">
-                {t('schedule.overrides')}
-              </Title>
+              <Group justify="space-between" mb="md">
+                <Title order={5}>{t('schedule.overrides')}</Title>
+                <Text size="xs" c="dimmed">
+                  {t('schedule.timesIn', { timezone: data.timezone })}
+                </Text>
+              </Group>
 
               {(data.overrides ?? []).length === 0 ? (
                 <Text size="sm" c="dimmed" mb="md">
@@ -545,6 +572,7 @@ export function ScheduleDetailPage() {
                       <OverrideRow
                         key={item.id}
                         scheduleId={id ?? ''}
+                        timezone={zone}
                         override={item}
                         userOptions={userOptions}
                         onSave={(body) =>
@@ -576,6 +604,7 @@ export function ScheduleDetailPage() {
                 />
                 <TextInput
                   label={t('schedule.optionalStart')}
+                  description={t('schedule.timesIn', { timezone: zone ?? '' })}
                   type="datetime-local"
                   value={override.start_at}
                   onChange={(event) =>
@@ -584,6 +613,7 @@ export function ScheduleDetailPage() {
                 />
                 <TextInput
                   label={t('maintenance.until')}
+                  description={t('schedule.timesIn', { timezone: zone ?? '' })}
                   type="datetime-local"
                   value={override.until}
                   onChange={(event) =>
@@ -601,7 +631,7 @@ export function ScheduleDetailPage() {
                 />
                 <Button
                   loading={createOverride.isPending}
-                  disabled={!id || !override.user_id || !override.until}
+                  disabled={!canEdit || !id || !override.user_id || !override.until}
                   onClick={() =>
                     id &&
                     createOverride.mutate(
@@ -609,9 +639,9 @@ export function ScheduleDetailPage() {
                         id,
                         body: {
                           user_id: override.user_id,
-                          until: toIso(override.until),
+                          until: toIso(override.until, zone),
                           reason: override.reason,
-                          ...(override.start_at ? { start_at: toIso(override.start_at) } : {}),
+                          ...(override.start_at ? { start_at: toIso(override.start_at, zone) } : {}),
                         },
                       },
                       {
@@ -642,8 +672,10 @@ function OverrideRow({
   onSave,
   onDelete,
   saving,
+  timezone,
 }: {
   scheduleId: string;
+  timezone?: string;
   override: ScheduleOverride;
   userOptions: { value: string; label: string }[];
   onSave: (body: Record<string, unknown>) => void;
@@ -651,16 +683,17 @@ function OverrideRow({
   saving: boolean;
 }) {
   const { t } = useI18n();
+  const canEdit = useCan('edit');
   const [draft, setDraft] = useState({
     user_id: override.user_id,
-    start_at: toLocalInput(override.start_at),
-    until: toLocalInput(override.until),
+    start_at: toLocalInput(override.start_at, timezone),
+    until: toLocalInput(override.until, timezone),
     reason: override.reason ?? '',
   });
   const dirty =
     draft.user_id !== override.user_id ||
-    draft.start_at !== toLocalInput(override.start_at) ||
-    draft.until !== toLocalInput(override.until) ||
+    draft.start_at !== toLocalInput(override.start_at, timezone) ||
+    draft.until !== toLocalInput(override.until, timezone) ||
     draft.reason !== (override.reason ?? '');
 
   return (
@@ -704,20 +737,26 @@ function OverrideRow({
           <ActionIcon
             variant="subtle"
             aria-label={t('schedule.saveOverride')}
-            disabled={!dirty}
+            disabled={!canEdit || !dirty}
             loading={saving && dirty}
             onClick={() =>
               onSave({
                 user_id: draft.user_id,
-                start_at: toIso(draft.start_at),
-                until: toIso(draft.until),
+                start_at: toIso(draft.start_at, timezone),
+                until: toIso(draft.until, timezone),
                 reason: draft.reason,
               })
             }
           >
             <IconDeviceFloppy size={16} />
           </ActionIcon>
-          <ActionIcon color="red" variant="subtle" aria-label={t('schedule.deleteOverride')} onClick={onDelete}>
+          <ActionIcon
+            color="red"
+            variant="subtle"
+            aria-label={t('schedule.deleteOverride')}
+            disabled={!canEdit}
+            onClick={onDelete}
+          >
             <IconTrash size={16} />
           </ActionIcon>
         </Group>

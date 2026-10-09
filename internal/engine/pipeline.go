@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"unicode/utf8"
 
 	"github.com/nixys/nxs-anomaly/internal/utils"
@@ -69,7 +70,18 @@ const maxExtractedLabels = 32
 // pipelineRegexCache holds compiled patterns across alerts. Same reasoning as
 // parsedTemplateCache: the pipeline is per integration and stable, so compiling
 // per alert would be pure waste on the hottest path in the service.
-var pipelineRegexCache sync.Map // string -> *cachedRegex
+//
+// Patterns of edited pipelines are never asked for again, so the cache is
+// bounded: past maxCachedPatterns it is emptied and refills with the patterns
+// still in use. Coarse, but a refill costs one compilation per live pattern.
+var (
+	pipelineRegexCache   sync.Map // string -> *cachedRegex
+	pipelineRegexEntries atomic.Int64
+)
+
+// maxCachedPatterns is far above what live pipelines use; reaching it means
+// stale patterns from configuration churn.
+const maxCachedPatterns = 4096
 
 type cachedRegex struct {
 	re  *regexp.Regexp
@@ -86,6 +98,10 @@ func compilePipelineRegex(pattern string) (*regexp.Regexp, error) {
 		c.err = fmt.Errorf("pattern longer than %d characters", maxPatternLen)
 	} else {
 		c.re, c.err = regexp.Compile(pattern)
+	}
+	if pipelineRegexEntries.Add(1) > maxCachedPatterns {
+		pipelineRegexCache.Clear()
+		pipelineRegexEntries.Store(1)
 	}
 	pipelineRegexCache.Store(pattern, &c)
 	return c.re, c.err
@@ -635,23 +651,31 @@ func (e *Engine) applyAlertPipeline(integration, payload map[string]any) (bool, 
 
 // compiledPipeline returns the cached compilation for this integration's
 // pipeline definition, compiling it once per distinct definition.
+//
+// One entry per integration: an edited definition replaces the previous
+// compilation instead of sitting beside it, so the cache stays the size of the
+// integration list however often pipelines change. It used to be keyed by
+// id+fingerprint, which kept every version ever seen for the process lifetime.
 func (e *Engine) compiledPipeline(integration map[string]any, raw any) (*AlertPipeline, error) {
-	key := utils.StrVal(integration, "id") + "\x00" + fingerprintPipeline(raw)
-	if v, ok := pipelineCompileCache.Load(key); ok {
-		c := v.(*cachedPipeline)
-		return c.p, c.err
+	id := utils.StrVal(integration, "id")
+	fingerprint := fingerprintPipeline(raw)
+	if v, ok := pipelineCompileCache.Load(id); ok {
+		if c := v.(*cachedPipeline); c.fingerprint == fingerprint {
+			return c.p, c.err
+		}
 	}
 	p, err := CompileAlertPipeline(raw)
-	pipelineCompileCache.Store(key, &cachedPipeline{p: p, err: err})
+	pipelineCompileCache.Store(id, &cachedPipeline{fingerprint: fingerprint, p: p, err: err})
 	return p, err
 }
 
 type cachedPipeline struct {
-	p   *AlertPipeline
-	err error
+	fingerprint string
+	p           *AlertPipeline
+	err         error
 }
 
-var pipelineCompileCache sync.Map // integrationID\x00fingerprint -> *cachedPipeline
+var pipelineCompileCache sync.Map // integrationID -> *cachedPipeline
 
 // fingerprintPipeline renders the definition deterministically so an edit
 // produces a different cache key. Cheap because a pipeline is small and this
