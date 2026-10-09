@@ -1,14 +1,29 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"time"
+
+	"github.com/nixys/nxs-anomaly/internal/engine"
 )
 
 // All webhook ingestion handlers share the same skeleton: per-source latency
 // histogram via defer, per-key rate limit, JSON body, engine ingest call,
 // metrics on outcome, JSON response. Only the engine method and the source
 // label differ per handler.
+
+// ingestContext tells the engine when the answer to this ingest is due: the
+// handler's start plus the HTTP write timeout, past which the server can no
+// longer answer. An ingest waiting for its integration's turn gives up in time
+// to answer 503 + Retry-After instead of having its answer cut off. Without a
+// write timeout nothing is due, and the engine's own bound applies.
+func (srv *Server) ingestContext(r *http.Request, start time.Time) context.Context {
+	if srv.cfg.WriteTimeout <= 0 {
+		return r.Context()
+	}
+	return engine.WithAnswerBy(r.Context(), start.Add(srv.cfg.WriteTimeout))
+}
 
 func (srv *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	t0 := time.Now()
@@ -41,7 +56,7 @@ func (srv *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	result, err := srv.eng.IngestAlert(r.Context(), key, body)
+	result, err := srv.eng.IngestAlert(srv.ingestContext(r, t0), key, body)
 	if err != nil {
 		srv.metrics.incIngestError("webhook")
 		writeIngestError(w, err, "webhook", key)
@@ -63,7 +78,7 @@ func (srv *Server) handleAlertmanager(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	result, err := srv.eng.IngestAlertmanager(r.Context(), key, body)
+	result, err := srv.eng.IngestAlertmanager(srv.ingestContext(r, t0), key, body)
 	if err != nil {
 		srv.metrics.incIngestError("alertmanager")
 		writeIngestError(w, err, "alertmanager", key)
@@ -87,7 +102,7 @@ func (srv *Server) handlePagerDuty(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	result, err := srv.eng.IngestPagerDuty(r.Context(), key, body)
+	result, err := srv.eng.IngestPagerDuty(srv.ingestContext(r, t0), key, body)
 	if err != nil {
 		srv.metrics.incIngestError("pagerduty")
 		writeIngestError(w, err, "pagerduty", key)
@@ -109,7 +124,7 @@ func (srv *Server) handleVictorOps(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	result, err := srv.eng.IngestVictorOps(r.Context(), key, body)
+	result, err := srv.eng.IngestVictorOps(srv.ingestContext(r, t0), key, body)
 	if err != nil {
 		srv.metrics.incIngestError("victorops")
 		writeIngestError(w, err, "victorops", key)
@@ -133,7 +148,7 @@ func (srv *Server) handleGrafanaAlerting(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	result, err := srv.eng.IngestGrafanaAlerting(r.Context(), key, body)
+	result, err := srv.eng.IngestGrafanaAlerting(srv.ingestContext(r, t0), key, body)
 	if err != nil {
 		srv.metrics.incIngestError("grafana-alerting")
 		writeIngestError(w, err, "grafana-alerting", key)
@@ -157,7 +172,7 @@ func (srv *Server) handleOpenSearch(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	result, err := srv.eng.IngestOpenSearch(r.Context(), key, body)
+	result, err := srv.eng.IngestOpenSearch(srv.ingestContext(r, t0), key, body)
 	if err != nil {
 		srv.metrics.incIngestError("opensearch")
 		writeIngestError(w, err, "opensearch", key)
@@ -183,7 +198,7 @@ func (srv *Server) handleElasticsearch(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	result, err := srv.eng.IngestElasticsearch(r.Context(), key, body)
+	result, err := srv.eng.IngestElasticsearch(srv.ingestContext(r, t0), key, body)
 	if err != nil {
 		srv.metrics.incIngestError("elasticsearch")
 		writeIngestError(w, err, "elasticsearch", key)
@@ -209,7 +224,7 @@ func (srv *Server) handleLegacyPool(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	result, err := srv.eng.IngestLegacyPool(r.Context(), key, body)
+	result, err := srv.eng.IngestLegacyPool(srv.ingestContext(r, t0), key, body)
 	if err != nil {
 		srv.metrics.incIngestError("legacy-pool")
 		writeIngestError(w, err, "legacy-pool", key)

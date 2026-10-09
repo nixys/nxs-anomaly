@@ -1,6 +1,7 @@
 import { Box, Group, Paper, Stack, Text, Tooltip } from '@mantine/core';
 import type { ScheduleSegment } from '../api/types';
 import { useI18n } from '../i18n/I18nProvider';
+import { formatCalendarDay, formatHour, splitAtMidnights } from '../pages/schedule-utils';
 
 /**
  * Four weeks of a rota as a grid, one row per day.
@@ -22,7 +23,7 @@ export function ScheduleCalendar({
   timezone: string;
   names: (ids: string[]) => string;
 }) {
-  const { t, fmt } = useI18n();
+  const { t, locale } = useI18n();
   if (segments.length === 0) return null;
 
   // Colour per person, taken from the palette the rest of the product already
@@ -36,40 +37,11 @@ export function ScheduleCalendar({
     return colorOf.get(key) as string;
   };
 
-  const dayKey = (date: Date) =>
-    new Intl.DateTimeFormat('en-CA', { timeZone: timezone, dateStyle: 'short' }).format(date);
-  const hourOfDay = (date: Date) => {
-    const parts = new Intl.DateTimeFormat('en-GB', {
-      timeZone: timezone,
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).formatToParts(date);
-    const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
-    const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
-    return hour + minute / 60;
-  };
-
   // Split every segment at midnight so each piece belongs to exactly one row.
   type Piece = { day: string; from: number; to: number; segment: ScheduleSegment };
-  const pieces: Piece[] = [];
-  for (const segment of segments) {
-    let cursor = new Date(segment.start);
-    const end = new Date(segment.end);
-    let guard = 0;
-    while (cursor < end && guard < 80) {
-      guard += 1;
-      const day = dayKey(cursor);
-      const from = hourOfDay(cursor);
-      const midnight = new Date(cursor);
-      midnight.setUTCHours(midnight.getUTCHours() + Math.ceil(24 - from));
-      midnight.setUTCMinutes(0, 0, 0);
-      const sliceEnd = midnight < end ? midnight : end;
-      const to = dayKey(sliceEnd) === day ? hourOfDay(sliceEnd) : 24;
-      pieces.push({ day, from, to: to <= from ? 24 : to, segment });
-      cursor = sliceEnd;
-    }
-  }
+  const pieces: Piece[] = segments.flatMap((segment) =>
+    splitAtMidnights(segment.start, segment.end, timezone).map((piece) => ({ ...piece, segment })),
+  );
 
   const days = Array.from(new Set(pieces.map((piece) => piece.day))).sort();
 
@@ -98,7 +70,7 @@ export function ScheduleCalendar({
         {days.map((day) => (
           <Group key={day} gap="sm" wrap="nowrap">
             <Text size="xs" c="dimmed" w={84} style={{ flexShrink: 0 }}>
-              {fmt.date(day)}
+              {formatCalendarDay(day, locale)}
             </Text>
             <Box
               style={{
@@ -118,13 +90,16 @@ export function ScheduleCalendar({
                     <Tooltip
                       key={index}
                       withArrow
-                      label={`${who} · ${String(Math.floor(piece.from)).padStart(2, '0')}:00 — ${String(Math.ceil(piece.to)).padStart(2, '0')}:00${piece.segment.source ? ` · ${piece.segment.source}` : ''}`}
+                      label={`${who} · ${formatHour(piece.from)} — ${formatHour(piece.to)}${piece.segment.source ? ` · ${piece.segment.source}` : ''}`}
                     >
                       <Box
                         style={{
                           position: 'absolute',
                           left: `${(piece.from / 24) * 100}%`,
-                          width: `${Math.max(0.8, ((piece.to - piece.from) / 24) * 100)}%`,
+                          // Exact length: widening a 10-minute override to look
+                          // like an hour misstates the shift. The hit area
+                          // below is what grows instead.
+                          width: `${((piece.to - piece.from) / 24) * 100}%`,
                           top: 0,
                           bottom: 0,
                           borderRadius: 3,
@@ -140,7 +115,19 @@ export function ScheduleCalendar({
                               : undefined,
                           border: covered ? undefined : '1px dashed var(--mantine-color-orange-6)',
                         }}
-                      />
+                      >
+                        <Box
+                          aria-hidden
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            bottom: 0,
+                            left: '50%',
+                            width: 'max(100%, 8px)',
+                            transform: 'translateX(-50%)',
+                          }}
+                        />
+                      </Box>
                     </Tooltip>
                   );
                 })}

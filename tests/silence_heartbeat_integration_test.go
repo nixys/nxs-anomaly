@@ -150,9 +150,18 @@ func TestStartupWaitsForAMigrationLockLongerThanStatementTimeout(t *testing.T) {
 	if _, err := holder.Exec(ctx, "SELECT pg_advisory_lock(72544000)"); err != nil {
 		t.Fatal(err)
 	}
+	// The unlock runs on holder, so it has to finish before the deferred
+	// holder.Close: a pgx.Conn is not safe for concurrent use.
+	unlocked := make(chan error, 1)
 	go func() {
 		time.Sleep(3 * time.Second)
-		_, _ = holder.Exec(context.Background(), "SELECT pg_advisory_unlock(72544000)")
+		_, err := holder.Exec(context.Background(), "SELECT pg_advisory_unlock(72544000)")
+		unlocked <- err
+	}()
+	defer func() {
+		if err := <-unlocked; err != nil {
+			t.Errorf("release the migration lock: %v", err)
+		}
 	}()
 
 	t.Setenv("NXS_ANOMALY_DB_STATEMENT_TIMEOUT_SECONDS", "1")

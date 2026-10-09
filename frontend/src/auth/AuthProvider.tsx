@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
+  ApiError,
   authApi,
   clearApiKey,
   getApiKey,
@@ -10,7 +11,7 @@ import {
   type Identity,
 } from '../api/client';
 
-type AuthState = 'checking' | 'authenticated' | 'unauthenticated';
+type AuthState = 'checking' | 'authenticated' | 'unauthenticated' | 'unavailable';
 
 interface AuthContextValue {
   state: AuthState;
@@ -23,6 +24,8 @@ interface AuthContextValue {
   signInWithPassword: (login: string, password: string) => Promise<void>;
   signInWithApiKey: (key: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Asks /auth/me again after the API was unavailable. */
+  retry: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -36,16 +39,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Resolving identity is a single call: /auth/me answers "am I signed in, and
   // as whom" for a session cookie, a stored API key and an anonymous
   // deployment alike, so there is no need to probe each case separately.
-  const resolve = useCallback(async (): Promise<boolean> => {
+  //
+  // Only a 401 means "not signed in". An unreachable or failing API says nothing
+  // about the credential, so it must neither show the sign-in screen nor drop a
+  // stored key that will work again once the API is back.
+  const resolve = useCallback(async (): Promise<AuthState> => {
     try {
       const me = await authApi.me();
       setIdentity(me);
       setState('authenticated');
-      return true;
-    } catch {
+      return 'authenticated';
+    } catch (error) {
+      const next = error instanceof ApiError && error.status === 401 ? 'unauthenticated' : 'unavailable';
       setIdentity(null);
-      setState('unauthenticated');
-      return false;
+      setState(next);
+      return next;
     }
   }, []);
 
@@ -62,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
       setMethods(available);
       setAuthDisabled(available?.anonymous ?? false);
-      if (!(await resolve()) && !cancelled) {
+      if ((await resolve()) === 'unauthenticated' && !cancelled) {
         // A stored key that no longer works is worse than no key: it makes
         // every request fail in a way that looks like a server problem.
         if (getApiKey()) clearApiKey();
@@ -106,6 +114,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState('unauthenticated');
   }, []);
 
+  const retry = useCallback(async () => {
+    setState('checking');
+    await resolve();
+  }, [resolve]);
+
   const value = useMemo(
     () => ({
       state,
@@ -115,8 +128,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signInWithPassword,
       signInWithApiKey,
       signOut,
+      retry,
     }),
-    [state, authDisabled, methods, identity, signInWithPassword, signInWithApiKey, signOut],
+    [state, authDisabled, methods, identity, signInWithPassword, signInWithApiKey, signOut, retry],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -126,4 +140,9 @@ export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used inside AuthProvider');
   return ctx;
+}
+
+/** The auth context, or null outside an AuthProvider (a page rendered alone). */
+export function useOptionalAuth(): AuthContextValue | null {
+  return useContext(AuthContext);
 }

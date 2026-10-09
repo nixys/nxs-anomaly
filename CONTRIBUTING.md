@@ -63,7 +63,7 @@ Integration tests need a real PostgreSQL — the helper script spins one up in D
 tests/run_postgres_integration.sh
 ```
 
-Linter is golangci-lint v2.6. Run via Docker to match CI exactly:
+Linter is golangci-lint v2.13. Run via Docker to match CI exactly:
 
 ```sh
 docker run --rm -v "$(pwd):/app" -w /app golangci/golangci-lint:v2.13-alpine \

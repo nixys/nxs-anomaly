@@ -142,7 +142,9 @@ async function fetchAll<R extends ListResource>(resource: R): Promise<ResourceTy
     const page = await api.get<Page<ResourceType[R]>>(LIST_PATHS[resource], { limit: MAX_PAGE, offset: items.length });
     const got = page.items ?? [];
     items.push(...got);
-    if (got.length < MAX_PAGE || items.length >= (page.total ?? 0)) return items;
+    // Past 10 000 rows the API estimates the total (and may only give a lower
+    // bound), so only an exact total may end the loop early.
+    if (got.length < MAX_PAGE || (!page.total_estimated && items.length >= (page.total ?? 0))) return items;
   }
 }
 

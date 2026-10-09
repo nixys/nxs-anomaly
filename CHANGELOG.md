@@ -1,8 +1,55 @@
 # Changelog
 
 All notable changes to this project are documented here. The format is based on
-[Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
-semantic versioning once it reaches 1.0.
+[Keep a Changelog](https://keepachangelog.com/), and the project follows
+[semantic versioning](https://semver.org/) since 1.0.0.
+
+## [1.9.22] — 2026-10-08
+
+### Fixed
+- **Selects and full lists no longer stop at 11 000 rows.** Past 10 000 rows
+  the API estimates the total, and may only give a lower bound (`10001`); the
+  UI took that as exact and stopped paging there. It now pages until a short
+  page whenever the total is estimated.
+- **An unreachable API is no longer shown as a fact about the rota or the
+  sign-in.** The schedule list showed "covered" while coverage was loading or
+  had failed, the schedule summary showed 0 % before the preview arrived, and
+  a failed on-call request read as "nobody" there and on the overview. A failed
+  `/auth/me` sent people to the sign-in screen and deleted their stored API
+  key; only a `401` does that now — any other failure says the API is
+  unreachable, keeps the key and offers a retry.
+- **The schedule calendar is drawn on the schedule's own clock.** A band was
+  cut at 00:30 in Asia/Kolkata and at 23:00 on the night Berlin leaves DST;
+  the tooltip rounded to whole hours; a 10-minute override was widened to look
+  like an hour (it keeps its length now, with a wider hit area); day labels
+  moved to the previous day for viewers west of UTC. Rotation, shift and
+  override inputs are now read in the schedule's timezone, which is shown next
+  to them, instead of the browser's.
+- **Actions a role cannot perform are no longer offered.** A viewer was shown
+  Acknowledge/Resolve/Silence and every configuration editor, and learned of
+  the role only from a 403 after filling a form. These controls are now hidden
+  or disabled with an explanation; the backend still enforces the roles.
+  Acknowledge/Resolve on the group page also ignore a second press while the
+  first is in flight.
+- **Compiled pipelines no longer accumulate.** The cache kept every version of
+  every pipeline for the life of the process; it now holds one per
+  integration, and the regex cache is capped.
+- `go test -race` on the PostgreSQL suite: the migration-lock test closed its
+  connection while a goroutine could still be using it.
+
+## [1.9.21] — 2026-10-07
+
+### Fixed
+- **Single alerts are no longer refused while there is time to accept them.**
+  Since 1.9.17 an ingest waited at most 10 s for its integration's turn —
+  a bound sized for Alertmanager envelopes of a hundred alerts. Beside forty
+  API readers on a sandbox, one integration at 50 alerts/s had 6–7 % of its
+  alerts answered `503` after exactly 10 s, with twenty seconds of the write
+  timeout still left; senders that do not retry lost them. The wait now ends
+  when the answer is due (the request's start plus
+  `NXS_ANOMALY_HTTP_WRITE_TIMEOUT_SECONDS`) less a reserve for the work —
+  2 s plus 100 ms per alert — so a single alert waits up to about 28 s and an
+  envelope of a hundred about 18 s, and no answer runs into the write timeout.
 
 ## [1.9.20] — 2026-10-06
 

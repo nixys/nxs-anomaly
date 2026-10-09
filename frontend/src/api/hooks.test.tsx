@@ -48,6 +48,19 @@ describe('reading a whole collection', () => {
     expect(result.current.data!.map((u) => u.id)).toContain('latecomer');
   });
 
+  // Past 10 000 rows the API answers total=10001 as a lower bound; stopping
+  // there loaded 11 000 of 12 000.
+  it('reads past an estimated total', async () => {
+    get.mockImplementation((_path: string, params?: { offset?: number }) => {
+      const offset = params?.offset ?? 0;
+      const items = Array.from({ length: Math.max(0, Math.min(1000, 12000 - offset)) }, (_, i) => ({ id: `p${offset + i}` }));
+      return Promise.resolve({ items, total: 10001, total_estimated: true, total_lower_bound: true });
+    });
+    const { result } = renderHook(() => useAllOf('users'), { wrapper });
+    await waitFor(() => expect(result.current.data).toBeDefined());
+    expect(result.current.data).toHaveLength(12000);
+  });
+
   it('stops after a short page', async () => {
     get.mockResolvedValue({ items: [{ id: 'a' }, { id: 'b' }], total: 2 });
     const { result } = renderHook(() => useFullList('users'), { wrapper });

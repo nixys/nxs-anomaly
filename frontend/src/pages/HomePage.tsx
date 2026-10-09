@@ -162,6 +162,10 @@ export function HomePage() {
               <Text size="sm" c="dimmed">
                 {t('common.resolving')}
               </Text>
+            ) : onCall.isError ? (
+              <Text size="sm" c="red">
+                {t('schedule.onCallUnavailable')}
+              </Text>
             ) : onCallEntries.length === 0 ? (
               <Text size="sm" c="dimmed">
                 {t('home.nobodyOnCall')}

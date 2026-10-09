@@ -28,17 +28,53 @@ const ingestGateMaxWaiting = 128
 // leave the pool to everything else.
 const ingestGateHolders = 2
 
-// ingestGateMaxWait is how long an ingest may wait for its turn before it is
-// told to come back (ErrIngestBusy, 503 + Retry-After).
-//
-// The count bound above was sized for single alerts. An Alertmanager envelope
-// carries up to a hundred, and the same 128 waiters were then a minute of
-// work: under load its POSTs waited 18–30 s, and past the 30 s HTTP write
-// timeout the server dropped the answer to an envelope it went on to store in
-// full — the sender saw a failure and sent it again. Bounding the wait in time
-// keeps every answer well inside the write timeout, whatever a request
-// carries.
+// ingestGateMaxWait is how long an ingest may wait for its turn when nobody
+// said by when it has to be answered (WithAnswerBy): heartbeats, the CLI.
 const ingestGateMaxWait = 10 * time.Second
+
+// An ingest that came over HTTP waits until its answer is due (WithAnswerBy:
+// the request's start plus the HTTP write timeout) less what the work after
+// its turn may take: ingestReserveBase plus ingestReservePerAlert for every
+// alert it carries. Past that it is told to come back (ErrIngestBusy, 503 +
+// Retry-After).
+//
+// A fixed bound cannot serve both kinds of request. An Alertmanager envelope
+// carries up to a hundred alerts: with no bound its POSTs waited 18–30 s under
+// load, and past the 30 s write timeout the server dropped the answer to an
+// envelope it went on to store in full — the sender saw a failure and sent it
+// again. A single alert is done in well under a second once it has its turn:
+// bounded at 10 s like an envelope, 6–7 % of the alerts of one integration at
+// 50/s beside forty readers were refused with twenty seconds of the write
+// timeout left (sandbox, 1.9.20). The reserve is over twice the slowest
+// envelope measured under load (4.6 s for 100 alerts after its turn, sandbox),
+// so the answer still goes out before the write timeout cuts it.
+const (
+	ingestReserveBase     = 2 * time.Second
+	ingestReservePerAlert = 100 * time.Millisecond
+)
+
+type answerByKey struct{}
+
+// WithAnswerBy records when the caller must have its answer, so an ingest
+// waiting its turn gives up while there is still time to say so.
+func WithAnswerBy(ctx context.Context, t time.Time) context.Context {
+	return context.WithValue(ctx, answerByKey{}, t)
+}
+
+// AnswerBy is the time recorded by WithAnswerBy, if any.
+func AnswerBy(ctx context.Context) (time.Time, bool) {
+	by, ok := ctx.Value(answerByKey{}).(time.Time)
+	return by, ok
+}
+
+// waitLimit is how long an ingest of alerts alerts may wait for its turn.
+func (g *ingestGate) waitLimit(ctx context.Context, alerts int) time.Duration {
+	by, ok := AnswerBy(ctx)
+	if !ok {
+		return g.maxWait
+	}
+	return time.Until(by) - ingestReserveBase - time.Duration(alerts)*ingestReservePerAlert
+}
 
 // ingestGate lets ingestGateHolders ingests per integration go to the database
 // at a time in this process; the others wait here, holding no connection.
@@ -71,10 +107,11 @@ func newIngestGate() *ingestGate {
 	return &ingestGate{slots: map[string]*ingestSlot{}, maxWait: ingestGateMaxWait}
 }
 
-// enter waits for the slot of key and returns its release, or ErrIngestBusy at
-// once when the queue is full or after maxWait without a turn, or the
-// context's error if the caller gives up.
-func (g *ingestGate) enter(ctx context.Context, key string) (func(), error) {
+// enter waits for the slot of key for an ingest of alerts alerts and returns
+// its release, or ErrIngestBusy at once when the queue is full or when its
+// wait limit passes without a turn, or the context's error if the caller gives
+// up.
+func (g *ingestGate) enter(ctx context.Context, key string, alerts int) (func(), error) {
 	g.mu.Lock()
 	s := g.slots[key]
 	if s == nil {
@@ -91,14 +128,21 @@ func (g *ingestGate) enter(ctx context.Context, key string) (func(), error) {
 	s.users++
 	g.mu.Unlock()
 
-	timer := time.NewTimer(g.maxWait)
+	release := func() {
+		s.tokens <- struct{}{}
+		g.leave(key, s)
+	}
+	// A free place is taken even when the wait limit is already spent.
+	select {
+	case <-s.tokens:
+		return release, nil
+	default:
+	}
+	timer := time.NewTimer(g.waitLimit(ctx, alerts))
 	defer timer.Stop()
 	select {
 	case <-s.tokens:
-		return func() {
-			s.tokens <- struct{}{}
-			g.leave(key, s)
-		}, nil
+		return release, nil
 	case <-timer.C:
 		g.leave(key, s)
 		return nil, ErrIngestBusy
@@ -111,11 +155,11 @@ func (g *ingestGate) enter(ctx context.Context, key string) (func(), error) {
 // enterIngest passes the ingest of integrationKey through the gate. It comes
 // before the integration is even looked up, so an ingest waiting its turn uses
 // no connection at all.
-func (e *Engine) enterIngest(ctx context.Context, integrationKey string) (func(), error) {
+func (e *Engine) enterIngest(ctx context.Context, integrationKey string, alerts int) (func(), error) {
 	if e.ingestGate == nil {
 		return func() {}, nil
 	}
-	return e.ingestGate.enter(ctx, integrationKey)
+	return e.ingestGate.enter(ctx, integrationKey, alerts)
 }
 
 func (g *ingestGate) leave(key string, s *ingestSlot) {

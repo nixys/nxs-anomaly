@@ -105,21 +105,26 @@ guides below for a real deployment.
 
 ## Roadmap
 
-Following features are already in backlog for our development team and will be released soon:
+What is already released is described above and in the
+[release notes](https://github.com/nixys/nxs-anomaly/releases); this section lists
+only what is not released yet. Planned items carry no release date.
 
-**Community Edition:**
+Already released in **Enterprise Edition** (not part of Community): OIDC single
+sign-on, event streaming to Kafka with incident analytics dashboards on
+ClickHouse, and scheduled on-call quality reports.
 
-- Android and iOS Apps
+**Planned — Community Edition:**
+
+- Android and iOS apps
 - More notification channels and integrations
 - Advanced alert grouping and routing rules
 - Improved incident workflows and collaboration features
 - Enhanced dashboards and operational visibility
 
-**Enterprise Edition:**
+**Planned — Enterprise Edition:**
 
-- SSO integration with enterprise identity providers
-- Advanced team management and access controls
-- Incident analytics and reporting
+- Advanced team management and access controls beyond the Community team boundaries
+- Reports in the web interface
 - Enterprise deployment and support capabilities
 
 ## Feedback

@@ -3,7 +3,9 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/nixys/nxs-anomaly/internal/storetest"
@@ -275,5 +277,54 @@ func TestPipelineLeavesSeverityWhenRuleDoesNotFire(t *testing.T) {
 	}
 	if got := utils.StrVal(payload, "severity"); got != "warning" {
 		t.Errorf("severity = %q, want warning", got)
+	}
+}
+
+func cacheLen(m *sync.Map) int {
+	n := 0
+	m.Range(func(any, any) bool { n++; return true })
+	return n
+}
+
+// Every edit of a pipeline used to leave its compilation behind for the life of
+// the process; the cache now holds one per integration.
+func TestPipelineCompileCacheKeepsOneVersionPerIntegration(t *testing.T) {
+	e := &Engine{}
+	integration := map[string]any{"id": "int_cache_" + utils.MakeID("t")}
+	for i := 0; i < 50; i++ {
+		var raw any
+		src := fmt.Sprintf(`[{"set":{"v":"%d"}}]`, i)
+		if err := json.Unmarshal([]byte(src), &raw); err != nil {
+			t.Fatal(err)
+		}
+		p, err := e.compiledPipeline(integration, raw)
+		if err != nil || p == nil {
+			t.Fatalf("version %d: %v", i, err)
+		}
+		again, _ := e.compiledPipeline(integration, raw)
+		if again != p {
+			t.Fatalf("version %d compiled twice", i)
+		}
+	}
+	n := 0
+	pipelineCompileCache.Range(func(k, _ any) bool {
+		if k == integration["id"] {
+			n++
+		}
+		return true
+	})
+	if n != 1 {
+		t.Errorf("entries for the integration = %d, want 1", n)
+	}
+}
+
+func TestPipelineRegexCacheIsBounded(t *testing.T) {
+	for i := 0; i < maxCachedPatterns+100; i++ {
+		if _, err := compilePipelineRegex(fmt.Sprintf("^bounded-%d$", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := cacheLen(&pipelineRegexCache); n > maxCachedPatterns {
+		t.Errorf("regex cache holds %d patterns, cap %d", n, maxCachedPatterns)
 	}
 }

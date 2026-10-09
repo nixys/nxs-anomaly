@@ -19,11 +19,13 @@ import { useAllOf, useCreate, useDelete, useFullList, useScheduleCoverage } from
 import { ConfirmDeleteButton, PageHeader, ProvisionedBadge, QueryState } from '../components/common';
 import { ListPager, ListSearch, usePagedList } from '../components/PagedList';
 import type { ScheduleCoverageItem } from '../api/types';
+import { RoleNotice, useCan } from '../auth/permissions';
 import { useI18n } from '../i18n/I18nProvider';
 import { EMPTY_VALUE } from '../i18n/format';
 
 export function SchedulesPage() {
   const { t } = useI18n();
+  const canEdit = useCan('edit');
   const schedules = useFullList('schedules');
   const rows = usePagedList(schedules.data?.items, ['name']);
   const teams = useAllOf('teams');
@@ -43,11 +45,12 @@ export function SchedulesPage() {
         title={t('schedules.title')}
         description={t('schedules.description')}
         actions={
-          <Button leftSection={<IconCalendarPlus size={16} />} onClick={() => setCreating(true)}>
+          <Button leftSection={<IconCalendarPlus size={16} />} disabled={!canEdit} onClick={() => setCreating(true)}>
             {t('schedules.add')}
           </Button>
         }
       />
+      <RoleNotice need="edit" />
 
       <Paper withBorder>
         <ListSearch list={rows} />
@@ -104,7 +107,7 @@ export function SchedulesPage() {
                       )}
                     </Table.Td>
                     <Table.Td>
-                      <CoverageCell item={degraded.get(schedule.id)} />
+                      <CoverageCell item={degraded.get(schedule.id)} status={coverage.status} />
                     </Table.Td>
                     <Table.Td>
                       <Badge variant="light" color="grape">
@@ -124,7 +127,7 @@ export function SchedulesPage() {
                         <ConfirmDeleteButton
                           label={schedule.name}
                           loading={remove.isPending}
-                          disabled={Boolean(schedule.provisioned_by)}
+                          disabled={!canEdit || Boolean(schedule.provisioned_by)}
                           disabledReason={t('common.provisionedHint', { tool: schedule.provisioned_by ?? '' })}
                           onConfirm={() => remove.mutate(schedule.id)}
                         />
@@ -148,8 +151,23 @@ export function SchedulesPage() {
  * Coverage state of one schedule. "Accepted" means a chain step opted into the
  * gaps with allow_uncovered — a deliberate choice, not a healthy schedule.
  */
-function CoverageCell({ item }: { item: ScheduleCoverageItem | undefined }) {
+function CoverageCell({
+  item,
+  status,
+}: {
+  item: ScheduleCoverageItem | undefined;
+  status: 'pending' | 'error' | 'success';
+}) {
   const { t } = useI18n();
+  // No row means "covered" only once the coverage report has actually arrived.
+  if (status === 'pending') return <Text size="sm">…</Text>;
+  if (status === 'error') {
+    return (
+      <Badge variant="light" color="gray">
+        {t('schedules.coverageUnknown')}
+      </Badge>
+    );
+  }
   if (!item) {
     return (
       <Badge variant="light" color="teal">
