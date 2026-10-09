@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/) since 1.0.0.
 
+## [1.9.23] — 2026-10-09
+
+### Security
+- **HTTP/2 fixes from Go 1.27.2 and `golang.org/x/net` v0.60.0**
+  (GO-2026-6603, -6610, -6611, -6612, -6617): memory exhaustion through
+  Trailer headers, malformed framing headers accepted by the transport, CPU
+  burned on repeated window changes, a double flow-control refund and a crash
+  from an HPACK encoder race. The API serves HTTP/2 when TLS is on and the
+  delivery client speaks it to providers. Builds, images and every CI job now
+  pin Go 1.27.2 exactly: with `1.27` the GitHub runner kept the Go it had
+  cached and the gate still saw the vulnerable standard library.
+
 ## [1.9.22] — 2026-10-08
 
 ### Fixed
@@ -50,40 +62,6 @@ All notable changes to this project are documented here. The format is based on
   `NXS_ANOMALY_HTTP_WRITE_TIMEOUT_SECONDS`) less a reserve for the work —
   2 s plus 100 ms per alert — so a single alert waits up to about 28 s and an
   envelope of a hundred about 18 s, and no answer runs into the write timeout.
-
-## Unreleased
-
-### Added
-- **ChatOps channels read integration templates.** A channel posted to through
-  its `webhook_url` takes `templates.chatops`, then the key named after its
-  `platform` (`slack`, `mattermost`, …), then `default`; a Telegram ChatOps
-  channel reads `chatops` before `telegram`. Without a template the text is the
-  built-in one, as before.
-- **Links in notification templates.** Every template can use `group_url` (the
-  group's page, from `NXS_ANOMALY_PUBLIC_URL`) and the source's links
-  `generator_url`, `dashboard_url`, `panel_url`, `silence_url`, which are now
-  carried from the alert to its group. All five are empty strings when unknown.
-  The built-in ChatOps text ends with the group's page when
-  `NXS_ANOMALY_PUBLIC_URL` is set.
-- **ChatOps channels hear what happened to the alert they showed.** When a
-  group is acknowledged, unacknowledged or resolved — from the UI, the API, a
-  chat command or button, the source or a `RESOLVE` step — each channel it was
-  posted to gets a status message through the delivery queue. Off by default;
-  `NXS_ANOMALY_CHATOPS_STATUS_UPDATES=true` turns it on. Personal resolve
-  notices still follow `NXS_ANOMALY_NOTIFY_ON_RESOLVE` alone. Templates see the
-  change as `{{ .event }}`; `user_name` and `user_username` are now always
-  defined (empty when the message has no recipient person).
-- **A ChatOps channel can edit the alert message instead of adding a line.**
-  With `message_update` (`method`, `url` with `{message_id}`,
-  `message_id_path`) on a webhook-backed channel, the id the platform returns
-  for the posted alert is kept on its notification, and a status change is sent
-  as an edit of that message through the delivery queue. Without the setting,
-  without an id, or when the platform refuses the edit, the status is posted as
-  a new message.
-- **Buttons in Slack and Mattermost ChatOps channels.** A channel created or
-  updated with `"interactive": true` is posted the alert with the same buttons
-  and group link a personal Slack or Mattermost notification has; taps arrive
-  through the existing interactive endpoints. Off by default.
 
 ## [1.9.20] — 2026-10-06
 

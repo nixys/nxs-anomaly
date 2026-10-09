@@ -60,7 +60,7 @@ acknowledgements and resolutions in one shared timeline.
 
 ### How it works
 
-![Alert flow: ingestion and routing, on-call escalation, notification delivery, acknowledgement and resolution](assets/nxs-anomaly-alert-flow.svg)
+![Alert flow: ingestion and routing, on-call escalation, notification delivery, acknowledgement and resolution](assets/nxs-anomaly-alert-flow.png)
 
 ## Quickstart
 

@@ -226,26 +226,26 @@ func (e *Engine) fanoutChatopsNotifications(state *store.State, g model.AlertGro
 			continue
 		}
 
-		// A Telegram channel goes out through the bot, to its chat id; every
-		// other platform through the channel's own incoming webhook, which the
-		// delivery step looks up by channel id. Queued, not assumed: the
-		// delivery step is what decides whether there is a transport.
-		ref := model.ChatChannelRef{ID: channelID, Channel: "chatops", Target: channelID}
+		// No user_id on the channel's message: one message per step belongs to
+		// the team, not to whichever member happened to be paged first.
+		// Attributed to a member, it would be deleted with that member's
+		// account (the foreign key cascades) and scrubbed by their
+		// personal-data erasure. The member stays in the payload, where
+		// templates read user_name.
+		var notificationID string
 		if platform == "telegram" {
-			ref.Channel, ref.Target = "telegram", channelName
+			ntf := buildNotification(g, "", "telegram", channelName, reason, timestamp, idemKey)
+			ntf.ScheduleDelivery(notificationPayload(g, user, reason))
+			addNotification(state, ntf, seen)
+			notificationID = ntf.ID()
+		} else {
+			ntf := buildNotification(g, "", "chatops", channelID, reason, timestamp, idemKey)
+			// Queued, not assumed: the channel is a real transport only if it
+			// has an incoming webhook, and the delivery step is what decides.
+			ntf.ScheduleDelivery(notificationPayload(g, user, reason))
+			addNotification(state, ntf, seen)
+			notificationID = ntf.ID()
 		}
-		// No user_id: the channel's one message per step belongs to the team,
-		// not to whichever member happened to be paged first. Attributed to a
-		// member, it would be deleted with that member's account (the
-		// foreign key cascades) and scrubbed by their personal-data erasure.
-		// The member stays in the payload, where templates read user_name.
-		ntf := buildNotification(g, "", ref.Channel, ref.Target, reason, timestamp, idemKey)
-		payload := notificationPayload(g, user, reason)
-		// Marks this as the team's channel rather than a person's chat, so
-		// the Telegram adapter reads the chatops template first.
-		payload["chatops_channel_id"] = channelID
-		ntf.ScheduleDelivery(payload)
-		addNotification(state, ntf, seen)
 
 		// The message history must not claim an outbound message that had
 		// nowhere to go. Whether this channel has a transport is known here —
@@ -255,33 +255,23 @@ func (e *Engine) fanoutChatopsNotifications(state *store.State, g model.AlertGro
 		deliveryStatus := "queued"
 		if platform != "telegram" && utils.StrVal(ch, "webhook_url") == "" {
 			deliveryStatus = "skipped_no_transport"
-		} else {
-			// Only a channel that could show the alert has anything to update
-			// when its status changes.
-			ref.NotificationID = ntf.ID()
-			g.AddNotifiedChatChannel(ref)
 		}
-		recordChatopsOutbound(state, channelID, ntf.ID(), deliveryStatus, g, reason, timestamp)
+		msg := map[string]any{
+			"id":              utils.MakeID("chatmsg"),
+			"channel_id":      channelID,
+			"direction":       "outbound",
+			"actor":           "system",
+			"command":         nil,
+			"notification_id": notificationID,
+			"delivery_status": deliveryStatus,
+			"response": map[string]any{
+				"text":           fmt.Sprintf("[%s] %s (%s)", g.Severity(), g.Title(), reason),
+				"alert_group_id": groupID,
+			},
+			"created_at": timestamp,
+		}
+		state.ChatopsMessages[msg["id"].(string)] = msg
 	}
-}
-
-// recordChatopsOutbound mirrors a message sent to a channel into its history.
-func recordChatopsOutbound(state *store.State, channelID, notificationID, deliveryStatus string, g model.AlertGroup, reason, timestamp string) {
-	msg := map[string]any{
-		"id":              utils.MakeID("chatmsg"),
-		"channel_id":      channelID,
-		"direction":       "outbound",
-		"actor":           "system",
-		"command":         nil,
-		"notification_id": notificationID,
-		"delivery_status": deliveryStatus,
-		"response": map[string]any{
-			"text":           fmt.Sprintf("[%s] %s (%s)", g.Severity(), g.Title(), reason),
-			"alert_group_id": g.ID(),
-		},
-		"created_at": timestamp,
-	}
-	state.ChatopsMessages[msg["id"].(string)] = msg
 }
 
 // fanoutMobileNotifications creates mobile push notifications for the user's devices.
@@ -397,15 +387,6 @@ func notificationPayload(g model.AlertGroup, user map[string]any, reason string)
 	// that caused it without the worker re-reading the group.
 	if tp := g.TraceParent(); tp != "" {
 		p["trace_parent"] = tp
-	}
-	// Carried for the same reason, and only when there are any, so a payload
-	// from a source without links keeps the shape it always had.
-	if links := g.SourceLinks(); len(links) > 0 {
-		sl := make(map[string]any, len(links))
-		for k, v := range links {
-			sl[k] = v
-		}
-		p["source_links"] = sl
 	}
 	if user != nil {
 		p["user"] = map[string]any{
@@ -547,23 +528,9 @@ func renderNotificationText(notification, payload map[string]any, templateStr st
 				}
 			}
 		}
-		// Always defined, empty when the message has no recipient person (a
-		// status update to a ChatOps channel): a template shared between a
-		// personal chat and a channel must not fall back to raw text in one.
-		u, _ := payload["user"].(map[string]any)
-		ctx["user_name"] = utils.StrVal(u, "name")
-		ctx["user_username"] = utils.StrVal(u, "username")
-		// The status change a ChatOps status message reports, empty on the
-		// alert itself, so one template can serve both: {{ if .event }}.
-		ctx["event"] = utils.StrVal(payload, "chatops_event")
-		// Every link key is present, empty when unknown: the renderer treats a
-		// missing key as an error and falls back to raw text, and a template
-		// written for a source that sends a panel link must not break on an
-		// alert that has none, or on a deployment without a public URL.
-		ctx["group_url"] = utils.StrVal(payload, "group_url")
-		links, _ := payload["source_links"].(map[string]any)
-		for _, k := range sourceLinkKeys {
-			ctx[k] = utils.StrVal(links, k)
+		if u, ok := payload["user"].(map[string]any); ok {
+			ctx["user_name"] = utils.StrVal(u, "name")
+			ctx["user_username"] = utils.StrVal(u, "username")
 		}
 		return renderTemplate(templateStr, ctx)
 	}

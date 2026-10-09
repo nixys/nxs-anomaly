@@ -28,7 +28,6 @@ func (e *Engine) deliverNotificationViaAdapter(ctx context.Context, ntf map[stri
 	if payload == nil {
 		payload = map[string]any{}
 	}
-	payload = withGroupURL(payload, e.deliveryCfg.PublicURL)
 
 	// The span the whole feature is for. A provider call is the one step in the
 	// pipeline whose duration is outside this service's control, so "the alert
@@ -80,9 +79,6 @@ func (e *Engine) deliverNotificationViaAdapter(ctx context.Context, ntf map[stri
 			"reason", outcome.ProviderStatus, "detail", outcome.Err)
 		return outcome
 	}
-	if outcome, gone := e.chatopsStatusChannelGone(ctx, payload); gone {
-		return outcome
-	}
 
 	switch channel {
 	case "webhook":
@@ -109,23 +105,9 @@ func (e *Engine) deliverNotificationViaAdapter(ctx context.Context, ntf map[stri
 		return res
 
 	case "telegram":
-		// A Telegram ChatOps channel is delivered through this adapter, but it
-		// is the team's channel: it reads the chatops template first, the same
-		// as a channel posted to through a webhook.
-		keys := []string{"telegram"}
-		if utils.StrVal(payload, "chatops_channel_id") != "" {
-			keys = []string{"chatops", "telegram"}
-		}
-		text := renderNotificationText(ntf, payload, e.getNotificationTemplate(ctx, utils.StrVal(payload, "integration_id"), keys...))
-		// A status message ("acknowledged by …") carries no keyboard: the
-		// buttons belong under the alert, and a second set under the news that
-		// somebody already took it invites a second person to take it again.
-		groupID := utils.StrVal(payload, "alert_group_id")
-		if utils.StrVal(payload, "chatops_event") != "" {
-			groupID = ""
-		}
+		text := renderNotificationText(ntf, payload, e.getNotificationTemplate(ctx, utils.StrVal(payload, "integration_id"), "telegram"))
 		return e.sendTelegramOutcome(ctx, target, text,
-			groupID, telegramShiftOptions{
+			utils.StrVal(payload, "alert_group_id"), telegramShiftOptions{
 				offerCheckin: utils.BoolVal(payload, "offer_checkin", false),
 				scheduleID:   utils.StrVal(payload, "schedule_id"),
 			})
@@ -184,25 +166,6 @@ func (e *Engine) deliverNotificationViaAdapter(ctx context.Context, ntf map[stri
 	default:
 		return failed("", fmt.Sprintf("unsupported channel: %s", channel), 0, "")
 	}
-}
-
-// withGroupURL adds the group's page to the payload the adapters render.
-//
-// Added at delivery rather than when the notification is queued: the address
-// depends on NXS_ANOMALY_PUBLIC_URL, which an operator may set or correct after
-// the alert fired, and a retry should carry the current one. A copy, so the
-// claimed row's payload is not edited in passing.
-func withGroupURL(payload map[string]any, publicURL string) map[string]any {
-	url := AlertGroupURL(publicURL, utils.StrVal(payload, "alert_group_id"))
-	if url == "" {
-		return payload
-	}
-	out := make(map[string]any, len(payload)+1)
-	for k, v := range payload {
-		out[k] = v
-	}
-	out["group_url"] = url
-	return out
 }
 
 // sendTelegramOutcome wraps the Telegram adapter in the outcome contract.
@@ -316,79 +279,12 @@ func (e *Engine) deliverChatops(ctx context.Context, ntf map[string]any, channel
 	if err != nil {
 		return skipped(skipNotConfigured, "chatops channel "+utils.StrVal(channel, "name")+": "+err.Error())
 	}
-	platform := utils.StrVal(channel, "platform")
-	// chatops first, so one template can serve every team channel whatever it
-	// runs on; then the platform's own key, so a Slack channel can share the
-	// template written for Slack elsewhere; then default.
-	tmpl := e.getNotificationTemplate(ctx, utils.StrVal(payload, "integration_id"), "chatops", platform)
-	text := renderNotificationText(ntf, payload, tmpl)
-	isStatus := utils.StrVal(payload, "chatops_event") != ""
-	body, linked := e.chatopsAlertBody(channel, payload, text, isStatus)
-	if tmpl == "" && !linked {
-		// A channel is where several people read the same alert, and the one
-		// who takes it needs the page with its timeline and buttons. Only on
-		// the built-in text: a template decides for itself, via group_url.
-		if url := utils.StrVal(payload, "group_url"); url != "" {
-			text += "\n" + url
-			body["text"] = text
-		}
-	}
-	update := chatopsMessageUpdateOf(channel)
-	if update != nil && isStatus {
-		if res, done := e.updateChatopsMessage(ctx, ntf, channel, payload, update, text, headers); done {
-			return res
-		}
-	}
-	// The alert message's response is kept only when the channel edits
-	// messages: that is the one reader of the id in it.
-	var keepBody int64
-	if update != nil && !isStatus {
-		keepBody = maxMessageIDBody
-	}
-	proxyChannel := e.deliveryCfg.chatopsProxyChannel(platform)
-	res, respBody := sendJSONGuarded(ctx, e.deliveryCfg.clientFor(proxyChannel), http.MethodPost, webhookURL,
-		body, e.deliveryCfg.ssrfGuardFor(proxyChannel), headers, keepBody)
-	res.ProviderStatus = platform + "_chatops"
-	if keepBody > 0 && res.Status == deliveryDelivered {
-		if res.MessageID = messageIDAt(respBody, update.MessageIDPath); res.MessageID == "" {
-			// Delivered all the same; only the later edit is lost, and its
-			// status message will be posted as a new one instead.
-			slog.Warn("chatops_message_id_not_found",
-				"channel_id", channelID, "message_id_path", update.MessageIDPath,
-				"effect", "status changes of this alert are posted as new messages")
-		}
-	}
+	text := renderNotificationText(ntf, payload, "")
+	proxyChannel := e.deliveryCfg.chatopsProxyChannel(utils.StrVal(channel, "platform"))
+	res := postWebhookGuarded(ctx, e.deliveryCfg.clientFor(proxyChannel), webhookURL,
+		map[string]any{"text": text}, e.deliveryCfg.ssrfGuardFor(proxyChannel), headers)
+	res.ProviderStatus = utils.StrVal(channel, "platform") + "_chatops"
 	return res
-}
-
-// chatopsAlertBody is what a webhook-backed channel is posted: the text alone,
-// or — for a Slack or Mattermost channel marked interactive — the same message
-// with the buttons a personal Slack or Mattermost notification carries. linked
-// reports that the body already links to the group's page, so the built-in
-// text need not add the address as a line of its own.
-//
-// Opt-in per channel, unlike the personal targets: a channel's webhook_url
-// may be any gateway that happens to be labelled slack, and a channel that
-// received plain text yesterday must not start receiving blocks on upgrade.
-// Taps come back through the existing inbound endpoints, which find the
-// channel by external_id, so the channel's team bounds what a tap may do.
-// A status message never carries buttons: they belong under the alert.
-func (e *Engine) chatopsAlertBody(channel, payload map[string]any, text string, isStatus bool) (body map[string]any, linked bool) {
-	groupID := utils.StrVal(payload, "alert_group_id")
-	if isStatus || groupID == "" || !utils.BoolVal(channel, "interactive", false) {
-		return map[string]any{"text": text}, false
-	}
-	publicURL := e.deliveryCfg.PublicURL
-	switch strings.ToLower(utils.StrVal(channel, "platform")) {
-	case "slack":
-		return SlackMessagePayload(text, groupID, publicURL), publicURL != ""
-	case "mattermost":
-		secret := e.deliveryCfg.MattermostActionSecret
-		// Without the secret MattermostMessagePayload sends the text alone,
-		// and the link it would have put in the attachment goes with it.
-		return MattermostMessagePayload(text, groupID, publicURL, secret), publicURL != "" && secret != ""
-	}
-	return map[string]any{"text": text}, false
 }
 
 // templateCacheEntry is a cached template plus the time it was read. The
@@ -412,13 +308,11 @@ func (e *Engine) templateCacheTTL() time.Duration {
 	return refCacheTTL
 }
 
-// getNotificationTemplate returns the integration's template for the first of
-// keys that has one, falling back to "default", or "" for the built-in text.
-func (e *Engine) getNotificationTemplate(ctx context.Context, integrationID string, keys ...string) string {
+func (e *Engine) getNotificationTemplate(ctx context.Context, integrationID, channel string) string {
 	if integrationID == "" {
 		return ""
 	}
-	key := integrationID + ":" + strings.Join(keys, ",")
+	key := integrationID + ":" + channel
 	now := time.Now()
 	var stale string
 	var haveStale bool
@@ -444,11 +338,9 @@ func (e *Engine) getNotificationTemplate(ctx context.Context, integrationID stri
 		return ""
 	}
 	templates, _ := integ["templates"].(map[string]any)
-	var t string
-	for _, k := range append(keys, "default") {
-		if t = utils.StrVal(templates, k); t != "" {
-			break
-		}
+	t := utils.StrVal(templates, channel)
+	if t == "" {
+		t = utils.StrVal(templates, "default")
 	}
 	e.templateCache.Store(key, templateCacheEntry{value: t, loadedAt: now})
 	return t
