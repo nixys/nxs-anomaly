@@ -4,6 +4,31 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/) since 1.0.0.
 
+## [1.9.24] — 2026-11-06
+
+### Security
+- **Go 1.27.3 and `golang.org/x/net` v0.62.0**, closing a batch of stdlib
+  and `x/net` advisories published after the 1.9.23 fix (GO-2026-6599,
+  -6600, -6603, -6605, -6607, -6608, -6609, -6610, -6611, -6612, -6613,
+  -6617, -6809): `html/template` context tracking and keyword recognition,
+  HTTP/1 request desync after a rejected or redirected `CONNECT`, a
+  malformed ECH extension reference in `crypto/tls`, a MIME-header
+  memory-limit bypass, several HTTP/2 transport/server findings, and
+  `crypto/x509` no longer trusting a compromised intermediate. `go.mod`'s
+  `go` directive is now `1.27.3` (previously `1.27.0`, which let a local or
+  CI toolchain below the version actually shipped in images build a
+  vulnerable binary even after 1.9.23 pinned the Docker/CI Go version).
+  Builds, images and every CI job now pin Go 1.27.3 exactly.
+- **`vite` 8.3.2 → 8.3.6 and `undici` (transitive, via `jsdom`) 7.30.0 →
+  7.30.2 in `frontend`**, closing the dev-server and `fetch`/`WebSocket`
+  advisories Dependabot opened (vite: launch-editor command injection and
+  `%`-escaping, the `server.fs` and `?vite-wasm-instance` file-read bypasses,
+  cross-origin script execution through custom middleware; undici: TLS
+  renegotiation and dropped-`tls`-option certificate bypasses, cross-origin
+  redirect cache poisoning, content-encoding and WebSocket-PONG denial of
+  service). `undici` is pinned via `overrides` since nothing in `frontend`
+  depends on it directly.
+
 ## [1.9.23] — 2026-10-09
 
 ### Security
