@@ -338,7 +338,7 @@ func (s *pgStore) countCapped(ctx context.Context, base string, args []any) (int
 		} `json:"Plan"`
 	}
 	if json.Unmarshal(plan, &out) != nil || len(out) == 0 || out[0].Plan.Rows <= ListTotalCap {
-		return ListTotalCap + 1, nil
+		return ListTotalCap + 1, nil //nolint:nilerr // an unreadable plan is treated like the failed EXPLAIN above
 	}
 	return int(out[0].Plan.Rows), nil
 }

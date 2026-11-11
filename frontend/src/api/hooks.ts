@@ -28,6 +28,7 @@ import type {
   OnCallResponse,
   Page,
   Readiness,
+  Report,
   Capabilities,
   Schedule,
   ScheduleCoverageReport,
@@ -89,6 +90,7 @@ const LIST_PATHS = {
   alerts: '/api/v1/alerts',
   notifications: '/api/v1/notifications',
   'maintenance-windows': '/api/v1/maintenance-windows',
+  reports: '/api/v1/reports',
 } as const;
 
 export type ListResource = keyof typeof LIST_PATHS;
@@ -103,6 +105,7 @@ type ResourceType = {
   alerts: Alert;
   notifications: Notification;
   'maintenance-windows': MaintenanceWindow;
+  reports: Report;
 };
 
 export function useList<R extends ListResource>(

@@ -1,6 +1,9 @@
 package authz
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 // testIterations keeps these tests cheap. The production work factor is
 // verified separately by TestHashPasswordUsesConfiguredWorkFactor.
@@ -60,12 +63,12 @@ func TestVerifyPasswordRejectsMalformed(t *testing.T) {
 // TestHashPasswordEnforcesLength. Length is the only composition rule; it is
 // enforced at the one place that creates hashes so no endpoint can skip it.
 func TestHashPasswordEnforcesLength(t *testing.T) {
-	if _, err := HashPassword("short"); err != ErrPasswordTooShort {
+	if _, err := HashPassword("short"); !errors.Is(err, ErrPasswordTooShort) {
 		t.Errorf("got %v, want ErrPasswordTooShort", err)
 	}
 	// Counted in runes, not bytes: a short non-ASCII password must not pass by
 	// virtue of its encoding.
-	if _, err := HashPassword("парольчик"); err != ErrPasswordTooShort {
+	if _, err := HashPassword("парольчик"); !errors.Is(err, ErrPasswordTooShort) {
 		t.Errorf("9-rune password: got %v, want ErrPasswordTooShort", err)
 	}
 	if _, err := HashPassword("длинный-пароль-достаточно"); err != nil {

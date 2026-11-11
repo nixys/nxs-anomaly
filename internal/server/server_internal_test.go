@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	dto "github.com/prometheus/client_model/go"
+
 	"github.com/nixys/nxs-anomaly/internal/engine"
 )
 
@@ -239,5 +241,50 @@ func TestSecurityHeadersOnEveryResponse(t *testing.T) {
 				t.Errorf("X-Content-Type-Options = %q, want nosniff", got)
 			}
 		})
+	}
+}
+
+// Responder actions are their own latency category, the "p95 acknowledge"
+// SLI; list reads under the same prefix stay in "api".
+func TestObservabilityRespondCategory(t *testing.T) {
+	srv, _ := newTestServer()
+	handler := srv.withObservability(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	for _, r := range []*http.Request{
+		httptest.NewRequest(http.MethodPost, "/api/v1/alert-groups/g-1/acknowledge", nil),
+		httptest.NewRequest(http.MethodPost, "/api/v1/mobile/alert-groups/g-1/resolve", nil),
+		httptest.NewRequest(http.MethodGet, "/api/v1/mobile/alert-groups/", nil),
+		httptest.NewRequest(http.MethodGet, "/api/v1/alert-groups/g-1", nil),
+	} {
+		handler.ServeHTTP(httptest.NewRecorder(), r)
+	}
+	count := func(handler string) float64 {
+		var m dto.Metric
+		if err := srv.metrics.requestsTotal.WithLabelValues(handler, "200").Write(&m); err != nil {
+			t.Fatal(err)
+		}
+		return m.GetCounter().GetValue()
+	}
+	if got := count("respond"); got != 2 {
+		t.Errorf("respond requests = %v, want 2", got)
+	}
+	if got := count("api"); got != 2 {
+		t.Errorf("api requests = %v, want 2 (reads stay in api)", got)
+	}
+}
+
+// While draining after SIGTERM the process still serves, but /health fails so
+// the readiness probe takes the pod out of the Service before the listener shuts.
+func TestHealthReportsDraining(t *testing.T) {
+	srv, _ := newTestServer()
+	w := httptest.NewRecorder()
+	srv.handleHealth(w, httptest.NewRequest(http.MethodGet, "/health", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("healthy: status %d, want 200 (%s)", w.Code, w.Body.String())
+	}
+	srv.draining.Store(true)
+	w = httptest.NewRecorder()
+	srv.handleHealth(w, httptest.NewRequest(http.MethodGet, "/health", nil))
+	if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), `"draining"`) {
+		t.Fatalf("draining: status %d body %s, want 503 draining", w.Code, w.Body.String())
 	}
 }

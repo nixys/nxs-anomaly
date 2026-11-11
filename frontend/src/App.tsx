@@ -58,6 +58,9 @@ const InsightsPage = lazy(() =>
 const AuditPage = lazy(() =>
   import('./pages/AuditPage').then((m) => ({ default: m.AuditPage })),
 );
+const ReportsPage = lazy(() =>
+  import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })),
+);
 const ReadinessPage = lazy(() =>
   import('./pages/ReadinessPage').then((m) => ({ default: m.ReadinessPage })),
 );
@@ -185,6 +188,14 @@ export function App() {
           element={
             <Deferred>
               <InsightsPage />
+            </Deferred>
+          }
+        />
+        <Route
+          path="reports"
+          element={
+            <Deferred>
+              <ReportsPage />
             </Deferred>
           }
         />

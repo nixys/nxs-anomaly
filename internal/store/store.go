@@ -637,6 +637,10 @@ type pgStore struct {
 	// re-established after errors. Guarded by listenMu.
 	listenMu   sync.Mutex
 	listenConn *pgxpool.Conn
+
+	// failover resets the pool when a connection turns out to be on a
+	// standby (see failover.go). Nil in tests that build a pgStore by hand.
+	failover *failoverGuard
 }
 
 // NewPostgreSQLStore creates and initializes a store from env vars. When
@@ -708,12 +712,16 @@ func newPostgreSQLStore(ctx context.Context) (PostgreSQLStore, error) {
 		return nil, err
 	}
 
+	guard := newFailoverGuard()
+	config.ConnConfig.Tracer = guard
+
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
 		return nil, fmt.Errorf("create pool: %w", err)
 	}
+	guard.setReset(pool.Reset)
 
-	s := &pgStore{pool: pool}
+	s := &pgStore{pool: pool, failover: guard}
 	if err := s.initialize(ctx); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("initialize: %w", err)

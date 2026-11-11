@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/nixys/nxs-anomaly/internal/authz"
 	"github.com/nixys/nxs-anomaly/internal/utils"
@@ -541,9 +543,20 @@ func (srv *Server) routeAPI(w http.ResponseWriter, r *http.Request) {
 
 // ---- helpers ----
 
+// webhookSigMaxSkew bounds how old (or how far in the future) a timestamped
+// signed ingest request may be — the window in which a captured request can be
+// replayed. Same value as the Slack inbound check.
+const webhookSigMaxSkew = 5 * time.Minute
+
 // verifyWebhookSig checks an HMAC-SHA256 signature over the request body bytes
 // as received. The header value is the hex digest, with or without a "sha256="
 // prefix.
+//
+// When the sender adds X-Anomaly-Timestamp (unix seconds), the signature covers
+// "{timestamp}.{body}" and the timestamp must be within webhookSigMaxSkew of
+// now — a replay of a captured request is refused once the window passes.
+// Without the header the body alone is signed, unless
+// NXS_ANOMALY_WEBHOOK_REQUIRE_TIMESTAMP makes the timestamp mandatory.
 func (srv *Server) verifyWebhookSig(r *http.Request, integrationKey string, rawBody []byte) error {
 	integration, err := srv.store.FindIntegrationByKey(r.Context(), integrationKey)
 	if err != nil {
@@ -582,6 +595,19 @@ func (srv *Server) verifyWebhookSig(r *http.Request, integrationKey string, rawB
 		return errWebhookSigInvalid
 	}
 	mac := hmac.New(sha256.New, []byte(secret))
+	if tsRaw := strings.TrimSpace(r.Header.Get("X-Anomaly-Timestamp")); tsRaw != "" {
+		ts, err := strconv.ParseInt(tsRaw, 10, 64)
+		if err != nil {
+			return errWebhookSigInvalid
+		}
+		skew := time.Since(time.Unix(ts, 0))
+		if skew > webhookSigMaxSkew || skew < -webhookSigMaxSkew {
+			return errWebhookSigInvalid
+		}
+		mac.Write([]byte(tsRaw + "."))
+	} else if srv.cfg.WebhookRequireTimestamp {
+		return errWebhookSigInvalid
+	}
 	mac.Write(rawBody)
 	if !hmac.Equal(given, mac.Sum(nil)) {
 		return errWebhookSigInvalid

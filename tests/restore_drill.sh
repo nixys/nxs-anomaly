@@ -209,6 +209,13 @@ else
   echo "   ${PREV_TAG} serves and ingests against the restored schema — rollback path works"
 fi
 
+if [ -n "${NXS_ANOMALY_DRILL_REPORT:-}" ]; then
+  # Evidence for the release: what was measured, not what was promised.
+  cat >"${NXS_ANOMALY_DRILL_REPORT}" <<JSON
+{"drill":"restore","rto_seconds":${RTO},"rto_budget_seconds":${RTO_BUDGET_SECONDS},"import_seconds":$((IMPORT_DONE - RESTORE_START)),"bring_up_seconds":$((SERVICE_READY - IMPORT_DONE)),"recovery_point":"${RPO_AT}","rollback_tested":$([ "${NXS_ANOMALY_DRILL_SKIP_ROLLBACK:-0}" = "1" ] && echo false || echo true)}
+JSON
+fi
+
 echo
 echo "== restore drill PASSED =="
 echo "   RPO (recovery point): the ${RPO_AT} backup; bounded in production by backup cadence (target <= 5 min, see docs/BACKUP_RESTORE.md)"

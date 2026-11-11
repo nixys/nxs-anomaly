@@ -174,6 +174,12 @@ config:
   #
   # Set to "0" to restore fail-fast.
   NXS_ANOMALY_DB_CONNECT_MAX_WAIT_SECONDS: "60"
+  # After SIGTERM the API keeps serving this long (and fails /health) before it
+  # closes the listener: the pod leaves the Service endpoints asynchronously,
+  # and a listener closed at once refused the requests kube-proxy still sent
+  # (one failed ingest per evicted pod in a kind drain test). Must stay well
+  # under terminationGracePeriodSeconds (30) minus the 10 s shutdown timeout.
+  NXS_ANOMALY_SHUTDOWN_DRAIN_SECONDS: "5"
 
 # ── Ingest and API rate limits ───────────────────────────────────────────────
 # These two limiters keep their buckets in each API process, so the figure the

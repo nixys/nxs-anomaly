@@ -265,6 +265,12 @@ func (srv *Server) withObservability(next http.Handler) http.Handler {
 		next.ServeHTTP(rec, r)
 		dur := time.Since(t0)
 		category := classifyHandler(r.URL.Path)
+		// Responder actions (acknowledge, resolve, …) get their own category:
+		// their latency is an SLI ("p95 acknowledge < 2 s") that the bulk of
+		// list/CRUD traffic in "api" would hide.
+		if r.Method == http.MethodPost && isRespondPath(r.URL.Path) {
+			category = "respond"
+		}
 		srv.metrics.requestDuration.WithLabelValues(category).Observe(dur.Seconds())
 		srv.metrics.requestsTotal.WithLabelValues(category, strconv.Itoa(rec.status)).Inc()
 		// Access log at Debug to avoid per-request noise at Info; health/metrics skipped.

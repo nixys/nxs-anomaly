@@ -64,6 +64,11 @@ func (srv *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		}
 		srv.pingCheckedAt.Store(now)
 	}
+	if srv.draining.Load() {
+		resp["status"] = "draining"
+		writeJSON(w, http.StatusServiceUnavailable, resp)
+		return
+	}
 	if !srv.pingOK.Load() {
 		resp["status"] = "degraded"
 		resp["db_ok"] = false

@@ -5,11 +5,13 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -163,11 +165,11 @@ func TestVerifyWebhookSig(t *testing.T) {
 			err := srv.verifyWebhookSig(r, "some-key", raw)
 			switch {
 			case tc.wantUnresolved:
-				if err != errWebhookSecretUnresolved {
+				if !errors.Is(err, errWebhookSecretUnresolved) {
 					t.Fatalf("expected errWebhookSecretUnresolved, got %v", err)
 				}
 			case tc.wantSigErr:
-				if err != errWebhookSigInvalid {
+				if !errors.Is(err, errWebhookSigInvalid) {
 					t.Fatalf("expected errWebhookSigInvalid, got %v", err)
 				}
 			case tc.wantAnyErr:
@@ -178,6 +180,64 @@ func TestVerifyWebhookSig(t *testing.T) {
 				if err != nil {
 					t.Fatalf("expected nil error, got %v", err)
 				}
+			}
+		})
+	}
+}
+
+// TestVerifyWebhookSigTimestamp covers the replay window: a timestamped
+// signature covers "{ts}.{body}", a stale or future timestamp is refused, and
+// NXS_ANOMALY_WEBHOOK_REQUIRE_TIMESTAMP refuses a body-only signature.
+func TestVerifyWebhookSigTimestamp(t *testing.T) {
+	const secret = "test-secret"
+	raw := []byte(`{"title":"x"}`)
+	sign := func(prefix string) string {
+		mac := hmac.New(sha256.New, []byte(secret))
+		mac.Write([]byte(prefix))
+		mac.Write(raw)
+		return fmt.Sprintf("sha256=%x", mac.Sum(nil))
+	}
+	now := time.Now().Unix()
+	ts := func(d time.Duration) string { return strconv.FormatInt(now+int64(d/time.Second), 10) }
+
+	tests := []struct {
+		name    string
+		ts      string
+		sig     string
+		require bool
+		wantErr bool
+	}{
+		{name: "fresh timestamp", ts: ts(0), sig: sign(ts(0) + ".")},
+		{name: "within skew", ts: ts(-4 * time.Minute), sig: sign(ts(-4*time.Minute) + ".")},
+		{name: "stale timestamp (replay)", ts: ts(-6 * time.Minute), sig: sign(ts(-6*time.Minute) + "."), wantErr: true},
+		{name: "future timestamp", ts: ts(6 * time.Minute), sig: sign(ts(6*time.Minute) + "."), wantErr: true},
+		{name: "timestamp not covered by signature", ts: ts(0), sig: sign(""), wantErr: true},
+		{name: "malformed timestamp", ts: "yesterday", sig: sign("yesterday."), wantErr: true},
+		{name: "body-only signature allowed by default", sig: sign("")},
+		{name: "body-only signature refused when required", sig: sign(""), require: true, wantErr: true},
+		{name: "timestamped signature when required", ts: ts(0), sig: sign(ts(0) + "."), require: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := &Server{
+				cfg: Config{WebhookRequireTimestamp: tc.require},
+				store: &stubStore{
+					findIntegration: func(_ context.Context, _ string) (map[string]any, error) {
+						return map[string]any{"id": "int-1", "webhook_secret": secret}, nil
+					},
+				},
+			}
+			r := httptest.NewRequest(http.MethodPost, "/hook", nil)
+			r.Header.Set("X-Anomaly-Signature", tc.sig)
+			if tc.ts != "" {
+				r.Header.Set("X-Anomaly-Timestamp", tc.ts)
+			}
+			err := srv.verifyWebhookSig(r, "some-key", raw)
+			if tc.wantErr && !errors.Is(err, errWebhookSigInvalid) {
+				t.Fatalf("expected errWebhookSigInvalid, got %v", err)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("expected nil, got %v", err)
 			}
 		})
 	}

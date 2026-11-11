@@ -34,7 +34,8 @@ while read -r local_ref local_sha _remote_ref _remote_sha; do
 		# validating something other than what CI will build is worse than not
 		# validating at all. A commit that predates VERSION cannot be released.
 		if git archive "$local_sha" VERSION deploy/helm/nxs-anomaly/Chart.yaml \
-			deploy/helm/nxs-anomaly/README.md docs/openapi.json scripts/check-version.sh |
+			deploy/helm/nxs-anomaly/README.md docs/openapi.json scripts/check-version.sh \
+			CHANGELOG.md go.mod Dockerfile .gitlab-ci.yml packaging/community/.github/workflows |
 			tar -x -C "$tmp" 2>/dev/null; then
 			sh "$tmp/scripts/check-version.sh" --tag "$tag" ||
 				{ echo "pre-push: refusing to push tag $tag" >&2; rc=1; }

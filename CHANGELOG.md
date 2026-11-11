@@ -4,6 +4,84 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/) since 1.0.0.
 
+## [1.10.1] — 2026-11-10
+
+### Security
+- **Vulnerable compression dependencies updated** (found by `govulncheck` in
+  the 1.10.0 tag pipeline): `github.com/klauspost/compress` 1.19.1 → 1.20.2
+  (GO-2026-6865, panic on two-block zstd frames) and
+  `github.com/andybalholm/brotli` 1.2.2 → 1.2.7 (GO-2026-6888, excessive memory
+  allocation on crafted streams). Both are pulled in by the ClickHouse client.
+
+## [1.10.0] — 2026-11-10
+
+### Security
+- **Replay protection for signed webhook ingest.** A sender may add
+  `X-Anomaly-Timestamp` (unix seconds); the HMAC then covers
+  `{timestamp}.{body}` and a request more than 5 minutes off the server clock
+  is refused with `400`. `NXS_ANOMALY_WEBHOOK_REQUIRE_TIMESTAMP=true` refuses
+  body-only signatures too. Off by default — existing senders keep working.
+
+### Fixed
+- **PostgreSQL failover no longer drops alerts or doubles escalations.** A write
+  that lands on a standby (SQLSTATE 25006, typical when the old primary comes
+  back demoted) is now answered `503 + Retry-After` instead of a `500` the
+  sender drops, and resets the connection pool so every connection reopens on
+  the new primary — previously such connections survived health checks for up
+  to `MaxConnLifetime`. Escalation shard advisory locks and the LISTEN
+  connection refuse a node in recovery: PostgreSQL grants advisory locks on a
+  hot standby, so a lock held there let a second worker process the same shard
+  on the primary.
+
+### Added
+- **High availability (enterprise):** `values-ha.yaml` preset (3 API / 2 worker
+  / 2 frontend replicas, zone + node spread, PDBs, failover-friendly pool
+  settings), `docs/HA.md` (reference architecture, failure matrix, synchronous
+  replication and RPO, switchover runbook), and `tests/failover_drill.sh` /
+  CI `test:failover-drill`: kills the primary under live ingest, promotes a
+  synchronous standby, and fails on a single acknowledged alert missing.
+- **Paging-latency and responder SLIs.** New histogram
+  `nxs_anomaly_notification_first_attempt_delay_seconds` (queued → first
+  provider call, by channel); responder actions (acknowledge, resolve, silence,
+  bulk and mobile) are their own `handler="respond"` category of
+  `nxs_anomaly_http_request_duration_seconds` (they used to be inside `api`).
+  Dashboard panels and alerts `PagingLatencyHigh` (p95 > 10 s) and
+  `RespondLatencyHigh` (p95 > 2 s) track the beta SLOs.
+- **Reports page (enterprise).** `/reports` lists the stored on-call quality
+  reports and shows the digest text that went out by e-mail and ChatOps. The
+  menu item appears only where the edition ships reports; a new
+  `oncall_reports` capability says whether they are configured.
+- CI `test:clickhouse-reports` runs every report query against ClickHouse 24.8
+  with the schema the chart renders, seeded with two synthetic incidents.
+- **Graceful drain on SIGTERM.** `NXS_ANOMALY_SHUTDOWN_DRAIN_SECONDS` (chart
+  default `5`): the API keeps serving and answers `/health` 503 for that long
+  before closing the listener, so a rolling update or node drain no longer
+  refuses the requests kube-proxy still routes to the pod.
+- Chart: `topologySpreadConstraints` entries accept `nodeTaintsPolicy` and
+  `matchLabelKeys`. `values-ha.yaml` uses them (strict node spread that still
+  reschedules around a cordoned/failed node and stays even across rollouts) and
+  replaces pods of a failed node after 30 s instead of 300 s. Verified in a
+  3-zone kind cluster: drain under ingest 0 errors; node crash 12/1033 requests
+  refused until the node went NotReady, replacements at +85 s, 0 of 7984
+  acknowledged alerts lost.
+- Restore, PITR and failover drills write a JSON report
+  (`NXS_ANOMALY_DRILL_REPORT`) with the measured RTO/RPO; CI keeps it as a
+  release artifact.
+
+### Changed
+- `scripts/check-version.sh` fails when the Go version pinned in
+  `.gitlab-ci.yml`, `Dockerfile` or the community GitHub workflows drifts
+  from `go.mod`.
+- `scripts/set-version.sh` renames the top `## [Unreleased]` heading of the
+  CHANGELOG to `## [X.Y.Z] — date` itself; the historical section further
+  down is left alone. The older section's heading is now unique, so a top
+  `[Unreleased]` between releases no longer fails `test:version` on `main`.
+- `test:version` refuses a release tag whose commit is not on the default
+  branch; CONTRIBUTING.md: push `main`, wait for green, then tag — never re-tag.
+- golangci-lint additionally runs errorlint, nilerr, unconvert, durationcheck,
+  misspell, sqlclosecheck and rowserrcheck (0 findings); sentinel errors are
+  compared with `errors.Is`/`errors.As`.
+
 ## [1.9.24] — 2026-11-06
 
 ### Security
@@ -946,7 +1024,7 @@ All notable changes to this project are documented here. The format is based on
   canary's notifications instead of scanning an unfiltered page, where on an
   installation with history it never appeared.
 
-## [Unreleased]
+## [Unreleased — history before 1.2.0]
 
 ### Fixed
 - **Silences and maintenance windows end.** A silence with a duration and a

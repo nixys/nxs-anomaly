@@ -57,7 +57,7 @@ func TestCommunityCapabilitiesNameTheEdition(t *testing.T) {
 	srv, _ := newSessionServer(t)
 
 	caps := readCapabilities(t, srv)
-	for _, name := range []string{"sso", "analytics_stream"} {
+	for _, name := range []string{"sso", "analytics_stream", "oncall_reports"} {
 		if got := caps[name].State; got != capNotInEdition {
 			t.Errorf("%s state = %q, want %q", name, got, capNotInEdition)
 		}

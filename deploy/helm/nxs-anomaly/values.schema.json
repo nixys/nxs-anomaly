@@ -470,6 +470,19 @@
               "ScheduleAnyway"
             ]
           },
+          "nodeTaintsPolicy": {
+            "enum": [
+              "Honor",
+              "Ignore"
+            ]
+          },
+          "matchLabelKeys": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
           "labelSelectorComponent": {
             "enum": [
               "api",

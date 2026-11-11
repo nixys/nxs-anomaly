@@ -246,6 +246,11 @@ func (e *Engine) ProcessNotificationDeliveries(ctx context.Context) ([]map[strin
 		attemptNum := n.RetryCount() + 1
 		tStart := utils.ToISO(utils.UTCNow())
 		callStart := time.Now()
+		if attemptNum == 1 {
+			if queued, err := utils.ParseDatetime(n.CreatedAt()); err == nil {
+				e.sink().ObserveFirstAttemptDelay(n.Channel(), callStart.Sub(queued).Seconds())
+			}
+		}
 		outcome := e.deliverNotificationViaAdapter(ctx, ntf)
 		elapsed := time.Since(callStart)
 		e.sink().ObserveDeliveryLatency(n.Channel(), elapsed.Seconds())
