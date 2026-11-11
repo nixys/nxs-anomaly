@@ -79,7 +79,10 @@ type Server struct {
 	heartbeat      *heartbeatPinger
 	reqIDCounter   atomic.Uint64
 	// health ping cache (5s TTL)
-	pingOK           atomic.Bool
+	pingOK atomic.Bool
+	// draining is set on SIGTERM when a drain delay is configured: /health
+	// answers 503 so the pod leaves the Service endpoints while it still serves.
+	draining         atomic.Bool
 	pingCheckedAt    atomic.Int64 // unix nanoseconds
 	kafkaOutboxDepth atomic.Int64 // cached kafka outbox depth from ping check
 	kafkaOK          atomic.Bool  // false if outbox depth > threshold
@@ -229,6 +232,15 @@ func New(ctx context.Context, s store.PostgreSQLStore, eng *engine.Engine, cfg C
 
 	if workerCancel != nil {
 		workerCancel()
+	}
+	// Keep serving for a moment after SIGTERM. Kubernetes removes the pod from
+	// the Service endpoints asynchronously; a listener closed at once refuses
+	// the connections kube-proxy still sends here (seen in kind: one ingest
+	// failed per drained API pod). /health fails meanwhile, so readiness drops it.
+	if cfg.ShutdownDrain > 0 {
+		srv.draining.Store(true)
+		slog.Info("shutdown_draining", "seconds", cfg.ShutdownDrain.Seconds())
+		time.Sleep(cfg.ShutdownDrain)
 	}
 	shutCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()

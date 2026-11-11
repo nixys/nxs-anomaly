@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -38,10 +39,10 @@ func (srv *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := srv.verifyWebhookSig(r, key, raw); err != nil {
-		switch err {
-		case errWebhookSigInvalid:
+		switch {
+		case errors.Is(err, errWebhookSigInvalid):
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
-		case errWebhookSecretUnresolved:
+		case errors.Is(err, errWebhookSecretUnresolved):
 			// Our configuration, not the sender's request: 503 so the alert is
 			// retried once the secret is back rather than dropped as malformed.
 			srv.metrics.incIngestError("webhook")

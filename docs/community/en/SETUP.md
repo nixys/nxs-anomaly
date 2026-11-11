@@ -153,6 +153,7 @@ run it only when you mean to discard whatever is already there.
 | `NXS_ANOMALY_POLL_INTERVAL` | `5` | seconds between worker cycles when nothing wakes it; an ingest wakes the worker at once through PostgreSQL `LISTEN/NOTIFY`; wake-started cycles are at least 200 ms apart, so a storm is handled in batches |
 | `NXS_ANOMALY_WORKER_CYCLE_TIMEOUT_SECONDS` | — (off) | a deadline for one worker cycle; unset or `0` means none — a large delivery backlog can legitimately take long |
 | `NXS_ANOMALY_SHUTDOWN_TIMEOUT` | `10` | seconds to finish requests in flight on SIGTERM |
+| `NXS_ANOMALY_SHUTDOWN_DRAIN_SECONDS` | `0` (chart: `5`) | after SIGTERM keep serving this long with `/health` = 503, so the pod leaves the Service endpoints before the listener closes |
 | `NXS_ANOMALY_HTTP_READ_HEADER_TIMEOUT_SECONDS` | `5` | time to read request headers (slowloris protection) |
 | `NXS_ANOMALY_HTTP_READ_TIMEOUT_SECONDS` | `15` | time to read a whole request |
 | `NXS_ANOMALY_HTTP_WRITE_TIMEOUT_SECONDS` | `30` | time to write a response |

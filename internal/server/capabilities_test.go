@@ -47,7 +47,7 @@ func TestCapabilitiesSeparateUnavailableFromUnconfigured(t *testing.T) {
 	srv, _ := newSessionServer(t)
 
 	caps := readCapabilities(t, srv)
-	for _, name := range []string{"sso", "team_scoping", "analytics_stream"} {
+	for _, name := range []string{"sso", "team_scoping", "analytics_stream", "oncall_reports"} {
 		if _, ok := caps[name]; !ok {
 			t.Fatalf("capability %q missing from the report", name)
 		}
@@ -72,6 +72,14 @@ func TestCapabilitiesSeparateUnavailableFromUnconfigured(t *testing.T) {
 	}
 	if got := caps["team_scoping"].State; got != wantScoping {
 		t.Errorf("team_scoping state = %q, want %q", got, wantScoping)
+	}
+
+	wantReports := capNotConfigured
+	if !srv.eng.AnalyticsSupported() {
+		wantReports = capNotInEdition
+	}
+	if got := caps["oncall_reports"].State; got != wantReports {
+		t.Errorf("oncall_reports state = %q, want %q", got, wantReports)
 	}
 }
 

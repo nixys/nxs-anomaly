@@ -258,6 +258,10 @@ func splitAndTrim(s string) []string {
 // install with no ClickHouse DSN configured is always in.
 func (e *Engine) SetReportSource(src reportDataSource) { e.reportSource = src }
 
+// ReportsConfigured reports whether on-call quality reports can be generated:
+// a report source is wired (enterprise build with ClickHouse configured).
+func (e *Engine) ReportsConfigured() bool { return e.reportSource != nil }
+
 // Close releases resources held by the engine. Must be called on shutdown to
 // flush and close the Kafka producer connection.
 func (e *Engine) Close() {

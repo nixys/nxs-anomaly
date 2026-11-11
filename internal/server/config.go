@@ -56,6 +56,9 @@ type Config struct {
 	BootstrapAdminPassword string
 	PollInterval           time.Duration
 	ShutdownTimeout        time.Duration // how long to wait for graceful shutdown; defaults to 10s
+	// ShutdownDrain keeps serving this long after SIGTERM before shutting the
+	// listener (NXS_ANOMALY_SHUTDOWN_DRAIN_SECONDS); 0 = shut down at once.
+	ShutdownDrain time.Duration
 	// WorkerAddr is where the standalone run-worker serves /live, /ready and
 	// /metrics. Separate from Addr so an API and a worker can run in one pod
 	// without a port clash. Defaults to :8081.
@@ -74,9 +77,13 @@ type Config struct {
 	// cycle, at most once a minute (see heartbeatPinger).
 	WorkerHeartbeatURL string
 	WebhookRate        float64
-	APIRate            float64
-	StartScheduler     bool
-	TrustedProxies     []string // CIDR ranges whose X-Forwarded-For headers are trusted
+	// WebhookRequireTimestamp refuses signed ingest requests that do not carry
+	// X-Anomaly-Timestamp, so a captured request cannot be replayed outside the
+	// skew window. Off by default: senders signing the body alone keep working.
+	WebhookRequireTimestamp bool
+	APIRate                 float64
+	StartScheduler          bool
+	TrustedProxies          []string // CIDR ranges whose X-Forwarded-For headers are trusted
 	// HTTP server timeouts. They bound how long a (possibly malicious or stuck)
 	// client may tie up a connection: ReadHeaderTimeout is the slowloris guard.
 	ReadHeaderTimeout time.Duration
@@ -141,21 +148,23 @@ func ConfigFromEnv() Config {
 	}
 
 	return Config{
-		Addr:               addr,
-		TLSCert:            os.Getenv("NXS_ANOMALY_TLS_CERT"),
-		TLSKey:             os.Getenv("NXS_ANOMALY_TLS_KEY"),
-		APIKey:             apiKey,
-		APIKeys:            apiKeys,
-		BareAPIKeys:        bareKeys,
-		PollInterval:       pollInterval,
-		ShutdownTimeout:    shutdownTimeout,
-		WorkerAddr:         workerAddr,
-		WorkerStallTimeout: utils.EnvSeconds("NXS_ANOMALY_WORKER_STALL_TIMEOUT_SECONDS", 0, 0),
-		WorkerHeartbeatURL: os.Getenv("NXS_ANOMALY_WORKER_HEARTBEAT_URL"),
-		WebhookRate:        webhookRate,
-		APIRate:            apiRate,
-		AllowAnonymous:     os.Getenv("NXS_ANOMALY_ALLOW_ANONYMOUS") == "true",
-		SessionTTL:         utils.EnvSeconds("NXS_ANOMALY_SESSION_TTL_SECONDS", 12*time.Hour, 1),
+		Addr:                    addr,
+		TLSCert:                 os.Getenv("NXS_ANOMALY_TLS_CERT"),
+		TLSKey:                  os.Getenv("NXS_ANOMALY_TLS_KEY"),
+		APIKey:                  apiKey,
+		APIKeys:                 apiKeys,
+		BareAPIKeys:             bareKeys,
+		PollInterval:            pollInterval,
+		ShutdownTimeout:         shutdownTimeout,
+		ShutdownDrain:           utils.EnvSeconds("NXS_ANOMALY_SHUTDOWN_DRAIN_SECONDS", 0, 0),
+		WorkerAddr:              workerAddr,
+		WorkerStallTimeout:      utils.EnvSeconds("NXS_ANOMALY_WORKER_STALL_TIMEOUT_SECONDS", 0, 0),
+		WorkerHeartbeatURL:      os.Getenv("NXS_ANOMALY_WORKER_HEARTBEAT_URL"),
+		WebhookRate:             webhookRate,
+		WebhookRequireTimestamp: os.Getenv("NXS_ANOMALY_WEBHOOK_REQUIRE_TIMESTAMP") == "true",
+		APIRate:                 apiRate,
+		AllowAnonymous:          os.Getenv("NXS_ANOMALY_ALLOW_ANONYMOUS") == "true",
+		SessionTTL:              utils.EnvSeconds("NXS_ANOMALY_SESSION_TTL_SECONDS", 12*time.Hour, 1),
 		// Note the comparison: the attribute is dropped only on an explicit
 		// "false", so a typo in the variable leaves the cookie Secure.
 		SessionCookieSecure:    os.Getenv("NXS_ANOMALY_SESSION_COOKIE_SECURE") != "false",

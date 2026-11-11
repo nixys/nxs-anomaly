@@ -7,3 +7,22 @@ linters:
   enable:
     - govet
     - staticcheck
+    # Already in the "standard" default set; listed so dropping them is a
+    # visible change.
+    - errcheck
+    - ineffassign
+    - unused
+    # Zero findings when enabled (2026-11): kept at zero from here on.
+    - misspell
+    - sqlclosecheck
+    - rowserrcheck
+    - unconvert
+    - durationcheck
+    # Sentinel errors are compared with errors.Is / errors.As, so wrapping one
+    # with %w never silently changes a status code.
+    - errorlint
+    # A nil returned next to a non-nil error must say why (//nolint:nilerr).
+    - nilerr
+    # Not enabled yet: noctx (108, mostly tests) and contextcheck (19) need a
+    # pass of their own; bodyclose reports only test false positives (bodies
+    # closed through t.Cleanup).

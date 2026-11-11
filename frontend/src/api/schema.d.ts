@@ -3874,7 +3874,7 @@ export interface components {
         /** @description One feature and why it is or is not usable here. */
         Capability: {
             /** @enum {string} */
-            name: "sso" | "team_scoping" | "analytics_stream";
+            name: "sso" | "team_scoping" | "analytics_stream" | "oncall_reports";
             /**
              * @description available: present and set up. unavailable_in_edition: this build does not contain it, and no configuration will change that. not_configured: this build contains it and this deployment has not set it up.
              * @enum {string}

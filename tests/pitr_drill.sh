@@ -192,6 +192,12 @@ fi
 # It has to be a working database afterwards, not just a readable one.
 psql_restored -q -c "INSERT INTO pitr_drill_marks (id) VALUES ('post-recovery-write')"
 
+if [ -n "${NXS_ANOMALY_DRILL_REPORT:-}" ]; then
+  cat >"${NXS_ANOMALY_DRILL_REPORT}" <<JSON
+{"drill":"pitr","rto_seconds":${RTO},"rto_budget_seconds":${RTO_BUDGET_SECONDS},"rpo_bound_seconds":30,"recovery_target":"${TARGET_TIME}","post_target_write_absent":true}
+JSON
+fi
+
 echo
 echo "== PITR drill PASSED =="
 echo "   recovered to ${TARGET_TIME}: pre-target write present, post-target write correctly absent,"

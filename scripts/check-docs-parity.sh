@@ -14,7 +14,7 @@ cd "${ROOT_DIR}"
 fail=0
 
 # Documents that exist only for the enterprise edition.
-ENTERPRISE_ONLY=(KAFKA.md INCIDENT_ANALYTICS_DASHBOARDS.md)
+ENTERPRISE_ONLY=(KAFKA.md INCIDENT_ANALYTICS_DASHBOARDS.md HA.md)
 
 # ── 1. English coverage, reported ────────────────────────────────────────────
 missing=0

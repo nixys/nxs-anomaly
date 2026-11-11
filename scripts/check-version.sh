@@ -93,11 +93,11 @@ for lit in $(read_file "$readme" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -u);
 		fail "$readme mentions version '$lit', expected only '$version' (examples take it from the VERSION= line)"
 done
 
-# One heading per version in the CHANGELOG. The release step renames the
-# "[Unreleased]" heading with sed, and the file carries a second, historical
-# "[Unreleased]" section further down: an unanchored substitution renamed both,
-# labelling years-old entries as this release. It happened for 1.3.0 and again
-# for 1.5.0.
+# One heading per version in the CHANGELOG. set-version.sh renames the top
+# "[Unreleased]" heading; an unanchored substitution once renamed an older
+# "[Unreleased]" section too, labelling years-old entries as this release (1.3.0
+# and again 1.5.0). That older section is now "[Unreleased — history before
+# 1.2.0]", so a top "[Unreleased]" between releases no longer trips this check.
 changelog=CHANGELOG.md
 dupe_marker="$(mktemp)"
 read_file "$changelog" | grep -oE '^## \[[^]]+\]' | sort | uniq -d | while IFS= read -r d; do
@@ -106,6 +106,27 @@ read_file "$changelog" | grep -oE '^## \[[^]]+\]' | sort | uniq -d | while IFS= 
 done
 [ -s "$dupe_marker" ] && rc=1
 rm -f "$dupe_marker"
+
+# The Go toolchain: go.mod's `go` directive is the single source of truth. Every
+# CI/image pin must match it — a drift built binaries with an older stdlib than
+# go.mod promised, and broke golangci-lint on export data (1.9.24).
+gomod_go="$(read_file go.mod | sed -n 's/^go[[:space:]]\{1,\}\([0-9.]*\)$/\1/p' | head -1)"
+check_go_pin() { # file, found value
+	[ "$2" = "$gomod_go" ] ||
+		fail "$1 pins Go '$2', expected '$gomod_go' (go.mod). Bump them together."
+}
+# GO_VERSION: in the GitLab pipeline and the GitHub workflows. The workflows sit
+# under packaging/community/ here and under .github/ in the community tree, which
+# has no .gitlab-ci.yml — only files that exist are checked.
+for f in .gitlab-ci.yml packaging/community/.github/workflows/*.yml .github/workflows/*.yml; do
+	[ -f "$f" ] || continue
+	v="$(read_file "$f" | sed -n "s/^[[:space:]]*GO_VERSION:[[:space:]]*['\"]\{0,1\}\([0-9.]*\).*/\1/p" | head -1)"
+	if [ -n "$v" ]; then check_go_pin "$f" "$v"; fi
+done
+if [ -f Dockerfile ]; then
+	v="$(read_file Dockerfile | sed -n 's/^FROM golang:\([0-9.]*\)-.*/\1/p' | head -1)"
+	if [ -n "$v" ]; then check_go_pin Dockerfile "$v"; fi
+fi
 
 if [ -n "$tag" ]; then
 	[ "$tag" = "v$version" ] ||

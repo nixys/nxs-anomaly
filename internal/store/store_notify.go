@@ -32,6 +32,18 @@ func (s *pgStore) WaitForWake(ctx context.Context, timeout time.Duration) bool {
 			sleepCtx(ctx, timeout)
 			return false
 		}
+		// A standby never receives the primary's NOTIFY: a listener there
+		// would leave the worker on interval polling for the life of the
+		// process. Refuse it and reset the pool (see failover.go).
+		var inRecovery bool
+		if err := conn.QueryRow(ctx, "SELECT pg_is_in_recovery()").Scan(&inRecovery); err != nil || inRecovery {
+			conn.Release()
+			if inRecovery {
+				s.failover.observe(errStandby, "listener_on_standby")
+			}
+			sleepCtx(ctx, timeout)
+			return false
+		}
 		if _, err := conn.Exec(ctx, "LISTEN "+wakeChannel); err != nil {
 			conn.Release()
 			sleepCtx(ctx, timeout)

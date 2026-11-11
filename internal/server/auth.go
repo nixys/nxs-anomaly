@@ -93,7 +93,7 @@ func (srv *Server) authenticateRequest(r *http.Request) (authz.Actor, bool, erro
 func (srv *Server) sessionActor(r *http.Request) (authz.Actor, bool, error) {
 	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil || cookie.Value == "" {
-		return authz.Actor{}, false, nil
+		return authz.Actor{}, false, nil //nolint:nilerr // no cookie means no session, not a failure
 	}
 	user, sessionID, err := srv.store.FindSessionUser(r.Context(), authz.HashSessionToken(cookie.Value))
 	if err != nil {

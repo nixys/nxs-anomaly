@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -179,7 +180,7 @@ func scanRows(rows pgx.Rows) ([]map[string]any, error) {
 }
 
 func isNotFound(err error) bool {
-	return err == pgx.ErrNoRows
+	return errors.Is(err, pgx.ErrNoRows)
 }
 
 // buildWhere builds a WHERE clause and args from a validated filter map.

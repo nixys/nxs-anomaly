@@ -27,6 +27,7 @@ import {
   IconAlertTriangle,
   IconBell,
   IconChartHistogram,
+  IconReportAnalytics,
   IconHome,
   IconListDetails,
   IconLogout,
@@ -70,6 +71,9 @@ const NAV = [
   { to: '/maintenance', labelKey: 'nav.maintenance', icon: IconTool , section: 'nav.sectionOnCall' },
   { to: '/notifications', labelKey: 'nav.notifications', icon: IconBell , section: 'nav.sectionRespond' },
   { to: '/insights', labelKey: 'nav.insights', icon: IconChartHistogram , section: 'nav.sectionReview' },
+  // Only where the edition ships reports: a community install would show an
+  // empty page that no setting can fill (the Enterprise page explains why).
+  { to: '/reports', labelKey: 'nav.reports', icon: IconReportAnalytics, reportsOnly: true , section: 'nav.sectionReview' },
   // Reading the trail names who did what, which is an administrative act — the
   // API gates it the same way, so showing the link to anyone else would only
   // produce a 403.
@@ -90,6 +94,7 @@ const NAV = [
   end?: boolean;
   adminOnly?: boolean;
   gatedOnly?: boolean;
+  reportsOnly?: boolean;
   section: NavLabelKey;
 }>;
 
@@ -245,6 +250,9 @@ export function Shell() {
   const hasGatedFeatures = (capabilities.data?.capabilities ?? []).some(
     (c) => c.state === 'unavailable_in_edition',
   );
+  const hasReports = (capabilities.data?.capabilities ?? []).some(
+    (c) => c.name === 'oncall_reports' && c.state !== 'unavailable_in_edition',
+  );
   const location = useLocation();
   const { t, setLocale } = useI18n();
   const roleLabel = useRoleLabel();
@@ -252,7 +260,8 @@ export function Shell() {
   const visibleNav = NAV.filter(
     (item) =>
       (!item.adminOnly || identity?.permissions.admin) &&
-      (!item.gatedOnly || hasGatedFeatures),
+      (!item.gatedOnly || hasGatedFeatures) &&
+      (!item.reportsOnly || hasReports),
   );
 
   // The palette offers exactly what the sidebar offers, plus the two switches
