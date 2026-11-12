@@ -253,6 +253,14 @@ another, the integration already has 128 ingests queued on this replica, this
 one waited for its turn until there was just time left to answer, or the integration's `webhook_secret` is an `env:`
 reference this instance cannot resolve.
 
+To close the replay window, the sender may add `X-Anomaly-Timestamp` (unix
+seconds). The signature then covers `{timestamp}.{body}`, and a request whose
+timestamp is more than 5 minutes away from the server clock is refused with
+`400` — a captured request cannot be resent later. With
+`NXS_ANOMALY_WEBHOOK_REQUIRE_TIMESTAMP=true` (chart: `extraConfig`)
+a body-only signature is refused as well; by default it is still accepted.
+A replay inside the window lands on the usual dedupe of the alert group.
+
 Ingests of one integration are written one after another, so one integration
 takes on the order of 25–100 alerts a second depending on the database. Each
 replica sends at most two of an integration's ingests to the database at a time
@@ -620,7 +628,7 @@ at once, without waiting for the poll interval.
 | GET | `/api/v1/readiness` — is this installation capable of waking anybody at all? |
 | POST | `/api/v1/readiness/acknowledge` — accept the current blockers (admin) |
 | POST | `/api/v1/backups/report` — record a completed backup (admin; see [BACKUP_RESTORE.md](BACKUP_RESTORE.md)) |
-| GET | `/api/v1/capabilities` — the `edition`, and the features that depend on the edition or on configuration (`sso`, `team_scoping`, `analytics_stream`), each `available`, `not_configured` (configure it and it works) or `unavailable_in_edition` (no setting will help), with a sentence in `detail` |
+| GET | `/api/v1/capabilities` — the `edition`, and the features that depend on the edition or on configuration (`sso`, `team_scoping`, `analytics_stream`, `oncall_reports`), each `available`, `not_configured` (configure it and it works) or `unavailable_in_edition` (no setting will help), with a sentence in `detail` |
 
 The report runs ten checks — database, worker, integrations, routing,
 notification targets, schedule coverage, the team boundary, channel policy,

@@ -628,7 +628,7 @@ func chatopsGroupBrief(g model.AlertGroup) map[string]any {
 		"id":       g.ID(),
 		"title":    g.Title(),
 		"severity": g.Severity(),
-		"status":   string(g.Status()),
+		"status":   g.Status(),
 	}
 }
 

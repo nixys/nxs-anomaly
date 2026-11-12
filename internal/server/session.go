@@ -335,7 +335,7 @@ func checkSameOriginWrite(r *http.Request) error {
 		return nil
 	}
 	if c, err := r.Cookie(sessionCookieName); err != nil || c.Value == "" {
-		return nil
+		return nil //nolint:nilerr // no session cookie: not a cookie-authenticated write, nothing to check
 	}
 	origin := r.Header.Get("Origin")
 	if origin == "" || origin == "null" {

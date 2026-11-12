@@ -186,6 +186,7 @@ export const ru: Messages = {
   'nav.notifications': 'Уведомления',
   'nav.insights': 'Аналитика',
   'nav.audit': 'Аудит',
+  'nav.reports': 'Отчёты',
   'nav.setup': 'Настройка',
   'nav.readiness': 'Готовность',
   'nav.settings': 'Параметры',
@@ -580,6 +581,14 @@ export const ru: Messages = {
   'readiness.check.data_retention': 'Сроки хранения данных определены',
 
   // ── Аудит ──
+  'reports.title': 'Отчёты о качестве дежурств',
+  'reports.description': 'Периодические дайджесты: просроченные подтверждения, проблемы каналов доставки, ночная нагрузка, повторные эскалации и источники шума. Их формирует задача run-report и рассылает по почте и в ChatOps; здесь показан тот же текст.',
+  'reports.empty': 'Отчётов пока нет. Они появятся после первого запуска задачи run-report (reports.enabled в чарте).',
+  'reports.period': 'Период',
+  'reports.team': 'Команда',
+  'reports.installation': 'Вся инсталляция',
+  'reports.lateAck': 'Просроченные подтверждения',
+  'reports.generated': 'Сформирован',
   'audit.title': 'Аудит',
   'audit.description': 'Все изменения конфигурации и действия с алертами с указанием автора. Записи нельзя изменить или удалить через API.',
   'audit.actorId': 'ID автора',
@@ -941,6 +950,7 @@ export const ru: Messages = {
   'enterprise.feature.sso': 'Единый вход (OIDC)',
   'enterprise.feature.team_scoping': 'Разграничение доступа между командами',
   'enterprise.feature.analytics_stream': 'Поток событий для аналитики',
+  'enterprise.feature.oncall_reports': 'Отчёты о качестве дежурств',
   'enterprise.howToRequest': 'Как получить Enterprise',
   'enterprise.howToRequestBody':
     'Enterprise-сборка поставляется образом через приватный реестр, учётная запись выдаётся на инсталляцию. Запросите доступ у сопровождающих — куда писать, указано в README проекта.',

@@ -537,7 +537,7 @@ func scheduleBoundaries(schedule map[string]any, from, to time.Time) []time.Time
 			occurrence := start
 			if occurrence.Before(from) {
 				skipped := from.Sub(occurrence) / period
-				occurrence = occurrence.Add(skipped * period)
+				occurrence = occurrence.Add(skipped * period) //nolint:durationcheck // skipped is a whole number of periods (a count), not a duration
 			}
 			for i := 0; i < maxBoundaryPoints && !occurrence.After(to); i++ {
 				add(occurrence)

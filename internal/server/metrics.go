@@ -30,6 +30,7 @@ type Metrics struct {
 	ingestDuration           *prometheus.HistogramVec // labeled by source (Item 5)
 	deliveryErrorsByProvider *prometheus.CounterVec   // labeled by provider/channel
 	deliveryDuration         *prometheus.HistogramVec // per-provider call latency, labeled by channel
+	firstAttemptDelay        *prometheus.HistogramVec // queued → first provider call, labeled by channel
 	deadLetterEvents         *prometheus.CounterVec   // permanently-failed notifications, labeled by channel
 	deliveryShortCircuited   *prometheus.CounterVec   // deliveries skipped by an open circuit breaker, by channel
 	workerPanics             *prometheus.CounterVec   // panics recovered inside worker goroutines, by stage
@@ -215,6 +216,12 @@ func newMetrics() *Metrics {
 		Help:    "Notification provider call latency in seconds by channel.",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"channel"})
+	firstAttemptDelay := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name: "nxs_anomaly_notification_first_attempt_delay_seconds",
+		Help: "Seconds from a notification being queued to its first provider call, by channel (paging-latency SLI).",
+		// The SLO is 10 s at p95; buckets resolve both sides of it.
+		Buckets: []float64{0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30, 60, 120, 300},
+	}, []string{"channel"})
 	deadLetterEvents := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "nxs_anomaly_dead_letter_events_total",
 		Help: "Total notifications that became permanently failed, by channel.",
@@ -273,6 +280,7 @@ func newMetrics() *Metrics {
 		ingestDuration,
 		deliveryErrorsByProvider,
 		deliveryDuration,
+		firstAttemptDelay,
 		deadLetterEvents,
 		deliveryShortCircuited,
 		workerPanics,
@@ -303,6 +311,7 @@ func newMetrics() *Metrics {
 		ingestDuration:           ingestDuration,
 		deliveryErrorsByProvider: deliveryErrorsByProvider,
 		deliveryDuration:         deliveryDuration,
+		firstAttemptDelay:        firstAttemptDelay,
 		deadLetterEvents:         deadLetterEvents,
 		deliveryShortCircuited:   deliveryShortCircuited,
 		workerPanics:             workerPanics,
@@ -429,6 +438,11 @@ func (m *Metrics) incWorkerCycleSkipped() { m.workerCyclesSkipped.Inc() }
 // ObserveDeliveryLatency records a provider call's duration, labeled by channel.
 func (m *Metrics) ObserveDeliveryLatency(channel string, seconds float64) {
 	m.deliveryDuration.WithLabelValues(channel).Observe(seconds)
+}
+
+// ObserveFirstAttemptDelay records queued → first provider call, by channel.
+func (m *Metrics) ObserveFirstAttemptDelay(channel string, seconds float64) {
+	m.firstAttemptDelay.WithLabelValues(channel).Observe(seconds)
 }
 
 // IncDeadLetter counts a notification that became permanently failed.

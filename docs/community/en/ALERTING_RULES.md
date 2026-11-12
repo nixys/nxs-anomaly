@@ -221,6 +221,41 @@ groups:
             p95 delivery latency on channel {{ $labels.channel }} =
             {{ printf "%.1f" $value }}s. The provider is alive but slow.
 
+      # Paging-latency SLI: pages leave the queue late (SLO: p95 < 10 s).
+      - alert: PagingLatencyHigh
+        expr: >
+          histogram_quantile(0.95,
+            sum by (channel, le) (
+              rate(nxs_anomaly_notification_first_attempt_delay_seconds_bucket[10m])
+            )
+          ) > 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pages leave late on channel {{ $labels.channel }}"
+          description: >
+            p95 from queued to first delivery attempt = {{ printf "%.1f" $value }}s.
+            The worker is behind: check cycle duration and the delivery backlog.
+
+      # Responder SLI: acknowledge/resolve is slow (SLO: p95 < 2 s).
+      - alert: RespondLatencyHigh
+        expr: >
+          histogram_quantile(0.95,
+            sum by (le) (
+              rate(nxs_anomaly_http_request_duration_seconds_bucket{handler="respond"}[10m])
+            )
+          ) > 2
+          and sum(rate(nxs_anomaly_http_request_duration_seconds_count{handler="respond"}[10m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Acknowledge/resolve is slow"
+          description: >
+            p95 responder action latency = {{ printf "%.1f" $value }}s; the page
+            keeps escalating while the responder waits on the button.
+
       # Notifications are being lost for good (dead letter).
       - alert: DeadLetterEvents
         expr: >

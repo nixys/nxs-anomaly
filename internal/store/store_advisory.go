@@ -13,10 +13,20 @@ func (s *pgStore) TryAdvisoryLock(ctx context.Context, key int64) (bool, func(),
 	if err != nil {
 		return false, nil, err
 	}
-	var ok bool
-	if err := conn.QueryRow(ctx, "SELECT pg_try_advisory_lock($1)", key).Scan(&ok); err != nil {
+	// Advisory locks are granted on a hot standby too: a lock taken on a node
+	// demoted by a failover excludes nobody on the primary (see failover.go).
+	// The CASE keeps a standby from granting it at all.
+	var ok, inRecovery bool
+	if err := conn.QueryRow(ctx,
+		"SELECT pg_is_in_recovery(), CASE WHEN pg_is_in_recovery() THEN false ELSE pg_try_advisory_lock($1) END",
+		key).Scan(&inRecovery, &ok); err != nil {
 		conn.Release()
 		return false, nil, err
+	}
+	if inRecovery {
+		conn.Release()
+		s.failover.observe(errStandby, "advisory_lock_on_standby")
+		return false, nil, errStandby
 	}
 	if !ok {
 		conn.Release()

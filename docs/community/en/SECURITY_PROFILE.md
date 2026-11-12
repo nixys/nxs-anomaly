@@ -11,6 +11,7 @@ the profile, so any single item can be opted out of.
 | SSRF guard (refuses private, loopback and link-local delivery addresses) | off | **on** | `NXS_ANOMALY_BLOCK_PRIVATE_WEBHOOKS` |
 | Webhook ingest limit (tokens/s per integration key, **per pod**) | off (0) | **50** | `NXS_ANOMALY_WEBHOOK_RATE` |
 | API limit (tokens/s per client IP, **per pod**) | off (0) | **20** | `NXS_ANOMALY_API_RATE` |
+| Signed ingest must carry `X-Anomaly-Timestamp` (replay window, see API.md) | off | off (senders must be updated first) | `NXS_ANOMALY_WEBHOOK_REQUIRE_TIMESTAMP` |
 | Delivery circuit breaker (consecutive failures per channel/target) | 5 | **5** | `NXS_ANOMALY_CIRCUIT_BREAKER_THRESHOLD` |
 | New inline secrets in create/update requests | allowed | **refused** (`env:VARIABLE` required) | — (profile only) |
 

@@ -39,6 +39,28 @@ sed -i "1,20s/\(\"version\"[[:space:]]*:[[:space:]]*\)\"[0-9][^\"]*\"/\1\"$versi
 readme=deploy/helm/nxs-anomaly/README.md
 sed -i -E "s/[0-9]+\.[0-9]+\.[0-9]+/$version/g" "$readme"
 
+# Rename the top "## [Unreleased]" heading to "## [X.Y.Z] — YYYY-MM-DD". Only a
+# heading above the first released section counts, so an older section can
+# never be relabelled as this release (see the duplicate-heading check in
+# check-version.sh).
+changelog=CHANGELOG.md
+if [ -f "$changelog" ]; then
+	today="$(date +%Y-%m-%d)"
+	tmp="$(mktemp)"
+	awk -v v="$version" -v d="$today" '
+		!done && /^## \[Unreleased\]/ { print "## [" v "] — " d; done = 1; next }
+		!done && /^## \[[0-9]/ { done = 1 }
+		{ print }
+	' "$changelog" >"$tmp"
+	if cmp -s "$tmp" "$changelog"; then
+		rm -f "$tmp"
+	else
+		cat "$tmp" >"$changelog"
+		rm -f "$tmp"
+		echo "set-version: $changelog [Unreleased] → [$version] — $today"
+	fi
+fi
+
 if [ -n "$previous" ] && [ "$previous" != "$version" ]; then
 	echo "set-version: $previous → $version"
 else

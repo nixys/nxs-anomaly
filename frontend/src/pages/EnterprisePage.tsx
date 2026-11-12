@@ -48,6 +48,7 @@ function FeatureCard({ capability }: { capability: Capability }) {
     sso: t("enterprise.feature.sso"),
     team_scoping: t("enterprise.feature.team_scoping"),
     analytics_stream: t("enterprise.feature.analytics_stream"),
+    oncall_reports: t("enterprise.feature.oncall_reports"),
   };
   const stateLabels: Partial<Record<string, string>> = {
     available: t("enterprise.state.available"),

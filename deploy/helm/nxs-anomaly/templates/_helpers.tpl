@@ -169,6 +169,13 @@ topologySpreadConstraints:
   - maxSkew: {{ .maxSkew | default 1 }}
     topologyKey: {{ .topologyKey | default "kubernetes.io/hostname" }}
     whenUnsatisfiable: {{ .whenUnsatisfiable | default "ScheduleAnyway" }}
+    {{- with .nodeTaintsPolicy }}
+    nodeTaintsPolicy: {{ . }}
+    {{- end }}
+    {{- with .matchLabelKeys }}
+    matchLabelKeys:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
     labelSelector:
       matchLabels:
         {{- include "nxs-anomaly.componentSelectorLabels" (dict "ctx" $.ctx "component" (.labelSelectorComponent | default $.component)) | nindent 8 }}

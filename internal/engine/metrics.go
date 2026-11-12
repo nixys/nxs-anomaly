@@ -9,6 +9,10 @@ type MetricsSink interface {
 	// ObserveDeliveryLatency records the wall-clock duration of a single provider
 	// call, labeled by channel (webhook, telegram, email, ...).
 	ObserveDeliveryLatency(channel string, seconds float64)
+	// ObserveFirstAttemptDelay records how long a notification waited between
+	// being queued (its escalation step fired) and its first provider call —
+	// the worker's share of ingest→first-attempt, the paging-latency SLI.
+	ObserveFirstAttemptDelay(channel string, seconds float64)
 	// IncDeadLetter counts a notification that became permanently failed.
 	IncDeadLetter(channel string)
 	// IncDeliveryShortCircuited counts a delivery skipped because the channel's
@@ -49,16 +53,17 @@ type MetricsSink interface {
 // noopMetrics is the default sink; every method is a no-op.
 type noopMetrics struct{}
 
-func (noopMetrics) ObserveDeliveryLatency(string, float64) {}
-func (noopMetrics) IncDeadLetter(string)                   {}
-func (noopMetrics) IncDeliveryShortCircuited(string)       {}
-func (noopMetrics) IncNotificationSkipped(string, string)  {}
-func (noopMetrics) IncShiftNotifications(int)              {}
-func (noopMetrics) SetScheduleCoverage(int, int)           {}
-func (noopMetrics) IncWorkerPanic(string)                  {}
-func (noopMetrics) SetDutyAttendance(int, int)             {}
-func (noopMetrics) IncRetentionDeleted(string, int)        {}
-func (noopMetrics) SetSourcesSilent(int)                   {}
+func (noopMetrics) ObserveDeliveryLatency(string, float64)   {}
+func (noopMetrics) ObserveFirstAttemptDelay(string, float64) {}
+func (noopMetrics) IncDeadLetter(string)                     {}
+func (noopMetrics) IncDeliveryShortCircuited(string)         {}
+func (noopMetrics) IncNotificationSkipped(string, string)    {}
+func (noopMetrics) IncShiftNotifications(int)                {}
+func (noopMetrics) SetScheduleCoverage(int, int)             {}
+func (noopMetrics) IncWorkerPanic(string)                    {}
+func (noopMetrics) SetDutyAttendance(int, int)               {}
+func (noopMetrics) IncRetentionDeleted(string, int)          {}
+func (noopMetrics) SetSourcesSilent(int)                     {}
 
 // sink returns the engine's metrics sink, or a no-op when none was wired (e.g.
 // an Engine built directly in tests). Keeps all call sites nil-safe.

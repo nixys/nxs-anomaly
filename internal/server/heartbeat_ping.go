@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -87,7 +88,8 @@ func (p *heartbeatPinger) ping() {
 // redactURLError drops the URL from a client error, which would otherwise
 // print the check's token into the log.
 func redactURLError(err error) error {
-	if ue, ok := err.(*url.Error); ok {
+	var ue *url.Error
+	if errors.As(err, &ue) {
 		return ue.Err
 	}
 	return err

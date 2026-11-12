@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nixys/nxs-anomaly/internal/model"
+	"github.com/nixys/nxs-anomaly/internal/utils"
 )
 
 // recordingSink captures MetricsSink calls for assertions. Concurrency-safe
@@ -16,6 +17,7 @@ import (
 type recordingSink struct {
 	mu             sync.Mutex
 	latency        map[string]int
+	firstAttempt   map[string][]float64
 	deadLetter     map[string]int
 	shortCircuited map[string]int
 	panics         map[string]int
@@ -29,6 +31,7 @@ type recordingSink struct {
 func newRecordingSink() *recordingSink {
 	return &recordingSink{
 		latency:        map[string]int{},
+		firstAttempt:   map[string][]float64{},
 		deadLetter:     map[string]int{},
 		shortCircuited: map[string]int{},
 		panics:         map[string]int{},
@@ -40,6 +43,11 @@ func newRecordingSink() *recordingSink {
 func (s *recordingSink) ObserveDeliveryLatency(channel string, _ float64) {
 	s.mu.Lock()
 	s.latency[channel]++
+	s.mu.Unlock()
+}
+func (s *recordingSink) ObserveFirstAttemptDelay(channel string, seconds float64) {
+	s.mu.Lock()
+	s.firstAttempt[channel] = append(s.firstAttempt[channel], seconds)
 	s.mu.Unlock()
 }
 func (s *recordingSink) IncDeadLetter(channel string) {
@@ -142,5 +150,44 @@ func TestDeliveryShortCircuitedWhenBreakerOpen(t *testing.T) {
 	}
 	if got := sink.get(sink.latency, "log"); got != 0 {
 		t.Errorf("latency must not be observed when short-circuited, got %d", got)
+	}
+}
+
+// The paging-latency SLI: a first attempt reports how long the notification was
+// queued; a retry does not (its wait is the backoff, not a delay to page).
+func TestDeliveryObservesFirstAttemptDelay(t *testing.T) {
+	ms := newMemStore()
+	first := makeNotification("n1", model.NotificationDeliveryScheduled, "log", "", nil)
+	first["created_at"] = utils.ToISO(utils.UTCNow().Add(-3 * time.Second))
+	ms.seed("notifications", first)
+	e := deliveryEngine(ms)
+	sink := newRecordingSink()
+	e.SetMetricsSink(sink)
+
+	if _, err := e.ProcessNotificationDeliveries(context.Background()); err != nil {
+		t.Fatalf("deliveries: %v", err)
+	}
+	sink.mu.Lock()
+	got := append([]float64(nil), sink.firstAttempt["log"]...)
+	sink.mu.Unlock()
+	if len(got) != 1 {
+		t.Fatalf("first-attempt observations = %v, want exactly one", got)
+	}
+	if got[0] < 2.5 || got[0] > 60 {
+		t.Errorf("first-attempt delay = %.2fs, want ≈3s", got[0])
+	}
+
+	retry := makeNotification("n2", model.NotificationDeliveryScheduled, "log", "", nil)
+	retry["retry_count"] = 2
+	ms2 := newMemStore()
+	ms2.seed("notifications", retry)
+	e2 := deliveryEngine(ms2)
+	sink2 := newRecordingSink()
+	e2.SetMetricsSink(sink2)
+	if _, err := e2.ProcessNotificationDeliveries(context.Background()); err != nil {
+		t.Fatalf("deliveries: %v", err)
+	}
+	if n := len(sink2.firstAttempt["log"]); n != 0 {
+		t.Errorf("a retry must not be observed as a first attempt, got %d", n)
 	}
 }

@@ -43,6 +43,11 @@ func IsUnavailable(err error) bool {
 	if IsTransactionConflict(err) {
 		return true
 	}
+	// A write that reached a standby after a failover (see failover.go): the
+	// pool is reset on it, and the retry reaches the new primary.
+	if isReadOnlyError(err) || errors.Is(err, errStandby) {
+		return true
+	}
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && len(pgErr.Code) >= 2 {
 		switch pgErr.Code[:2] {
