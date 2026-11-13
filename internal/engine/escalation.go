@@ -35,7 +35,7 @@ func (e *Engine) syncAlertStatusForGroups(ctx context.Context, groupIDs []string
 	if _, err := e.store.SetAlertStatusForGroups(ctx, groupIDs, status); err != nil {
 		slog.Warn("alert_status_sync_failed",
 			"groups", groupIDs, "status", status, "err", err,
-			"effect", "the group's alerts keep the status their source last reported")
+			"effect", "the worker's repair sweep resolves the rest within minutes; a reopen is not repaired")
 	}
 }
 
