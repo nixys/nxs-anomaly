@@ -549,6 +549,9 @@ type PostgreSQLStore interface {
 	// See store_alerts.go for why it is one statement outside the group's
 	// transaction rather than part of the collection save cycle.
 	SetAlertStatusForGroups(ctx context.Context, groupIDs []string, status string) (int, error)
+	// RepairResolvedGroupAlerts resolves up to limit alerts still marked
+	// firing in resolved groups — the writes SetAlertStatusForGroups missed.
+	RepairResolvedGroupAlerts(ctx context.Context, limit int) (int, error)
 	// InsertAuditEvent appends to the append-only audit trail. There is no
 	// update or delete counterpart on purpose: the table rejects both.
 	InsertAuditEvent(ctx context.Context, ev AuditEvent) error

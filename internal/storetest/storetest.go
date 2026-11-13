@@ -912,6 +912,34 @@ func (m *Store) SetAlertStatusForGroups(_ context.Context, groupIDs []string, st
 	return n, nil
 }
 
+// RepairResolvedGroupAlerts mirrors the store's repair sweep.
+func (m *Store) RepairResolvedGroupAlerts(_ context.Context, limit int) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for id, row := range m.data["alerts"] {
+		if n >= limit {
+			break
+		}
+		if row["status"] != "firing" {
+			continue
+		}
+		gid, _ := row["alert_group_id"].(string)
+		g, ok := m.data["alert_groups"][gid]
+		if !ok || g["status"] != "resolved" {
+			continue
+		}
+		updated := make(map[string]any, len(row))
+		for k, v := range row {
+			updated[k] = v
+		}
+		updated["status"] = "resolved"
+		m.data["alerts"][id] = updated
+		n++
+	}
+	return n, nil
+}
+
 // InsertAuditEvent appends to the in-memory trail. Like the real table, there
 // is no way to modify or remove an event once written.
 func (m *Store) InsertAuditEvent(_ context.Context, ev store.AuditEvent) error {

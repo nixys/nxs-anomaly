@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/) since 1.0.0.
 
+## [1.10.3] — 2026-11-12
+
+### Fixed
+- **Alerts of bulk-resolved groups no longer stay `firing`.** Closing a group
+  rewrote its alerts' status in one statement with a 10 s budget and no retry;
+  a bulk resolve of 200 large groups right after a storm timed out and left
+  26 000 alerts of 400 closed groups reading "active" for good. The write now
+  goes in chunks of 2 000 rows that each commit, and the worker's archival
+  stage resolves any firing alert of a resolved group once a minute, which
+  also repairs alerts left behind by earlier releases.
+- **Schedule coverage report no longer flags a just-created rotation.** The
+  report read schedules and users from separate cache entries, so on another
+  replica a new rotation could show a week-long gap and its participant under
+  `unknown_users` for up to 5 s — and readiness and the worker's coverage gauge
+  reported it as degraded. A participant missing from the cache is now checked
+  against the database first.
+
 ## [1.10.2] — 2026-11-11
 
 ### Security

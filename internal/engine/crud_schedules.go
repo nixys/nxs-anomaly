@@ -449,16 +449,23 @@ func (e *Engine) purgeUserFromSchedules(ctx context.Context, userID string) (int
 func (e *Engine) ScheduleCoverageReport(ctx context.Context) (map[string]any, error) {
 	// Reference collections through the short-TTL cache: this runs on every
 	// worker cycle, and schedules, users and chains change on human timescales.
-	schedules, err := e.refCollection(ctx, "schedules")
-	if err != nil {
-		return nil, err
+	refs := e.newRefSet(ctx)
+	schedules := refs.get("schedules")
+	users := refs.get("users")
+	chains := refs.get("escalation_chains")
+	// Each collection is cached on its own, so a schedule created on another
+	// replica a moment ago can be in this replica's schedules while its people
+	// are not yet in its users. Believed, that reads as a week-long gap and
+	// unknown_users on a brand-new rotation — and the readiness check and the
+	// worker's coverage gauge both report it as degraded (1.10.2 audit, 2 of 15
+	// reports under load). A name the cache does not know is checked against
+	// the database first, as on the paging path.
+	var named []string
+	for _, sched := range schedules {
+		named = append(named, scheduleNamedUserIDs(sched)...)
 	}
-	users, err := e.refCollection(ctx, "users")
-	if err != nil {
-		return nil, err
-	}
-	chains, err := e.refCollection(ctx, "escalation_chains")
-	if err != nil {
+	users = refs.require(users, "users", named)
+	if err := refs.Err(); err != nil {
 		return nil, err
 	}
 	known := knownUserIDs(users)
@@ -470,7 +477,7 @@ func (e *Engine) ScheduleCoverageReport(ctx context.Context) (map[string]any, er
 		chains    []any
 		acceptAll bool
 	}
-	refs := map[string]*ref{}
+	chainRefs := map[string]*ref{}
 	for _, chain := range chains {
 		for _, raw := range anyList(chain["steps"]) {
 			step, ok := raw.(map[string]any)
@@ -481,10 +488,10 @@ func (e *Engine) ScheduleCoverageReport(ctx context.Context) (map[string]any, er
 			if schedID == "" {
 				continue
 			}
-			r := refs[schedID]
+			r := chainRefs[schedID]
 			if r == nil {
 				r = &ref{acceptAll: true}
-				refs[schedID] = r
+				chainRefs[schedID] = r
 			}
 			r.chains = append(r.chains, map[string]any{
 				"id": utils.StrVal(chain, "id"), "name": utils.StrVal(chain, "name"),
@@ -511,7 +518,7 @@ func (e *Engine) ScheduleCoverageReport(ctx context.Context) (map[string]any, er
 		if len(gaps) == 0 && len(ghosts) == 0 && !disabled {
 			continue
 		}
-		r := refs[id]
+		r := chainRefs[id]
 		entry := map[string]any{
 			"schedule_id":   id,
 			"name":          utils.StrVal(sched, "name"),

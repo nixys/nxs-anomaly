@@ -1266,3 +1266,45 @@ func TestShiftNotificationDeferredWhenRosterMovedSincePrePass(t *testing.T) {
 		t.Errorf("notified target = %q, want u_c's 333", target)
 	}
 }
+
+// TestCoverageReportChecksUnknownUsersAgainstTheDatabase: the report read
+// schedules and users from separate cache entries, so a rotation created on
+// another replica could be in the schedules entry while its participant was
+// not yet in the users one. The report then showed a week-long gap and the new
+// participant under unknown_users (1.10.2 audit, 2 of 15 under load).
+func TestCoverageReportChecksUnknownUsersAgainstTheDatabase(t *testing.T) {
+	ctx := context.Background()
+	ms := newMemStore()
+	ms.seed("users", map[string]any{"id": "u_a", "name": "A", "username": "a"})
+	e, cache := cachedEngine(ms)
+	// Warm this replica's users entry before the new participant exists.
+	if _, err := e.refCollection(ctx, "users"); err != nil {
+		t.Fatalf("refCollection: %v", err)
+	}
+	// Written behind the cache's back, as another replica would.
+	ms.seed("users", map[string]any{"id": "u_new", "name": "New", "username": "new"})
+	ms.seed("schedules", map[string]any{
+		"id": "s_new", "name": "Fresh", "enabled": true,
+		"rotation": map[string]any{
+			"start_at":         utils.ToISO(utils.UTCNow().Add(-time.Hour)),
+			"handoff_interval": 1,
+			"handoff_unit":     "days",
+			"participant_ids":  []any{"u_new"},
+		},
+	})
+	cache.invalidate("schedules")
+	if users, _ := cache.get("users", time.Now()); users["u_new"] != nil {
+		t.Fatal("fixture: the users entry already knows the new participant")
+	}
+
+	report, err := e.ScheduleCoverageReport(ctx)
+	if err != nil {
+		t.Fatalf("ScheduleCoverageReport: %v", err)
+	}
+	for _, raw := range report["items"].([]any) {
+		item := raw.(map[string]any)
+		if item["schedule_id"] == "s_new" {
+			t.Fatalf("new rotation reported as uncovered: %#v", item)
+		}
+	}
+}

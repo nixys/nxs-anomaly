@@ -692,6 +692,31 @@ func (m *memStore) SetAlertStatusForGroups(_ context.Context, groupIDs []string,
 	return n, nil
 }
 
+// RepairResolvedGroupAlerts mirrors the store's repair sweep: firing alerts of
+// resolved groups become resolved, at most limit of them.
+func (m *memStore) RepairResolvedGroupAlerts(_ context.Context, limit int) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for id, row := range m.data["alerts"] {
+		if n >= limit {
+			break
+		}
+		if utils.StrVal(row, "status") != "firing" {
+			continue
+		}
+		g, ok := m.data["alert_groups"][utils.StrVal(row, "alert_group_id")]
+		if !ok || utils.StrVal(g, "status") != "resolved" {
+			continue
+		}
+		updated := deepCopyItem(row)
+		updated["status"] = "resolved"
+		m.data["alerts"][id] = updated
+		n++
+	}
+	return n, nil
+}
+
 // audit records everything the engine writes to the trail, so tests can assert
 // on attribution instead of only on the returned value.
 func (m *memStore) InsertAuditEvent(_ context.Context, ev store.AuditEvent) error {

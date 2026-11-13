@@ -132,3 +132,33 @@ func TestAlertStatusSyncOutlivesTheRequest(t *testing.T) {
 		t.Fatal("the alert status write ran on the request's cancelled context")
 	}
 }
+
+// failingSyncStore drops every post-commit alert status write, the way the
+// 10-second write timed out on a bulk resolve of 200 large groups.
+type failingSyncStore struct{ *memStore }
+
+func (s *failingSyncStore) SetAlertStatusForGroups(context.Context, []string, string) (int, error) {
+	return 0, context.DeadlineExceeded
+}
+
+// TestRepairSweepResolvesAlertsTheSyncMissed: on the 1.10.2 stand the sync
+// timed out and nothing retried it, so 26 000 alerts of 400 closed groups read
+// "firing" for good. The worker's archival stage now finishes the write.
+func TestRepairSweepResolvesAlertsTheSyncMissed(t *testing.T) {
+	ms := ingestStore()
+	e := crudEngine(ms)
+	id := ingestOne(t, e, "disk full")["id"].(string)
+	open := ingestOne(t, e, "cpu hot")["id"].(string)
+
+	e.store = &failingSyncStore{memStore: ms}
+	if _, err := e.BulkResolveGroups(adminCtx(), []string{id}); err != nil {
+		t.Fatalf("BulkResolveGroups: %v", err)
+	}
+	// Asserted first so the test cannot pass by the sync having worked.
+	requireAllStatuses(t, ms, id, model.AlertStatusFiring)
+
+	e.repairResolvedGroupAlerts(context.Background())
+	requireAllStatuses(t, ms, id, model.AlertStatusResolved)
+	// An open group's firing alerts are live state, not a missed write.
+	requireAllStatuses(t, ms, open, model.AlertStatusFiring)
+}
