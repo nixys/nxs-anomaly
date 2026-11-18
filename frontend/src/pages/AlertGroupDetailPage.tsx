@@ -1,3 +1,4 @@
+import { useReferences, referenceIds } from '../api/hooks';
 import {
   Alert,
   Anchor,
@@ -23,7 +24,7 @@ import {
   IconChevronDown,
 } from '@tabler/icons-react';
 import { Link, useNavigate, useParams } from 'react-router';
-import { useAllOf, useGroupAction, useItem, useList, useSilenceGroup } from '../api/hooks';
+import { useGroupAction, useItem, useList, useSilenceGroup } from '../api/hooks';
 import { RoleNotice, useCan } from '../auth/permissions';
 import type { ReactNode } from 'react';
 import type { AlertGroup, Notification } from '../api/types';
@@ -265,16 +266,14 @@ export function AlertGroupDetailPage() {
 function Summary({ group }: { group: AlertGroup }) {
   const { t } = useI18n();
   const [showAll, details] = useDisclosure(false);
-  // Both are small reference collections the app already caches, so naming the
-  // integration and the chain costs no extra round trip on this page.
-  const integrations = useAllOf('integrations');
-  const chains = useAllOf('escalation-chains');
+  // Resolve only the references used by this group.
+  const integrations = useReferences('integrations', referenceIds(group, ['integration_id']));
+  const chains = useReferences('escalation-chains', referenceIds(group, ['escalation_chain_id']));
   const integration = (integrations.data ?? []).find((item) => item.id === group.integration_id);
   const chain = (chains.data ?? []).find((item) => item.id === group.escalation_chain_id);
   // While the reference list is still loading, show nothing rather than the id:
   // an identifier that turns into a name a moment later reads as a glitch, and
   // it is the id this page exists to stop showing.
-  const naming = integrations.isPending || chains.isPending;
 
   // What a responder needs before deciding anything: how bad, how long, who is
   // being called and when the next call goes out. Everything else is evidence
@@ -315,7 +314,7 @@ function Summary({ group }: { group: AlertGroup }) {
               <Anchor component={Link} to={`/integrations/${integration.id}`} size="sm">
                 {integration.name}
               </Anchor>
-            ) : naming ? (
+            ) : group.integration_id && integrations.isPending ? (
               <Skeleton height={16} width={120} />
             ) : (
               <MonoId id={group.integration_id} />
@@ -326,7 +325,7 @@ function Summary({ group }: { group: AlertGroup }) {
               <Anchor component={Link} to="/escalation-chains" size="sm">
                 {chain.name}
               </Anchor>
-            ) : naming ? (
+            ) : group.escalation_chain_id && chains.isPending ? (
               <Skeleton height={16} width={120} />
             ) : (
               <MonoId id={group.escalation_chain_id} />

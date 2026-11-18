@@ -1,12 +1,16 @@
 import { Group, Pagination, Text, TextInput } from '@mantine/core';
 import { IconSearch } from '@tabler/icons-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useDebouncedValue } from '@mantine/hooks';
+import { useList, type ListResource, type ResourceType } from '../api/hooks';
 import { useI18n } from '../i18n/I18nProvider';
 
 // Rows a list page draws at once.
 export const LIST_PAGE_SIZE = 50;
 
 export interface PagedList<T> {
+  server?: boolean;
+  estimated?: boolean;
   /** The rows to draw: this page of the items that match the search. */
   items: T[];
   /** Every item, and how many match the search. */
@@ -57,7 +61,7 @@ export function usePagedList<T>(items: T[] | undefined, fields: (keyof T)[]): Pa
 /** The search above a list; only once the list is longer than one page. */
 export function ListSearch<T>({ list }: { list: PagedList<T> }) {
   const { t } = useI18n();
-  if (list.total <= LIST_PAGE_SIZE) return null;
+  if (!list.server && list.total <= LIST_PAGE_SIZE) return null;
   return (
     <Group justify="space-between" mb="sm">
       <TextInput
@@ -66,10 +70,11 @@ export function ListSearch<T>({ list }: { list: PagedList<T> }) {
         aria-label={t('list.search')}
         value={list.query}
         onChange={(event) => list.setQuery(event.currentTarget.value)}
-        w={320}
+        w={{ base: '100%', sm: 320 }}
       />
       <Text size="sm" c="dimmed">
-        {list.query ? t('list.matching', { matching: list.matching, total: list.total }) : t('list.total', { total: list.total })}
+        {list.estimated ? '≈ ' : ''}
+        {list.query && !list.server ? t('list.matching', { matching: list.matching, total: list.total }) : t('list.total', { total: list.total })}
       </Text>
     </Group>
   );
@@ -91,4 +96,25 @@ export function ListPager<T>({ list }: { list: PagedList<T> }) {
       <Pagination value={list.page} onChange={list.setPage} total={list.pages} />
     </Group>
   );
+}
+
+
+/** Reference tables request only the current server page; search covers all rows. */
+export function useReferencePage<R extends ListResource>(resource: R) {
+  const [page, setPage] = useState(1);
+  const [query, setSearch] = useState('');
+  const [search] = useDebouncedValue(query.trim(), 250);
+  const result = useList(resource, { limit: LIST_PAGE_SIZE, offset: (page - 1) * LIST_PAGE_SIZE, q: search || undefined });
+  const data = result.data;
+  useEffect(() => {
+    // The last item on a page may have been deleted by a mutation.
+    if (data && !data.items.length && page > 1) setPage(value => value - 1);
+  }, [data, page]);
+  const rows: PagedList<ResourceType[R]> = {
+    server: true, estimated: data?.total_estimated,
+    items: data?.items ?? [], total: data?.total ?? 0, matching: data?.total ?? 0,
+    page, pages: Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE), data?.total_estimated && data.items.length === LIST_PAGE_SIZE ? page + 1 : page),
+    setPage, query, setQuery: value => { setSearch(value); setPage(1); },
+  };
+  return { ...result, rows };
 }

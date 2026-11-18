@@ -111,6 +111,37 @@ after a restore.
 Procedures and checks: [BACKUP_RESTORE.md](BACKUP_RESTORE.md),
 `tests/pitr_drill.sh`.
 
+## Retention settings
+
+All values are environment variables, passed through `config` in the Helm chart.
+`0` means indefinite retention.
+
+| Variable | Data affected | Default |
+|---|---|---|
+| `NXS_ANOMALY_ALERT_GROUP_TTL_DAYS` | resolved groups and their alerts | 30 |
+| `NXS_ANOMALY_CHATOPS_MESSAGES_TTL_DAYS` | ChatOps mirror | 30 |
+| `NXS_ANOMALY_AUDIT_RETENTION_DAYS` | audit events | 0 |
+| `NXS_ANOMALY_NOTIFICATION_RETENTION_DAYS` | terminal notifications | 0 |
+| `NXS_ANOMALY_DELIVERY_ATTEMPT_RETENTION_DAYS` | delivery attempts | 0 |
+| `NXS_ANOMALY_WEB_SESSION_RETENTION_DAYS` | web sessions (IP, User-Agent) | 0 |
+
+The worker sweeps records by category in batches on every cycle
+(`internal/engine/retention.go`). Only **terminal** notifications may be deleted:
+an in-flight notification is work, and deleting it would silently lose a page.
+
+Observe the result through:
+
+```
+nxs_anomaly_retention_deleted_total{category="audit_events"}
+```
+
+Categories: `alert_groups`, `audit_events`, `chatops_messages`, `notifications`,
+`delivery_attempts`, `web_sessions`. A configured retention period with a flat
+counter needs investigation: it can indicate a sweep that stopped working.
+Every deletion is also logged at `info` level.
+
+## Requests about a person's data
+
 ### Export
 
 ```

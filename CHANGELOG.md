@@ -4,6 +4,49 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/) since 1.0.0.
 
+## [1.10.6] — 2026-11-18
+
+### Changed
+- Redesigned the bilingual documentation with book-style typography, local
+  Latin and Cyrillic fonts, and light and dark themes. Improved the reading
+  layout, navigation, code samples, and API tables across screen sizes.
+
+## [1.10.5] — 2026-11-16
+
+### Added
+- Responsive incident and reference workflows, including server-side search and
+  pagination, and an overview API for the home dashboard.
+- A bilingual Community/Enterprise documentation site with independent image
+  publication and release-tagged OCI Helm charts for deployment through Argo CD.
+
+## [1.10.4] — 2026-11-13
+
+### Fixed
+- **A person or chain created on another replica is no longer skipped as
+  gone.** When a replica re-read a reference collection because one id was
+  missing, it then treated every other missing id as gone for the next 5 s —
+  so an alert routed there to a person or chain created on the other replica in
+  those seconds paged nobody (`notify_skipped_unknown_users`), and the schedule
+  coverage report showed a new rotation with a week-long gap (the 1.10.3 fix
+  narrowed this, 1 report in 20 still failed under load on the CE stand). A
+  re-read now vouches only for the ids it was made for; any other missing id is
+  looked up again.
+- **The alert repair sweep no longer reports a finished pass as a failure.** A
+  pass that stopped at its 5 s budget logged `alert_status_repair_failed` with
+  a timeout although it had repaired 14 000 alerts; it now logs
+  `alert_status_repaired` with `budget_exhausted=true`.
+
+### Changed
+- **Two unused indexes on alert groups are dropped** (migrations 0037, 0038,
+  `DROP INDEX CONCURRENTLY`): `data->>'status'` and `data->>'next_run_at'`,
+  both superseded by typed columns and never scanned. Being expressions over
+  `data`, which every group update rewrites, they also made a HOT update of a
+  group impossible and cost two index writes per update.
+- **Helm: server settings for the bundled PostgreSQL** — `postgresql.parameters`
+  are passed as `-c name=value`. The default sets `shared_buffers: 256MB`, a
+  quarter of the default 1 Gi limit (the image alone uses 128MB whatever the
+  limit). The database pod restarts once on upgrade.
+
 ## [1.10.3] — 2026-11-12
 
 ### Fixed

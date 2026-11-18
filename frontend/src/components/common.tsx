@@ -47,8 +47,8 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <Group justify="space-between" align="flex-start" wrap="nowrap" mb="lg">
-      <Box>
+    <Group justify="space-between" align="flex-start" className="nxs-page-header" mb="lg">
+      <Box style={{ minWidth: 0, flex: '1 1 240px' }}>
         <Title order={2}>{title}</Title>
         {description && (
           <Text size="sm" c="dimmed" mt={4}>
@@ -56,7 +56,7 @@ export function PageHeader({
           </Text>
         )}
       </Box>
-      {actions && <Group gap="xs">{actions}</Group>}
+      {actions && <Group gap="xs" className="nxs-page-actions">{actions}</Group>}
     </Group>
   );
 }

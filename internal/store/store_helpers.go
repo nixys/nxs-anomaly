@@ -202,6 +202,24 @@ func buildWhere(collection string, filters map[string]any) (string, []any, error
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
+		if k == "has_steps" && collection == "escalation_chains" {
+			args = append(args, filters[k])
+			clauses = append(clauses, fmt.Sprintf("((CASE WHEN jsonb_typeof(data->'steps') = 'array' THEN jsonb_array_length(data->'steps') ELSE 0 END) > 0) = $%d", len(args)))
+			continue
+		}
+		if k == "q" {
+			fields := ReferenceSearchFields(collection)
+			if len(fields) == 0 {
+				return "", nil, fmt.Errorf("search is not supported for collection %s", collection)
+			}
+			args = append(args, filters[k])
+			parts := make([]string, 0, len(fields))
+			for _, field := range fields {
+				parts = append(parts, fmt.Sprintf("strpos(lower(coalesce(data->>'%s', '')), lower($%d)) > 0", field, len(args)))
+			}
+			clauses = append(clauses, "("+strings.Join(parts, " OR ")+")")
+			continue
+		}
 		if !allowed[k] {
 			return "", nil, fmt.Errorf("unsupported filter column %q for collection %s", k, collection)
 		}

@@ -117,7 +117,7 @@ describe('NotificationsPage', () => {
 
   it('names the recipient rather than showing their id', async () => {
     renderPage([notification('n1')]);
-    await screen.findByText('4242');
+    await screen.findByText('Alice SRE');
 
     // Scoped to the row: the name is also a filter option, so matching anywhere
     // on the page would pass for a row still showing the raw id.

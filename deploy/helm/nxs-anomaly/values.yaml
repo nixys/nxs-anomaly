@@ -380,6 +380,12 @@ postgresql:
   resources:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {cpu: 1, memory: 1Gi}
+  # Server settings, passed as `postgres -c name=value`. The image's own default
+  # shared_buffers is 128MB whatever the memory limit; about a quarter of the
+  # limit is the usual starting point, so change both together. A change here
+  # restarts the database pod.
+  parameters:
+    shared_buffers: 256MB
 
 externalPostgres:
   # Provide either a full dsn, or host/port/username/password/database/sslmode.
