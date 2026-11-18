@@ -268,7 +268,27 @@
       }
     },
     "postgresql": {
-      "$ref": "#/$defs/bundledDatabase"
+      "allOf": [
+        {
+          "$ref": "#/$defs/bundledDatabase"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "parameters": {
+              "type": "object",
+              "description": "Server settings passed as `postgres -c name=value`, e.g. shared_buffers. Values are strings.",
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean"
+                ]
+              }
+            }
+          }
+        }
+      ]
     },
     "externalPostgres": {
       "type": "object",

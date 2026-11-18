@@ -465,7 +465,7 @@ func pageParams(r *http.Request) map[string]any {
 		"ids",
 		// Ordering, not filtering: the engine validates the column against the
 		// collection before it reaches SQL.
-		"sort", "order"} {
+		"sort", "order", "q", "has_steps"} {
 		if v := q.Get(key); v != "" {
 			params[key] = v
 		}

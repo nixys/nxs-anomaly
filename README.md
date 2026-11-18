@@ -92,6 +92,9 @@ guides below for a real deployment.
 
 ## Documentation
 
+Documentation website: [English](https://nxs-anomaly.io/en/ce/) · [Русский](https://nxs-anomaly.io/ru/ce/).
+The complete CE manuals are also available in this repository in both languages.
+
 | I want to… | Read |
 |---|---|
 | Install and send an alert | [Setup](https://github.com/nixys/nxs-anomaly/blob/main/docs/community/en/SETUP.md) |
@@ -136,7 +139,7 @@ For support and feedback please contact me:
 
 For more information about the product and Enterprise edition:
 
-- Website: [nixys.ru](https://dev-new.nixys.ru/tools/nxs-anomaly/)
+- Website: [nxs-anomaly.io](https://nxs-anomaly.io/)
 
 For news and discussions subscribe the channels:
 

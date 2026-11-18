@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
@@ -31,6 +32,7 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [state, setState] = useState<AuthState>('checking');
   const [authDisabled, setAuthDisabled] = useState(false);
   const [methods, setMethods] = useState<AuthMethods | null>(null);
@@ -51,11 +53,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return 'authenticated';
     } catch (error) {
       const next = error instanceof ApiError && error.status === 401 ? 'unauthenticated' : 'unavailable';
+      if (next === 'unauthenticated') queryClient.clear();
       setIdentity(null);
       setState(next);
       return next;
     }
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,18 +91,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // is stored in this tab. Any API key left over from before is dropped so
       // the session is unambiguously the credential in use.
       clearApiKey();
+      queryClient.clear();
       await resolve();
     },
-    [resolve],
+    [resolve, queryClient],
   );
 
   const signInWithApiKey = useCallback(
     async (key: string) => {
       await verifyApiKey(key);
       setApiKey(key);
+      queryClient.clear();
       await resolve();
     },
-    [resolve],
+    [resolve, queryClient],
   );
 
   const signOut = useCallback(async () => {
@@ -112,7 +117,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setIdentity(null);
     setState('unauthenticated');
-  }, []);
+    queryClient.clear();
+  }, [queryClient]);
 
   const retry = useCallback(async () => {
     setState('checking');

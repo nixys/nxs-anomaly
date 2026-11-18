@@ -1,3 +1,5 @@
+import { useReferences, referenceIds } from '../api/hooks';
+import { ReferenceSelect } from '../components/ReferenceSelect';
 import { useMemo } from 'react';
 import {
   Anchor,
@@ -10,7 +12,7 @@ import {
   Text,
 } from '@mantine/core';
 import { Link } from 'react-router';
-import { useAllOf, useList } from '../api/hooks';
+import { useList } from '../api/hooks';
 import {
   AbsoluteTime,
   Labels,
@@ -48,7 +50,6 @@ export function AlertsPage() {
   const integrationId = get('integration');
   const sort = { field: get('sort') ?? 'received_at', desc: (get('order') ?? 'desc') !== 'asc' };
 
-  const integrations = useAllOf('integrations');
   const alerts = useList('alerts', {
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
@@ -58,6 +59,8 @@ export function AlertsPage() {
     sort: sort.field,
     order: sort.desc ? 'desc' : 'asc',
   });
+
+  const integrations = useReferences('integrations', referenceIds(alerts.data, ['integration_id']));
 
   const integrationName = useMemo(() => {
     const map = new Map<string, string>();
@@ -105,12 +108,12 @@ export function AlertsPage() {
             onChange={(value) => patch({ severity: value })}
             w={160}
           />
-          <Select
+          <ReferenceSelect
             label={t('common.integration')}
             placeholder={t('common.any')}
             clearable
             searchable
-            data={(integrations.data ?? []).map((i) => ({ value: i.id, label: i.name }))}
+            resource="integrations"
             value={integrationId}
             onChange={(value) => patch({ integration: value })}
             w={220}

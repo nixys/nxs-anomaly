@@ -1,3 +1,5 @@
+import { useReferences, referenceIds } from '../api/hooks';
+import { ReferenceMultiSelect } from '../components/ReferenceSelect';
 import { useState } from 'react';
 import {
   ActionIcon,
@@ -5,7 +7,6 @@ import {
   Button,
   Group,
   Modal,
-  MultiSelect,
   Paper,
   Stack,
   Table,
@@ -14,10 +15,10 @@ import {
   Tooltip,
 } from '@mantine/core';
 import { IconPencil, IconUsersPlus } from '@tabler/icons-react';
-import { useAllOf, useCreate, useDelete, useFullList, useUpdate } from '../api/hooks';
+import { useCreate, useDelete, useUpdate } from '../api/hooks';
 import type { Team } from '../api/types';
 import { ConfirmDeleteButton, PageHeader, ProvisionedBadge, QueryState } from '../components/common';
-import { ListPager, ListSearch, usePagedList } from '../components/PagedList';
+import { ListPager, ListSearch, useReferencePage } from '../components/PagedList';
 import { EMPTY_VALUE } from '../i18n/format';
 import { RoleNotice, useCan } from '../auth/permissions';
 import { useI18n } from '../i18n/I18nProvider';
@@ -25,9 +26,9 @@ import { useI18n } from '../i18n/I18nProvider';
 export function TeamsPage() {
   const { t } = useI18n();
   const canEdit = useCan('edit');
-  const teams = useFullList('teams');
-  const rows = usePagedList(teams.data?.items, ['name']);
-  const users = useAllOf('users');
+  const teams = useReferencePage('teams');
+  const rows = teams.rows;
+  const users = useReferences('users', referenceIds(teams.data, ['member_ids']));
   const remove = useDelete('teams');
   const [editing, setEditing] = useState<Team | null>(null);
   const [creating, setCreating] = useState(false);
@@ -129,7 +130,7 @@ function TeamModal({
   team?: Team | null;
   onClose: () => void;
 }) {
-  const users = useAllOf('users');
+
   const create = useCreate('teams');
   const update = useUpdate('teams');
   const { t } = useI18n();
@@ -165,10 +166,10 @@ function TeamModal({
           value={name}
           onChange={(event) => setName(event.currentTarget.value)}
         />
-        <MultiSelect
+        <ReferenceMultiSelect
           label={t('teams.members')}
           searchable
-          data={(users.data ?? []).map((user) => ({ value: user.id, label: user.name }))}
+          resource="users"
           value={memberIds}
           onChange={setMemberIds}
         />

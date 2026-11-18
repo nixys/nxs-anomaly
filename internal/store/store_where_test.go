@@ -169,3 +169,17 @@ func TestBuildUpsertQueryNotificationsIdempotencyGuard(t *testing.T) {
 		t.Errorf("notifications upsert must guard on idempotency_key: %s", q)
 	}
 }
+
+func TestReferenceSearchIsBoundAndCombinesWithIDs(t *testing.T) {
+	query := "%' OR TRUE --"
+	where, args, err := buildWhere("users", map[string]any{"q": query, "id": []any{"u1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(where, query) || !strings.Contains(where, "id IN ($1)") || !strings.Contains(where, "strpos(") || len(args) != 2 || args[1] != query {
+		t.Fatalf("unsafe search: %s %#v", where, args)
+	}
+	if _, _, err := buildWhere("notifications", map[string]any{"q": "alice"}); err == nil {
+		t.Fatal("unexpected search collection")
+	}
+}

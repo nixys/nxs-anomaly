@@ -2,7 +2,10 @@ package engine
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/nixys/nxs-anomaly/internal/model"
 	"github.com/nixys/nxs-anomaly/internal/utils"
@@ -161,4 +164,39 @@ func TestRepairSweepResolvesAlertsTheSyncMissed(t *testing.T) {
 	requireAllStatuses(t, ms, id, model.AlertStatusResolved)
 	// An open group's firing alerts are live state, not a missed write.
 	requireAllStatuses(t, ms, open, model.AlertStatusFiring)
+}
+
+// slowRepairStore repairs one full batch, then blocks until the pass's budget
+// runs out — a backlog larger than one pass.
+type slowRepairStore struct {
+	*memStore
+	calls int
+}
+
+func (s *slowRepairStore) RepairResolvedGroupAlerts(ctx context.Context, limit int) (int, error) {
+	s.calls++
+	if s.calls == 1 {
+		return limit, nil
+	}
+	<-ctx.Done()
+	return 0, fmt.Errorf("timeout: %w", ctx.Err())
+}
+
+// TestRepairPassOutOfBudgetIsNotAFailure: on the 1.10.3 stand the first pass
+// repaired 14 000 alerts, ran out of its budget and was logged as
+// alert_status_repair_failed. Stopping at the budget is how a pass ends.
+func TestRepairPassOutOfBudgetIsNotAFailure(t *testing.T) {
+	prevBudget := alertRepairBudget
+	alertRepairBudget = 50 * time.Millisecond
+	defer func() { alertRepairBudget = prevBudget }()
+	prev := slog.Default()
+	defer slog.SetDefault(prev)
+	h := &capturingHandler{}
+	slog.SetDefault(slog.New(h))
+
+	e := &Engine{store: &slowRepairStore{memStore: newMemStore()}}
+	e.repairResolvedGroupAlerts(context.Background())
+	if h.has("alert_status_repair_failed") || !h.has("alert_status_repaired") {
+		t.Fatalf("a pass that ran out of budget was logged as %v", h.msgs)
+	}
 }

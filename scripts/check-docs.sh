@@ -47,7 +47,7 @@ ok() { printf 'check-docs ok    %s\n' "$1"; }
 # without this a contributor's very first run would fail on paths the cut
 # deleted, not on anything they wrote.
 DOCS=(README.md SECURITY.md CONTRIBUTING.md CHANGELOG.md
-      docs/enterprise/ru/*.md docs/enterprise/en/*.md docs/community/en/*.md)
+      docs/enterprise/ru/*.md docs/enterprise/en/*.md docs/community/en/*.md docs/community/ru/*.md)
 if [ -d docs/enterprise/ru ]; then
   DOCS_SRC=docs/enterprise/ru
 else

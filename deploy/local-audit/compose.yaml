@@ -1,0 +1,37 @@
+# Isolated disposable acceptance environment. Credentials are test fixtures only.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: anomaly_audit
+      POSTGRES_USER: audit
+      POSTGRES_PASSWORD: audit-local-only
+    ports: ["127.0.0.1:15432:5432"]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U audit -d anomaly_audit"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  app:
+    build: ../..
+    image: nxs-anomaly:local-audit
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      NXS_ANOMALY_DB_DSN: postgres://audit:audit-local-only@postgres:5432/anomaly_audit?sslmode=disable
+      NXS_ANOMALY_BOOTSTRAP_ADMIN_USERNAME: e2e-admin
+      NXS_ANOMALY_BOOTSTRAP_ADMIN_PASSWORD: e2e-password-1234
+      NXS_ANOMALY_API_KEYS: e2e-key:admin
+      NXS_ANOMALY_SESSION_COOKIE_SECURE: "false"
+      NXS_ANOMALY_TEAM_SCOPING: "true"
+      NXS_ANOMALY_POLL_INTERVAL: "1"
+      NXS_ANOMALY_NOTIFICATION_MAX_RETRIES: "1"
+    ports: ["127.0.0.1:18080:8080"]
+  frontend:
+    build: ../../frontend
+    image: nxs-anomaly-frontend:local-audit
+    depends_on:
+      app: { condition: service_healthy }
+    environment:
+      NXS_ANOMALY_API_UPSTREAM: app:8080
+    ports: ["127.0.0.1:13100:8080"]

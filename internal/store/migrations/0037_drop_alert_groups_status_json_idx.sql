@@ -1,0 +1,12 @@
+-- nxs:no-transaction
+-- Drop the expression index on data->>'status' of alert groups.
+--
+-- It dates from 0001, before the typed status column (0002) took over every
+-- lookup; no query reads it (0 scans on both CE stands, 2026-11). It is not just
+-- dead weight: an index on an expression over `data` makes `data` an indexed
+-- column, and every group update rewrites `data`, so no update of
+-- nxs_anomaly_alert_groups could ever be HOT (0 of 508 584 on the QA stand)
+-- and each one wrote every index of the table. Dropped CONCURRENTLY so a busy
+-- table is not locked; one statement per migration because a multi-statement
+-- string runs in an implicit transaction.
+DROP INDEX CONCURRENTLY IF EXISTS nxs_anomaly_alert_groups_status_idx;
