@@ -56,6 +56,8 @@ the route, grouping and templates all work on the same fields.
 | `POST /integrations/v1/elasticsearch/{key}` | `normalizeElasticsearchAlert` | `elasticsearch` |
 | `POST /v2/alert/pool` | `IngestLegacyPool` | `nxs-alert-compat` |
 
+To connect OpenCVE, follow the [adapter guide](OPENCVE.md). The adapter converts each `changes[]` batch into separate requests to the generic webhook.
+
 ### 2.1. The common shape
 
 The fields everything downstream understands:

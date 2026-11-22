@@ -133,7 +133,7 @@ export type NotificationPolicy = Schemas['IntegrationNotificationPolicy'];
 
 export type Integration = Schemas['Integration'];
 export type MaintenanceWindow = Schemas['MaintenanceWindow'];
-export type Report = Schemas['Report'];
+export type Report = { id: string };
 
 /** Ingestion endpoint kinds the backend exposes under /integrations/v1/. */
 export const INTEGRATION_TYPES = [

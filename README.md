@@ -92,10 +92,14 @@ guides below for a real deployment.
 
 ## Documentation
 
+Documentation website: [English](https://nxs-anomaly.io/en/ce/) · [Русский](https://nxs-anomaly.io/ru/ce/).
+The complete CE manuals are also available in this repository in both languages.
+
 | I want to… | Read |
 |---|---|
 | Install and send an alert | [Setup](https://github.com/nixys/nxs-anomaly/blob/main/docs/community/en/SETUP.md) |
 | Configure channels, schedules and routing | [Configuration](https://github.com/nixys/nxs-anomaly/blob/main/docs/community/en/CONFIGURATION.md) |
+| Route OpenCVE notifications to Telegram | [OpenCVE guide](docs/community/en/OPENCVE.md) |
 | Understand grouping and escalation | [Alert processing](https://github.com/nixys/nxs-anomaly/blob/main/docs/community/en/ALERT_PROCESSING.md) |
 | Automate through the API | [API reference](https://github.com/nixys/nxs-anomaly/blob/main/docs/community/en/API.md) · [OpenAPI](https://github.com/nixys/nxs-anomaly/blob/main/docs/openapi.json) |
 | Deploy on Kubernetes | [Helm chart](https://github.com/nixys/nxs-anomaly/blob/main/deploy/helm/nxs-anomaly/README.md) |
@@ -136,7 +140,7 @@ For support and feedback please contact me:
 
 For more information about the product and Enterprise edition:
 
-- Website: [nixys.ru](https://dev-new.nixys.ru/tools/nxs-anomaly/)
+- Website: [nxs-anomaly.io](https://nxs-anomaly.io/)
 
 For news and discussions subscribe the channels:
 

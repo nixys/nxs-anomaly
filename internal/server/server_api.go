@@ -27,6 +27,9 @@ func (srv *Server) routeAPI(w http.ResponseWriter, r *http.Request) {
 	eng := srv.eng
 
 	switch {
+	case method == http.MethodGet && path == "/api/v1/overview":
+		v, err := eng.Overview(ctx)
+		writeResult(w, http.StatusOK, v, err)
 	// Identity. The unauthenticated half (/auth/login, /auth/logout,
 	// /auth/methods) is handled before this router — see handleAPI.
 	case method == http.MethodGet && path == "/api/v1/auth/me":

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "nxs-anomaly native API",
-    "version": "1.10.3",
+    "version": "1.11.0",
     "description": "The native /api/v1 contract for nxs-anomaly (API, worker, frontend). This is the authoritative contract; the Grafana-compatibility surface under /api/internal/v1 is a compatibility shim and is NOT part of this contract. The core payloads — user, team, schedule, escalation chain, integration, alert group, alert, notification, delivery attempt — are modelled field by field, with `required` reflecting exactly the keys the engine writes unconditionally; every one still allows additional properties because the underlying storage is JSONB. Remaining resources use the open `Entity` schema. Drift between this document and the router is gated by internal/server/openapi_contract_test.go, and the frontend compiles against types generated from this file (frontend/src/api/schema.d.ts).",
     "license": {
       "name": "Apache-2.0"
@@ -70,54 +70,6 @@
     }
   ],
   "paths": {
-    "/api/v1/reports": {
-      "get": {
-        "tags": [
-          "reports"
-        ],
-        "summary": "List on-call quality reports (Enterprise)",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Limit"
-          },
-          {
-            "$ref": "#/components/parameters/Offset"
-          },
-          {
-            "$ref": "#/components/parameters/Sort"
-          },
-          {
-            "$ref": "#/components/parameters/Order"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/ReportList"
-          }
-        }
-      }
-    },
-    "/api/v1/reports/{id}": {
-      "get": {
-        "tags": [
-          "reports"
-        ],
-        "summary": "Get an on-call quality report (Enterprise)",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Id"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/Report"
-          },
-          "404": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
     "/api/v1/alert-groups": {
       "get": {
         "tags": [
@@ -497,65 +449,6 @@
         }
       }
     },
-    "/api/v1/auth/oidc/callback": {
-      "get": {
-        "tags": [
-          "auth"
-        ],
-        "summary": "OIDC redirect callback (sets the session cookie)",
-        "x-edition": "enterprise",
-        "security": [],
-        "responses": {
-          "302": {
-            "description": "Redirect to the app"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          },
-          "401": {
-            "$ref": "#/components/responses/Error"
-          },
-          "501": {
-            "description": "This edition does not implement single sign-on. Distinct from 404, which means the deployment has not configured it.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/auth/oidc/login": {
-      "get": {
-        "tags": [
-          "auth"
-        ],
-        "summary": "Begin the OIDC authorization-code flow",
-        "x-edition": "enterprise",
-        "security": [],
-        "responses": {
-          "302": {
-            "description": "Redirect to the identity provider"
-          },
-          "404": {
-            "$ref": "#/components/responses/Error"
-          },
-          "501": {
-            "description": "This edition does not implement single sign-on. Distinct from 404, which means the deployment has not configured it.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/auth/password": {
       "post": {
         "tags": [
@@ -865,6 +758,17 @@
           },
           {
             "$ref": "#/components/parameters/Order"
+          },
+          {
+            "$ref": "#/components/parameters/ReferenceSearch"
+          },
+          {
+            "name": "has_steps",
+            "in": "query",
+            "description": "Only chains with at least one step (true), or empty draft chains (false).",
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -1092,6 +996,9 @@
           },
           {
             "$ref": "#/components/parameters/Order"
+          },
+          {
+            "$ref": "#/components/parameters/ReferenceSearch"
           }
         ],
         "responses": {
@@ -1206,6 +1113,9 @@
           },
           {
             "$ref": "#/components/parameters/Order"
+          },
+          {
+            "$ref": "#/components/parameters/ReferenceSearch"
           }
         ],
         "responses": {
@@ -1606,6 +1516,9 @@
           },
           {
             "$ref": "#/components/parameters/Order"
+          },
+          {
+            "$ref": "#/components/parameters/ReferenceSearch"
           }
         ],
         "responses": {
@@ -1847,6 +1760,9 @@
           },
           {
             "$ref": "#/components/parameters/Order"
+          },
+          {
+            "$ref": "#/components/parameters/ReferenceSearch"
           }
         ],
         "responses": {
@@ -1944,6 +1860,9 @@
           },
           {
             "$ref": "#/components/parameters/Order"
+          },
+          {
+            "$ref": "#/components/parameters/ReferenceSearch"
           }
         ],
         "responses": {
@@ -2381,6 +2300,27 @@
           },
           "404": {
             "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/overview": {
+      "get": {
+        "tags": [
+          "operations"
+        ],
+        "summary": "Scoped overview of incidents, deliveries, integrations and on-call users",
+        "description": "All sections use the same permissions and team scope as their list endpoints. A failed section fails the response; counts retain the normal estimated/lower-bound pagination flags.",
+        "responses": {
+          "200": {
+            "description": "Overview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Overview"
+                }
+              }
+            }
           }
         }
       }
@@ -4503,347 +4443,6 @@
         },
         "additionalProperties": true
       },
-      "Report": {
-        "type": "object",
-        "description": "An on-call quality digest (internal/engine/report.go). Generation requires Enterprise with ClickHouse; stored reports remain readable without it. Team-scoped readers cannot access installation-wide reports. required lists the keys Report.toMap() always writes; team_id is null for the installation-wide report. ack/channels/night_load/escalations/noise/late_episodes/exhausted_episodes carry the digest itself.",
-        "required": [
-          "id",
-          "team_id",
-          "period_start",
-          "period_end",
-          "generated_at",
-          "format",
-          "ack",
-          "late_episodes",
-          "channels",
-          "night_load",
-          "escalations",
-          "exhausted_episodes",
-          "noise",
-          "summary_text"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "team_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "period_start": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "period_end": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "generated_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "format": {
-            "type": "string"
-          },
-          "ack": {
-            "type": "object",
-            "required": [
-              "matured",
-              "on_time",
-              "late",
-              "pending",
-              "late_share"
-            ],
-            "properties": {
-              "matured": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "on_time": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "late": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "pending": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "late_share": {
-                "type": "number",
-                "minimum": 0,
-                "maximum": 1
-              }
-            }
-          },
-          "late_episodes": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": [
-                "alert_group_id",
-                "episode_id",
-                "service",
-                "severity",
-                "opened_at",
-                "detail"
-              ],
-              "properties": {
-                "alert_group_id": {
-                  "type": "string"
-                },
-                "episode_id": {
-                  "type": "string"
-                },
-                "service": {
-                  "type": "string"
-                },
-                "severity": {
-                  "type": "string"
-                },
-                "opened_at": {
-                  "type": "string",
-                  "format": "date-time"
-                },
-                "detail": {
-                  "type": "integer"
-                }
-              }
-            }
-          },
-          "channels": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": [
-                "channel",
-                "alert_group_id",
-                "attempts",
-                "delivered",
-                "failed",
-                "skipped",
-                "retries",
-                "top_error_class",
-                "failure_share"
-              ],
-              "properties": {
-                "channel": {
-                  "type": "string"
-                },
-                "alert_group_id": {
-                  "type": "string"
-                },
-                "attempts": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "delivered": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "failed": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "skipped": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "retries": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "top_error_class": {
-                  "type": "string"
-                },
-                "failure_share": {
-                  "type": "number",
-                  "minimum": 0,
-                  "maximum": 1
-                }
-              }
-            }
-          },
-          "night_load": {
-            "type": "object",
-            "required": [
-              "pages_by_hour_utc",
-              "total",
-              "night_share",
-              "night_window_utc"
-            ],
-            "properties": {
-              "pages_by_hour_utc": {
-                "type": "array",
-                "items": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "minItems": 24,
-                "maxItems": 24
-              },
-              "total": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "night_share": {
-                "type": "number",
-                "minimum": 0,
-                "maximum": 1
-              },
-              "night_window_utc": {
-                "type": "string"
-              }
-            }
-          },
-          "escalations": {
-            "type": "object",
-            "required": [
-              "episodes",
-              "exhausted",
-              "reopened_new_alert",
-              "reopened_unresolved",
-              "exhausted_share"
-            ],
-            "properties": {
-              "episodes": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "exhausted": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "reopened_new_alert": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "reopened_unresolved": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "exhausted_share": {
-                "type": "number",
-                "minimum": 0,
-                "maximum": 1
-              }
-            }
-          },
-          "exhausted_episodes": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": [
-                "alert_group_id",
-                "episode_id",
-                "service",
-                "severity",
-                "opened_at",
-                "detail"
-              ],
-              "properties": {
-                "alert_group_id": {
-                  "type": "string"
-                },
-                "episode_id": {
-                  "type": "string"
-                },
-                "service": {
-                  "type": "string"
-                },
-                "severity": {
-                  "type": "string"
-                },
-                "opened_at": {
-                  "type": "string",
-                  "format": "date-time"
-                },
-                "detail": {
-                  "type": "integer"
-                }
-              }
-            }
-          },
-          "noise": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": [
-                "alertname",
-                "service",
-                "alert_group_id",
-                "alerts",
-                "episodes",
-                "alerts_per_episode"
-              ],
-              "properties": {
-                "alertname": {
-                  "type": "string"
-                },
-                "service": {
-                  "type": "string"
-                },
-                "alert_group_id": {
-                  "type": "string"
-                },
-                "alerts": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "episodes": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "alerts_per_episode": {
-                  "type": "number",
-                  "minimum": 0
-                }
-              }
-            }
-          },
-          "summary_text": {
-            "type": "string"
-          }
-        }
-      },
-      "ReportPage": {
-        "type": "object",
-        "required": [
-          "items",
-          "total",
-          "limit",
-          "offset"
-        ],
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Report"
-            }
-          },
-          "total": {
-            "type": "integer"
-          },
-          "limit": {
-            "type": "integer"
-          },
-          "offset": {
-            "type": "integer"
-          },
-          "total_estimated": {
-            "type": "boolean",
-            "description": "Present and true when total is the database planner's estimate rather than an exact count: listings count exactly up to 10 000 rows."
-          },
-          "total_lower_bound": {
-            "type": "boolean",
-            "description": "Present and true when the exact count passed 10 000 and the planner could not estimate beyond that: total is then 10 001, a lower bound (\"10 000+\")."
-          }
-        }
-      },
       "AlertGroup": {
         "type": "object",
         "description": "The required keys are the ones internal/model/alertgroup.go emits unconditionally for every group shape. The optional ones live in the model's Extra map: they are shape-dependent (a direct-paged group has no integration) or nullable state.",
@@ -5935,6 +5534,37 @@
             "format": "date-time"
           }
         }
+      },
+      "Overview": {
+        "type": "object",
+        "required": [
+          "open",
+          "acknowledged",
+          "failed",
+          "retrying",
+          "integrations",
+          "on_call"
+        ],
+        "properties": {
+          "open": {
+            "$ref": "#/components/schemas/AlertGroupPage"
+          },
+          "acknowledged": {
+            "$ref": "#/components/schemas/AlertGroupPage"
+          },
+          "failed": {
+            "$ref": "#/components/schemas/NotificationPage"
+          },
+          "retrying": {
+            "$ref": "#/components/schemas/NotificationPage"
+          },
+          "integrations": {
+            "$ref": "#/components/schemas/IntegrationPage"
+          },
+          "on_call": {
+            "$ref": "#/components/schemas/CurrentOnCall"
+          }
+        }
       }
     },
     "parameters": {
@@ -6107,6 +5737,15 @@
           "type": "string"
         },
         "description": "Список id через запятую: вернуть только эти элементы. Пустой список возвращает пусто."
+      },
+      "ReferenceSearch": {
+        "name": "q",
+        "in": "query",
+        "description": "Case-insensitive literal substring search by name; users also search username and email. Maximum 256 UTF-8 bytes. Applied before pagination and together with team scope.",
+        "schema": {
+          "type": "string",
+          "maxLength": 256
+        }
       }
     },
     "requestBodies": {
@@ -6512,26 +6151,6 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/IntegrationPage"
-            }
-          }
-        }
-      },
-      "Report": {
-        "description": "An on-call quality report (Enterprise)",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Report"
-            }
-          }
-        }
-      },
-      "ReportList": {
-        "description": "A paginated list of on-call quality reports (Enterprise)",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/ReportPage"
             }
           }
         }

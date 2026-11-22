@@ -1,6 +1,6 @@
 import { MantineProvider } from '@mantine/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -65,9 +65,10 @@ function user(id: string, overrides: Record<string, unknown> = {}) {
 }
 
 function renderPage(items: ReturnType<typeof user>[] = [user('alice')]) {
-  get.mockImplementation((path: string) => {
+  get.mockImplementation((path: string, params: { q?: string; limit?: number; offset?: number } = {}) => {
     if (path.startsWith('/api/v1/users')) {
-      return Promise.resolve({ items, total: items.length });
+      const matched = items.filter(item => !params.q || [item.name, item.email, item.username].some(value => value.toLowerCase().includes(params.q!.toLowerCase())));
+      return Promise.resolve({ items: matched.slice(params.offset ?? 0, (params.offset ?? 0) + (params.limit ?? 1000)), total: matched.length });
     }
     return Promise.resolve({ items: [], total: 0 });
   });
@@ -97,20 +98,19 @@ describe('UsersPage', () => {
   it(
     'draws a long list a page at a time and finds a person on a later page',
     async () => {
-      // 624 people drawn at once took the page 3–4.6 s to appear and 6 s to
-      // answer a duty toggle. 120 rows plus four keystrokes is normally well
-      // under the 20s default, but it ran at 20698ms on a loaded CI runner
-      // (23 parallel coverage workers on one pod) — the global timeout is a
-      // budget for ordinary tests, not for this one, so it gets its own.
+      // Change the search in one event: intermediate keystrokes needlessly
+      // redraw the 50-row table under coverage. The real debounce and server
+      // query still run, so this checks searching beyond the first API page.
       renderPage(Array.from({ length: 120 }, (_, i) => user(`p${String(i).padStart(3, '0')}`)));
 
-      expect(await screen.findByText('Person p000')).toBeInTheDocument();
+      expect(await screen.findByText('Person p000', {}, { timeout: 10000 })).toBeInTheDocument();
       expect(screen.queryByText('Person p119')).not.toBeInTheDocument();
-      await userEvent.type(screen.getByLabelText('Search by name'), 'p119');
-      expect(await screen.findByText('Person p119')).toBeInTheDocument();
+      fireEvent.change(screen.getByLabelText('Search by name'), { target: { value: 'p119' } });
+      expect(await screen.findByText('Person p119', {}, { timeout: 10000 })).toBeInTheDocument();
       expect(screen.queryByText('Person p000')).not.toBeInTheDocument();
+      expect(get).toHaveBeenCalledWith('/api/v1/users', { limit: 50, offset: 0, q: 'p119' }, expect.any(AbortSignal));
     },
-    35000,
+    45000,
   );
 
   it('shows an empty state rather than a bare table', async () => {

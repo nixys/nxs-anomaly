@@ -93,6 +93,7 @@ describe('AlertGroupsPage', () => {
       expect(get).toHaveBeenCalledWith(
         '/api/v1/alert-groups',
         expect.objectContaining({ status: 'open', sort: 'severity' }),
+        expect.any(AbortSignal),
       ),
     );
     expect(screen.getByTestId('search').textContent).toContain('view=firing');
@@ -223,13 +224,14 @@ describe('AlertGroupsPage', () => {
       expect(get).toHaveBeenCalledWith(
         '/api/v1/alert-groups',
         expect.objectContaining({ status: 'acknowledged' }),
+        expect.any(AbortSignal),
       ),
     );
   });
 
   it('resolves integration ids to names', async () => {
-    renderPage();
-    expect(await screen.findAllByText('Prometheus prod')).not.toHaveLength(0);
+    renderPage([group('grp_1')]);
+    expect(await screen.findByRole('cell', { name: 'Prometheus prod' }, { timeout: 10000 })).toBeInTheDocument();
   });
 
   // The filter state is the thing a responder hands over mid-incident. Keeping
@@ -254,6 +256,7 @@ describe('AlertGroupsPage', () => {
       expect(get).toHaveBeenCalledWith(
         '/api/v1/alert-groups',
         expect.objectContaining({ status: 'resolved', severity: 'critical' }),
+        expect.any(AbortSignal),
       ),
     );
   });
@@ -271,6 +274,7 @@ describe('AlertGroupsPage', () => {
       expect(get).toHaveBeenCalledWith(
         '/api/v1/alert-groups',
         expect.objectContaining({ status: 'open', severity: 'critical' }),
+        expect.any(AbortSignal),
       ),
     );
   });

@@ -46,6 +46,13 @@ spec:
       containers:
         - name: postgresql
           image: {{ .Values.postgresql.image }}
+          {{- with .Values.postgresql.parameters }}
+          args:
+            {{- range $k, $v := . }}
+            - "-c"
+            - {{ printf "%s=%v" $k $v | quote }}
+            {{- end }}
+          {{- end }}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

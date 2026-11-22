@@ -44,9 +44,12 @@ type refCacheEntry struct {
 	loadedAt time.Time
 	items    map[string]map[string]any
 	// verified marks a load made because an id was missing (refSet.require).
-	// What such a load still lacks is gone, so another miss on it does not
-	// reload again until the entry expires.
+	// absent lists the ids that load was made for and still did not find: they
+	// are gone, so another miss on one of them does not reload again until the
+	// entry expires. Only those ids — an id the load was not asked about may
+	// have been created on another replica a moment after it (1.10.3 audit).
 	verified bool
+	absent   map[string]bool
 }
 
 func newRefCache() *refCache {
@@ -85,13 +88,22 @@ func (c *refCache) putEntry(name string, entry refCacheEntry) {
 	c.entries[name] = entry
 }
 
-// verifiedFresh reports whether name was loaded to resolve a miss and has not
-// expired since.
-func (c *refCache) verifiedFresh(name string, now time.Time) bool {
+// verifiedAbsent reports whether every id in missing was already looked up in
+// the database by a verified load of name that has not expired, and was not
+// there. It also returns the ids that load found absent.
+func (c *refCache) verifiedAbsent(name string, missing []string, now time.Time) (bool, map[string]bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	e, ok := c.entries[name]
-	return ok && e.verified && now.Sub(e.loadedAt) <= c.ttl
+	if !ok || !e.verified || now.Sub(e.loadedAt) > c.ttl {
+		return false, nil
+	}
+	for _, id := range missing {
+		if !e.absent[id] {
+			return false, e.absent
+		}
+	}
+	return true, e.absent
 }
 
 func (c *refCache) invalidate(names ...string) {
@@ -215,25 +227,29 @@ func (r *refSet) get(name string) map[string]map[string]any {
 // that reads it is final: "Escalation chain not found" or "Skipped recipient(s)
 // that no longer exist", and nobody is ever paged for that group. So a miss is
 // checked against the database before it is believed. A load made this way is
-// marked verified, so an id that really is gone costs one reload per TTL, not
-// one per alert.
+// marked verified with the ids it did not find, so an id that really is gone
+// costs one reload per TTL, not one per alert — while any other missing id is
+// still looked up.
 func (r *refSet) require(items map[string]map[string]any, name string, ids []string) map[string]map[string]any {
 	if r.err != nil {
 		return items
 	}
-	missing := false
+	var missing []string
 	for _, id := range ids {
 		if _, ok := items[id]; id != "" && !ok {
-			missing = true
-			break
+			missing = append(missing, id)
 		}
 	}
-	if !missing {
+	if len(missing) == 0 {
 		return items
 	}
 	now := time.Now()
-	if r.e.refCache != nil && r.e.refCache.verifiedFresh(name, now) {
-		return items
+	var known map[string]bool
+	if r.e.refCache != nil {
+		var all bool
+		if all, known = r.e.refCache.verifiedAbsent(name, missing, now); all {
+			return items
+		}
 	}
 	fresh, err := r.e.loadRefCollection(r.ctx, name)
 	if err != nil {
@@ -241,7 +257,18 @@ func (r *refSet) require(items map[string]map[string]any, name string, ids []str
 		return items
 	}
 	if r.e.refCache != nil {
-		r.e.refCache.putEntry(name, refCacheEntry{loadedAt: now, items: fresh, verified: true})
+		absent := map[string]bool{}
+		for id := range known {
+			if _, ok := fresh[id]; !ok {
+				absent[id] = true
+			}
+		}
+		for _, id := range missing {
+			if _, ok := fresh[id]; !ok {
+				absent[id] = true
+			}
+		}
+		r.e.refCache.putEntry(name, refCacheEntry{loadedAt: now, items: fresh, verified: true, absent: absent})
 	}
 	return fresh
 }
