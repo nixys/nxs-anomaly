@@ -2,15 +2,20 @@ package tracing
 
 import (
 	"context"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+	collector "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 // withRecorder installs a real SDK provider writing to an in-memory exporter, so
@@ -176,6 +181,9 @@ func TestSamplerFromEnv(t *testing.T) {
 	}{
 		{name: "unset samples everything", arg: "", want: "AlwaysOnSampler"},
 		{name: "ratio", arg: "0.25", want: "TraceIDRatioBased{0.25}"},
+		{name: "zero", arg: "0", want: "TraceIDRatioBased{0}"},
+		{name: "one", arg: "1", want: "TraceIDRatioBased{1}"},
+		{name: "NaN falls back to always-on", arg: "NaN", want: "AlwaysOnSampler"},
 		{name: "unparseable falls back to always-on", arg: "banana", want: "AlwaysOnSampler"},
 		{name: "out of range falls back to always-on", arg: "7", want: "AlwaysOnSampler"},
 		{name: "negative falls back to always-on", arg: "-1", want: "AlwaysOnSampler"},
@@ -249,5 +257,73 @@ func TestServiceResourceNamesTheService(t *testing.T) {
 	}
 	if got["telemetry.sdk.language"] != "go" {
 		t.Errorf("the SDK's own attributes are missing: %v", got)
+	}
+}
+
+func TestInitExportsToConfiguredEndpointWithSpanLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		path string
+	}{
+		{name: "base URL", path: "/v1/traces"},
+		{name: "traces URL takes precedence", path: "/custom/v1/traces"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			exported := make(chan struct{}, 1)
+			receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != tc.path {
+					t.Errorf("export path = %q, want %q", r.URL.Path, tc.path)
+				}
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Errorf("read export: %v", err)
+				}
+				var req collector.ExportTraceServiceRequest
+				if err := proto.Unmarshal(body, &req); err != nil {
+					t.Errorf("decode export: %v", err)
+				}
+				for _, resource := range req.ResourceSpans {
+					for _, scope := range resource.ScopeSpans {
+						for _, span := range scope.Spans {
+							for _, attr := range span.Attributes {
+								if attr.Key == "test.value" && attr.Value.GetStringValue() == "аé🙂" {
+									exported <- struct{}{}
+									w.WriteHeader(http.StatusOK)
+									return
+								}
+							}
+						}
+					}
+				}
+				t.Error("export did not contain the truncated test attribute")
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer receiver.Close()
+			previous := otel.GetTracerProvider()
+			defer otel.SetTracerProvider(previous)
+			t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", receiver.URL)
+			t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
+			t.Setenv("OTEL_EXPORTER_OTLP_TRACES_COMPRESSION", "none")
+			t.Setenv("OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT", "3")
+			t.Setenv("OTEL_TRACES_SAMPLER_ARG", "1")
+			if tc.path != "/v1/traces" {
+				t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", receiver.URL+tc.path)
+			}
+
+			shutdown, err := Init(t.Context(), "test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, span := Start(t.Context(), "probe", attribute.String("test.value", "аé🙂б"))
+			span.End()
+			if err := shutdown(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-exported:
+			default:
+				t.Error("collector received no span with the expected attribute")
+			}
+		})
 	}
 }

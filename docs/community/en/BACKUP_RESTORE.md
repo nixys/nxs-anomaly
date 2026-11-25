@@ -1,17 +1,13 @@
 # Backup, restore, upgrade and rollback
 
-All of nxs-anomaly's persistent state lives in **one PostgreSQL database** —
-alerts, alert groups, users, schedules, escalation chains, integrations,
-notification state and the append-only audit trail. The application keeps state
-nowhere else. So the whole disaster-recovery story is the PostgreSQL backup
-story, described below.
+PostgreSQL holds core application state. Back up deployment configuration and secrets separately, along with adapter SQLite state when using OpenCVE.
 
 ## Recovery targets
 
 | Target | Goal | How it is met |
 |---|---|---|
 | **RPO** (maximum data loss) | ≤ 5 min | Continuous WAL archiving / PITR, or a managed instance with PITR granularity ≤ 5 min. A nightly `pg_dump` alone is **not enough**. |
-| **RTO** (time to service restored) | ≤ 30 min | Measured from the incident to the moment **`/readiness` reports `database` and `worker` = ok** — a restored database nobody can be paged from is not a service. The automated drill measures this on every run and fails if the budget is exceeded. |
+| **RTO** (time to service restored) | ≤ 30 min | Measured from the incident to the moment **`/api/v1/readiness` reports `database` and `worker` = ok** — a restored database nobody can be paged from is not a service. The automated drill measures this on every run and fails if the budget is exceeded. |
 
 RPO is a property of **how often you copy**, not of how fast you restore: a daily
 dump gives an RPO of up to 24 hours no matter how quick the restore is. To stay
@@ -24,14 +20,12 @@ version-independent secondary option.
 ### Option A — managed PostgreSQL (recommended for production)
 
 Turn on the provider's automatic backups and PITR with retention covering your
-recovery window, and set the PITR granularity to ≤ 5 minutes. Nothing
-application-specific is required: there is no state outside the database.
+recovery window, and set the PITR granularity to ≤ 5 minutes.
 
 ### Option B — self-managed PITR
 
 Archive WAL continuously (`archive_mode=on`, `archive_command=…` to object
-storage) plus a periodic base backup (`pg_basebackup`). That is what gives an RPO
-of ≤ 5 minutes on a self-managed instance.
+storage) plus a periodic base backup (`pg_basebackup`). Measure archiving lag to verify the five-minute target.
 
 ### Option C — a logical dump (portable; always keep one)
 
@@ -51,9 +45,7 @@ operator's procedure; the application honestly lists backups under
 `out_of_scope` in the erasure response. See
 [DATA_INVENTORY.md](DATA_INVENTORY.md).
 
-> Secrets and configuration are **not** in the database — they come from a
-> Kubernetes Secret and ConfigMap (see the Helm chart). Back them up through your
-> usual cluster or GitOps process; a database backup does not contain them.
+Back up Kubernetes Secrets and ConfigMaps or their GitOps and secret-store sources. PostgreSQL dumps can contain legacy inline integration secrets. Encrypt backups and restrict access.
 
 ### Telling nxs-anomaly that a backup exists
 
@@ -80,9 +72,21 @@ backup job already has access to a database dump, which is the greater privilege
 anyway.
 
 Readiness treats the backup as a **blocker** if none was ever reported or the
-last one is older than 26 hours — the RPO above plus room for a night job that
-ran late. A pilot deliberately running without backups can record that decision
+last one is older than 26 hours. A pilot deliberately running without backups can record that decision
 on the readiness page rather than quietly ignoring the warning.
+
+### Verify the RPO and recover adapter state
+
+The 26-hour check measures the age of the backup job's report. For a five-minute RPO, monitor the provider's latest recoverable PITR point. For self-managed archiving, set `archive_timeout` with room for WAL transfer and monitor the WAL backlog and failures in `pg_stat_archiver`. Periodically restore an isolated database to a chosen time and confirm a marker written before that point is present.
+
+Compare the counters before and after writing a marker. Investigate rising failures or a latest recoverable point over five minutes behind current writes. Account for idle databases when interpreting timestamps.
+
+```sql
+SELECT archived_count, last_archived_time, failed_count, last_failed_time
+FROM pg_stat_archiver;
+```
+
+When using OpenCVE, pause adapter intake for a coordinated backup, save its SQLite volume and record the matching PostgreSQL recovery point. Retain source batches across the cutover for replay. Restore both stores to the coordinated point. A newer SQLite copy can suppress CVEs lost from PostgreSQL, while an older copy can cause repeat delivery. Compare affected CVEs and subscriptions with group history, recover missing alerts and verify a test delivery before resuming intake.
 
 ## Restore
 
@@ -179,8 +183,7 @@ it with the provider's tooling, then run the readiness-check step from drill 1
 against the restored instance. That combination on the real production topology
 remains a manual DR acceptance step.
 
-Both drills are written to be run **by another person or agent following this
-document** — that is the acceptance bar.
+After each restore, have the on-call engineer check readiness and record the elapsed recovery time.
 
 ## Migrations: the backward-compatibility contract
 

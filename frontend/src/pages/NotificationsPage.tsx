@@ -1,3 +1,5 @@
+import { useReferences, referenceIds } from '../api/hooks';
+import { ReferenceSelect } from '../components/ReferenceSelect';
 import { useState } from 'react';
 import {
   Alert,
@@ -15,7 +17,7 @@ import {
 } from '@mantine/core';
 import { IconPlayerPlay } from '@tabler/icons-react';
 import { Link } from 'react-router';
-import { useAllOf, useDeliveryAttempts, useList, useRunEscalations } from '../api/hooks';
+import { useDeliveryAttempts, useList, useRunEscalations } from '../api/hooks';
 import { NOTIFICATION_TARGET_TYPES, type Notification } from '../api/types';
 import {
   AbsoluteTime,
@@ -56,7 +58,6 @@ export function NotificationsPage() {
   const userId = get('user');
   const [inspecting, setInspecting] = useState<Notification | null>(null);
 
-  const users = useAllOf('users');
   const runEscalations = useRunEscalations();
   const notifications = useList(
     'notifications',
@@ -69,6 +70,8 @@ export function NotificationsPage() {
     },
     { refetchInterval: useVisibleInterval(15_000) },
   );
+
+  const users = useReferences('users', referenceIds(notifications.data, ['user_id']));
 
   const userName = new Map((users.data ?? []).map((user) => [user.id, user.name]));
   const total = notifications.data?.total ?? 0;
@@ -139,12 +142,12 @@ export function NotificationsPage() {
             onChange={(value) => patch({ channel: value })}
             w={160}
           />
-          <Select
+          <ReferenceSelect
             label={t('common.user')}
             placeholder={t('common.any')}
             clearable
             searchable
-            data={(users.data ?? []).map((user) => ({ value: user.id, label: user.name }))}
+            resource="users"
             value={userId}
             onChange={(value) => patch({ user: value })}
             w={220}

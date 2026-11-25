@@ -1,3 +1,4 @@
+import { ReferenceSelect } from '../components/ReferenceSelect';
 import { Link } from 'react-router';
 import {
   Alert,
@@ -8,7 +9,6 @@ import {
   Group,
   List,
   Progress,
-  Select,
   Stack,
   Text,
   ThemeIcon,
@@ -24,7 +24,7 @@ import {
 } from '@tabler/icons-react';
 import { PageHeader } from '../components/common';
 import { api } from '../api/client';
-import { useAllOf, useDebugRoute, useList, useReadiness } from '../api/hooks';
+import { useItem, useDebugRoute, useList, useReadiness } from '../api/hooks';
 import type { AlertGroup } from '../api/types';
 import { useI18n } from '../i18n/I18nProvider';
 import { buildSetupSteps, firstOpenStep, setupProgress, type SetupStep } from './setup-steps';
@@ -41,8 +41,8 @@ function StepCard({ step, index }: { step: SetupStep; index: number }) {
   const Icon = meta.icon;
   return (
     <Card withBorder padding="md">
-      <Group justify="space-between" align="flex-start" wrap="nowrap">
-        <Group align="flex-start" wrap="nowrap" gap="sm">
+      <Group justify="space-between" align="flex-start" className="nxs-setup-step">
+        <Group align="flex-start" wrap="nowrap" gap="sm" className="nxs-setup-step-copy">
           <ThemeIcon color={meta.color} variant="light" size="md" radius="xl">
             <Icon size={16} />
           </ThemeIcon>
@@ -67,7 +67,7 @@ function StepCard({ step, index }: { step: SetupStep; index: number }) {
             )}
           </div>
         </Group>
-        <Group gap="xs" wrap="nowrap">
+        <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
           <Badge color={meta.color} variant="light">
             {t(meta.labelKey)}
           </Badge>
@@ -159,7 +159,7 @@ function RealTest({ integrationKey }: { integrationKey: string | null }) {
 
   const group = useQuery<AlertGroup | null>({
     queryKey: ['setup-test', 'group', groupId],
-    queryFn: () => api.get<AlertGroup>(`/api/v1/alert-groups/${groupId}`),
+    queryFn: ({ signal }) => api.get<AlertGroup>(`/api/v1/alert-groups/${groupId}`, undefined, signal),
     enabled: Boolean(groupId),
     refetchInterval: stillPolling ? 2000 : false,
   });
@@ -279,15 +279,11 @@ function RealTest({ integrationKey }: { integrationKey: string | null }) {
  * delivers through a live provider — proving the path a dry run cannot.
  */
 function TestAlert({ step, index }: { step: SetupStep; index: number }) {
-  const integrations = useAllOf('integrations');
-  const [key, setKey] = useState<string | null>(null);
+  const [integrationId, setIntegrationId] = useState<string | null>(null);
+  const integration = useItem('integrations', integrationId ?? undefined);
+  const key = integration.data?.key;
   const debug = useDebugRoute();
   const { t } = useI18n();
-
-  const options = (integrations.data ?? []).map((integration) => ({
-    value: String(integration.key),
-    label: `${integration.name} (${integration.key})`,
-  }));
 
   const send = () => {
     if (!key) return;
@@ -308,12 +304,12 @@ function TestAlert({ step, index }: { step: SetupStep; index: number }) {
             {t(step.descriptionKey)}
           </Text>
         </div>
-        <Select
+        <ReferenceSelect
           label={t('common.integration')}
           placeholder={t('setup.pickIntegration')}
-          data={options}
-          value={key}
-          onChange={setKey}
+          resource="integrations"
+          value={integrationId}
+          onChange={setIntegrationId}
           searchable
         />
 
@@ -344,7 +340,7 @@ function TestAlert({ step, index }: { step: SetupStep; index: number }) {
         <Text size="xs" c="dimmed" mt={-8}>
           {t('setup.realTestDescription')}
         </Text>
-        <RealTest integrationKey={key} />
+        <RealTest integrationKey={key ?? null} />
       </Stack>
     </Card>
   );
@@ -353,18 +349,18 @@ function TestAlert({ step, index }: { step: SetupStep; index: number }) {
 export function SetupPage() {
   const { t, plural } = useI18n();
   const readiness = useReadiness();
-  const users = useAllOf('users');
-  const teams = useAllOf('teams');
-  const schedules = useAllOf('schedules');
-  const chains = useAllOf('escalation-chains');
-  const integrations = useAllOf('integrations');
+  const users = useList('users', { limit: 1 });
+  const teams = useList('teams', { limit: 1 });
+  const schedules = useList('schedules', { limit: 1 });
+  const chains = useList('escalation-chains', { limit: 1, has_steps: true });
+  const integrations = useList('integrations', { limit: 1 });
 
   const steps = buildSetupSteps(readiness.data, {
-    teams: teams.data?.length ?? 0,
-    users: users.data?.length ?? 0,
-    schedules: schedules.data?.length ?? 0,
-    hasNonEmptyChain: (chains.data ?? []).some((c) => (c.steps?.length ?? 0) > 0),
-    integrations: integrations.data?.length ?? 0,
+    teams: teams.data?.total ?? 0,
+    users: users.data?.total ?? 0,
+    schedules: schedules.data?.total ?? 0,
+    hasNonEmptyChain: (chains.data?.total ?? 0) > 0,
+    integrations: integrations.data?.total ?? 0,
   });
   const progress = setupProgress(steps);
   const next = firstOpenStep(steps);

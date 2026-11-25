@@ -1,10 +1,11 @@
+import { useReferences, referenceIds } from '../api/hooks';
+import { ReferenceMultiSelect } from '../components/ReferenceSelect';
 import { useState } from 'react';
 import {
   Badge,
   Button,
   Group,
   Modal,
-  MultiSelect,
   Paper,
   Stack,
   Table,
@@ -13,10 +14,10 @@ import {
   Textarea,
 } from '@mantine/core';
 import { IconPlus } from '@tabler/icons-react';
-import { useAllOf, useCreate, useDelete, useFullList } from '../api/hooks';
+import { useCreate, useDelete } from '../api/hooks';
 import type { MaintenanceWindow } from '../api/types';
 import { AbsoluteTime, ConfirmDeleteButton, PageHeader, ProvisionedBadge, QueryState } from '../components/common';
-import { ListPager, ListSearch, usePagedList } from '../components/PagedList';
+import { ListPager, ListSearch, useReferencePage } from '../components/PagedList';
 import { RoleNotice, useCan } from '../auth/permissions';
 import { useI18n } from '../i18n/I18nProvider';
 
@@ -28,10 +29,10 @@ import { useI18n } from '../i18n/I18nProvider';
 export function MaintenancePage() {
   const { t } = useI18n();
   const canEdit = useCan('edit');
-  const windows = useFullList('maintenance-windows');
-  const rows = usePagedList(windows.data?.items, ['name']);
+  const windows = useReferencePage('maintenance-windows');
+  const rows = windows.rows;
   const remove = useDelete('maintenance-windows');
-  const integrations = useAllOf('integrations');
+  const integrations = useReferences('integrations', referenceIds(windows.data, ['integration_ids']));
   const [creating, setCreating] = useState(false);
 
   const integrationName = new Map(
@@ -162,7 +163,7 @@ function StateBadge({ window }: { window: MaintenanceWindow }) {
 
 function CreateWindowModal({ opened, onClose }: { opened: boolean; onClose: () => void }) {
   const create = useCreate('maintenance-windows');
-  const integrations = useAllOf('integrations');
+
   const [name, setName] = useState('');
   const [reason, setReason] = useState('');
   const [integrationIds, setIntegrationIds] = useState<string[]>([]);
@@ -213,13 +214,10 @@ function CreateWindowModal({ opened, onClose }: { opened: boolean; onClose: () =
           autosize
           minRows={2}
         />
-        <MultiSelect
+        <ReferenceMultiSelect
           label={t('nav.integrations')}
           description={t('maintenance.sourcesDescription')}
-          data={(integrations.data ?? []).map((integration) => ({
-            value: integration.id,
-            label: integration.name,
-          }))}
+          resource="integrations"
           value={integrationIds}
           onChange={setIntegrationIds}
           searchable

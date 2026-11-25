@@ -1,3 +1,5 @@
+import { useReferences, referenceIds } from '../api/hooks';
+import { ReferenceMultiSelect, ReferenceSelect } from '../components/ReferenceSelect';
 import { useEffect, useState } from 'react';
 import {
   ActionIcon,
@@ -30,7 +32,6 @@ import {
 } from '@tabler/icons-react';
 import { Link, useParams } from 'react-router';
 import {
-  useAllOf,
   useCreateOverride,
   useDeleteOverride,
   useItem,
@@ -71,13 +72,13 @@ export function ScheduleDetailPage() {
   const canEdit = useCan('edit');
   const { id } = useParams<{ id: string }>();
   const schedule = useItem('schedules', id);
-  const users = useAllOf('users');
   const update = useUpdate('schedules');
   const createOverride = useCreateOverride();
   const updateOverride = useUpdateOverride();
   const deleteOverride = useDeleteOverride();
   const onCall = useScheduleOnCall(id);
   const preview = useSchedulePreview(id);
+  const users = useReferences('users', referenceIds([schedule.data, onCall.data, preview.data], ['user_id', 'user_ids', 'participant_ids']));
 
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [rotation, setRotation] = useState<Rotation>(emptyRotation);
@@ -303,10 +304,10 @@ export function ScheduleDetailPage() {
               </Group>
 
               <SimpleGrid cols={{ base: 1, md: 4 }} spacing="sm">
-                <MultiSelect
+                <ReferenceMultiSelect
                   label={t('schedule.participants')}
                   searchable
-                  data={userOptions}
+                  resource="users"
                   value={rotation.participant_ids}
                   onChange={(value) => patchRotation({ participant_ids: value })}
                 />
@@ -496,10 +497,10 @@ export function ScheduleDetailPage() {
                 {shifts.map((shift, index) => (
                   <Card withBorder key={index} p="md">
                     <SimpleGrid cols={{ base: 1, md: 4 }} spacing="sm">
-                      <Select
+                      <ReferenceSelect
                         label={t('common.user')}
                         searchable
-                        data={userOptions}
+                        resource="users"
                         value={shift.user_id}
                         onChange={(value) => patch(index, { user_id: value ?? '' })}
                       />
@@ -574,7 +575,6 @@ export function ScheduleDetailPage() {
                         scheduleId={id ?? ''}
                         timezone={zone}
                         override={item}
-                        userOptions={userOptions}
                         onSave={(body) =>
                           id &&
                           updateOverride.mutate({ id, overrideId: item.id, body })
@@ -594,10 +594,10 @@ export function ScheduleDetailPage() {
               </Alert>
 
               <Group align="flex-end" wrap="wrap">
-                <Select
+                <ReferenceSelect
                   label={t('common.user')}
                   searchable
-                  data={userOptions}
+                  resource="users"
                   value={override.user_id || null}
                   onChange={(value) => setOverride({ ...override, user_id: value ?? '' })}
                   w={200}
@@ -668,7 +668,6 @@ export function ScheduleDetailPage() {
  */
 function OverrideRow({
   override,
-  userOptions,
   onSave,
   onDelete,
   saving,
@@ -677,7 +676,6 @@ function OverrideRow({
   scheduleId: string;
   timezone?: string;
   override: ScheduleOverride;
-  userOptions: { value: string; label: string }[];
   onSave: (body: Record<string, unknown>) => void;
   onDelete: () => void;
   saving: boolean;
@@ -699,9 +697,9 @@ function OverrideRow({
   return (
     <Table.Tr>
       <Table.Td>
-        <Select
+        <ReferenceSelect
           searchable
-          data={userOptions}
+          resource="users"
           value={draft.user_id}
           onChange={(value) => setDraft({ ...draft, user_id: value ?? '' })}
         />

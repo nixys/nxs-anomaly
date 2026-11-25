@@ -38,7 +38,7 @@ describe('reading a whole collection', () => {
     await waitFor(() => expect(result.current.data).toBeDefined());
     expect(result.current.data!.items).toHaveLength(1001);
     expect(result.current.data!.total).toBe(1001);
-    expect(get).toHaveBeenCalledWith('/api/v1/users', { limit: 1000, offset: 1000 });
+    expect(get).toHaveBeenCalledWith('/api/v1/users', { limit: 1000, offset: 1000 }, expect.any(AbortSignal));
   });
 
   it('useAllOf, which feeds the selects, reads past the first 1000 too', async () => {
@@ -68,4 +68,36 @@ describe('reading a whole collection', () => {
     expect(result.current.data!.items).toHaveLength(2);
     expect(get).toHaveBeenCalledTimes(1);
   });
+});
+
+
+it('shares reference requests between a list and its selects', async () => {
+  twoPages();
+  const { result } = renderHook(() => ({ list: useFullList('users'), options: useAllOf('users') }), { wrapper });
+  await waitFor(() => expect(result.current.list.data?.items).toHaveLength(1001));
+  expect(result.current.options.data).toBe(result.current.list.data?.items);
+  expect(get).toHaveBeenCalledTimes(2);
+});
+
+it('continues full pages when the server omits total', async () => {
+  get.mockResolvedValueOnce({ items: Array.from({ length: 1000 }, (_, i) => ({ id: String(i) })) });
+  get.mockResolvedValueOnce({ items: [{ id: 'last' }] });
+  const { result } = renderHook(() => useAllOf('users'), { wrapper });
+  await waitFor(() => expect(result.current.data).toHaveLength(1001));
+});
+
+it('aborts an abandoned collection read and never starts its next page', async () => {
+  let finish!: (page: unknown) => void;
+  let signal!: AbortSignal;
+  get.mockImplementation((_path, _params, requestSignal) => {
+    signal = requestSignal;
+    return new Promise(resolve => { finish = resolve; });
+  });
+  const { unmount } = renderHook(() => useAllOf('users'), { wrapper });
+  await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+  unmount();
+  expect(signal.aborted).toBe(true);
+  finish({ items: Array.from({ length: 1000 }, (_, i) => ({ id: String(i) })), total: 2000 });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(get).toHaveBeenCalledTimes(1);
 });

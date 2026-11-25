@@ -100,6 +100,7 @@ describe('MaintenancePage', () => {
   it('names the integrations a window covers', async () => {
     renderPage([windowAt('now', -1, 1, { integration_ids: ['int-1', 'int-2'] })]);
 
+    await screen.findByText('prod exporter');
     const [first] = await rows();
     // Raw ids here would make the blast radius unreadable at the moment it
     // matters — which is while the window is open and something is quiet.

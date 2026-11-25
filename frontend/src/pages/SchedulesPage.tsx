@@ -1,3 +1,5 @@
+import { useReferences, referenceIds } from '../api/hooks';
+import { ReferenceSelect } from '../components/ReferenceSelect';
 import { useState } from 'react';
 import {
   ActionIcon,
@@ -6,7 +8,6 @@ import {
   Group,
   Modal,
   Paper,
-  Select,
   Stack,
   Table,
   Text,
@@ -15,9 +16,9 @@ import {
 } from '@mantine/core';
 import { IconCalendarPlus, IconSettings } from '@tabler/icons-react';
 import { Link } from 'react-router';
-import { useAllOf, useCreate, useDelete, useFullList, useScheduleCoverage } from '../api/hooks';
+import { useCreate, useDelete, useScheduleCoverage } from '../api/hooks';
 import { ConfirmDeleteButton, PageHeader, ProvisionedBadge, QueryState } from '../components/common';
-import { ListPager, ListSearch, usePagedList } from '../components/PagedList';
+import { ListPager, ListSearch, useReferencePage } from '../components/PagedList';
 import type { ScheduleCoverageItem } from '../api/types';
 import { RoleNotice, useCan } from '../auth/permissions';
 import { useI18n } from '../i18n/I18nProvider';
@@ -26,9 +27,9 @@ import { EMPTY_VALUE } from '../i18n/format';
 export function SchedulesPage() {
   const { t } = useI18n();
   const canEdit = useCan('edit');
-  const schedules = useFullList('schedules');
-  const rows = usePagedList(schedules.data?.items, ['name']);
-  const teams = useAllOf('teams');
+  const schedules = useReferencePage('schedules');
+  const rows = schedules.rows;
+  const teams = useReferences('teams', referenceIds(schedules.data, ['team_id']));
   const coverage = useScheduleCoverage();
   const remove = useDelete('schedules');
   const [creating, setCreating] = useState(false);
@@ -200,7 +201,7 @@ function CoverageCell({
 
 function CreateScheduleModal({ opened, onClose }: { opened: boolean; onClose: () => void }) {
   const create = useCreate('schedules');
-  const teams = useAllOf('teams');
+
   const [name, setName] = useState('');
   const [timezone, setTimezone] = useState('UTC');
   const [teamId, setTeamId] = useState<string | null>(null);
@@ -220,12 +221,12 @@ function CreateScheduleModal({ opened, onClose }: { opened: boolean; onClose: ()
           value={timezone}
           onChange={(event) => setTimezone(event.currentTarget.value)}
         />
-        <Select
+        <ReferenceSelect
           label={t('common.team')}
           placeholder={t('common.none')}
           clearable
           searchable
-          data={(teams.data ?? []).map((team) => ({ value: team.id, label: team.name }))}
+          resource="teams"
           value={teamId}
           onChange={setTeamId}
         />

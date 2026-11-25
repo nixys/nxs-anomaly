@@ -92,8 +92,8 @@ log "Loading images into kind"
 # Pre-load the bundled Postgres and helm-test images too, so kind nodes never
 # have to pull them (faster, and robust on a flaky network).
 docker pull postgres:17-alpine >/dev/null 2>&1 || true
-docker pull curlimages/curl:8.10.1 >/dev/null 2>&1 || true
-kind load docker-image nxs-anomaly:e2e nxs-anomaly-frontend:e2e postgres:17-alpine curlimages/curl:8.10.1 --name "${CLUSTER}"
+docker pull curlimages/curl:8.23.0 >/dev/null 2>&1 || true
+kind load docker-image nxs-anomaly:e2e nxs-anomaly-frontend:e2e postgres:17-alpine curlimages/curl:8.23.0 --name "${CLUSTER}"
 
 log "helm lint"
 helm lint "${CHART_DIR}" -f "${VALUES}"

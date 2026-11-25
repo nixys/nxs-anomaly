@@ -468,3 +468,55 @@ curl https://nxs-anomaly.example.com/metrics
 
 Starting several instances in parallel is safe: the migration runner is protected
 by the advisory lock.
+
+## On-premise (bare-metal or virtual machine)
+
+Start with the checkout and generated environment files from [Quick start](INSTALLATION.md).
+
+For installation without containers, run the following from the public Community
+checkout root. PostgreSQL must already be running and accept password-authenticated
+connections on `127.0.0.1:5432`; the commands create a new database and service account.
+
+```bash
+go build -mod=vendor -trimpath \
+  -ldflags="-s -w -X github.com/nixys/nxs-anomaly/internal/server.Version=v$(cat VERSION)" \
+  -o .local/nxs-anomaly ./cmd/nxs-anomaly
+(cd frontend && npm ci && npm run build)
+
+sudo useradd --system --create-home --home-dir /var/lib/nxs-anomaly \
+  --shell /usr/sbin/nologin nxs-anomaly
+sudo install -m 0755 .local/nxs-anomaly /usr/local/bin/nxs-anomaly
+sudo install -d -m 0755 /var/www/nxs-anomaly
+sudo cp -a frontend/dist/. /var/www/nxs-anomaly/
+sudo chmod -R a+rX /var/www/nxs-anomaly
+
+. .local/credentials.env
+
+sudo -u postgres psql -v ON_ERROR_STOP=1 -v db_password="$POSTGRES_PASSWORD" <<'SQL'
+CREATE ROLE nxs_anomaly WITH LOGIN PASSWORD :'db_password';
+CREATE DATABASE nxs_anomaly OWNER nxs_anomaly;
+SQL
+
+sudo install -d -m 0700 /etc/nxs-anomaly
+sudo install -m 0600 .local/credentials.env .local/delivery.env \
+  .local/on-premise.env /etc/nxs-anomaly/
+
+sudo install -m 0644 deploy/quickstart/nxs-anomaly-*.service /etc/systemd/system/
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now nxs-anomaly-api nxs-anomaly-worker
+
+sudo install -m 0644 deploy/quickstart/nginx.conf /etc/nginx/conf.d/nxs-anomaly.conf
+sudo nginx -t
+sudo systemctl enable --now nginx
+sudo systemctl reload nginx
+```
+
+Open [http://localhost:3100](http://localhost:3100) and sign in as `admin` with
+the password from `.local/credentials.env`.
+
+For a remote VM or Docker host, open a tunnel **on your workstation**:
+
+```bash
+ssh -L 3100:127.0.0.1:3100 user@your-server
+```

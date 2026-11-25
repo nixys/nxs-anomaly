@@ -103,7 +103,7 @@ export function ScheduleCalendar({
                           top: 0,
                           bottom: 0,
                           borderRadius: 3,
-                          background: covered
+                          backgroundColor: covered
                             ? `var(--mantine-color-${colorFor(piece.segment.user_ids)}-6)`
                             : 'transparent',
                           // An override is the same shift covered by somebody
@@ -149,7 +149,7 @@ export function ScheduleCalendar({
             h={10}
             style={{
               borderRadius: 2,
-              background: 'var(--mantine-color-blue-6)',
+              backgroundColor: 'var(--mantine-color-blue-6)',
               backgroundImage:
                 'repeating-linear-gradient(45deg, rgba(255,255,255,.35) 0 3px, transparent 3px 6px)',
             }}

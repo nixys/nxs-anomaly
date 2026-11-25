@@ -174,8 +174,7 @@ groups:
         annotations:
           summary: "nxs-anomaly target {{ $labels.job }} down on {{ $labels.instance }}"
           description: >
-            Prometheus cannot scrape this nxs-anomaly process. If it is the
-            worker, nobody is being paged. Route this alert around nxs-anomaly.
+            Prometheus cannot scrape this nxs-anomaly process. Check the target and the network path from Prometheus. Route this alert around nxs-anomaly.
 
       # No worker anywhere completes cycles: all are down, crash-looping or not
       # scraped at all. "> 0" matters: an API started with --no-scheduler
@@ -188,8 +187,7 @@ groups:
         annotations:
           summary: "No nxs-anomaly worker is completing cycles"
           description: >
-            No scraped process reports a completed worker cycle. Escalation and
-            delivery are stopped. Route this alert around nxs-anomaly.
+            No scraped process reports a completed worker cycle. Check worker availability and scrape discovery. Route this alert around nxs-anomaly.
 
       # Always firing, by design. It proves the Prometheus → Alertmanager →
       # receiver path works: send it to an external dead-man's switch, which
@@ -202,7 +200,7 @@ groups:
           summary: "Alerting pipeline heartbeat (always firing)"
           description: >
             Send to a dead-man's-switch receiver with a short repeat_interval.
-            Its silence means Prometheus or Alertmanager is down.
+            If heartbeats stop, check rule evaluation, the Alertmanager route and webhook delivery.
 
       # A delivery channel has degraded in latency (p95), possibly without errors.
       - alert: DeliveryLatencyHigh
@@ -315,6 +313,7 @@ route:
   routes:
     - matchers: ['alertname="Watchdog"']
       receiver: deadmans-switch
+      group_interval: 1m
       repeat_interval: 1m
     - matchers: ['alertname=~"NxsAnomalyTargetDown|WorkerAbsent|DatabaseUnavailable|WorkerCycleStuck"']
       receiver: ops-direct          # Telegram/e-mail/SMS directly, not nxs-anomaly
@@ -348,9 +347,9 @@ calibrated against your load (see [CAPACITY.md](CAPACITY.md)).
 | SLI | Definition | PromQL | Target SLO |
 |---|---|---|---|
 | Ingest availability | the share of ingest webhook requests without a 5xx | `1 - (sum(rate(nxs_anomaly_http_requests_total{handler="webhook",code=~"5.."}[5m])) / sum(rate(nxs_anomaly_http_requests_total{handler="webhook"}[5m])))` | ≥ 99.9% |
-| Ingest→first-attempt latency | p95 of the delay from accepting an alert to the first delivery attempt | `histogram_quantile(0.95, sum by (le) (rate(nxs_anomaly_ingest_duration_seconds_bucket[5m]))) + nxs_anomaly_oldest_pending_delivery_age_seconds` | p95 < 10s |
+| Queue delay | p95 from enqueue to the first delivery attempt, by channel | `histogram_quantile(0.95, sum by (channel, le) (rate(nxs_anomaly_notification_first_attempt_delay_seconds_bucket[10m])))` | p95 < 10s |
 | Successful delivery ratio (per provider) | the share of successful deliveries per channel | `sum by (provider) (rate(nxs_anomaly_notifications_delivered_by_provider_total[30m])) / (sum by (provider) (rate(nxs_anomaly_notifications_delivered_by_provider_total[30m])) + sum by (provider) (rate(nxs_anomaly_delivery_errors_by_provider_total[30m])))` | ≥ 99% |
-| Acknowledge API latency | p95 of acknowledge requests | `histogram_quantile(0.95, sum by (le) (rate(nxs_anomaly_http_request_duration_seconds_bucket{handler="api"}[5m])))` | p95 < 2s |
+| Responder API latency | p95 for acknowledge and resolve requests | `histogram_quantile(0.95, sum by (le) (rate(nxs_anomaly_http_request_duration_seconds_bucket{handler="respond"}[10m])))` | p95 < 2s |
 
 A direct measurement of ingest→first-attempt, without decomposing it into two
 metrics, comes from the load harness: it times the gap between ingest and the
@@ -363,13 +362,7 @@ first `delivery_attempt` and prints p50/p95/p99. See [CAPACITY.md](CAPACITY.md).
 
 ### Error budget and burn rate
 
-Every threshold alert above compares an instantaneous rate against a constant.
-Such a threshold cannot tell a two-minute spike from a week of slow bleeding: the
-spike wakes somebody and passes on its own, while the bleeding never crosses the
-threshold and quietly eats the whole SLO. So the `nxs-anomaly.slo` group in
-[prometheus-rules.yaml](../../prometheus-rules.yaml) alerts not on errors but on
-the **rate at which the error budget is being spent** (Google SRE Workbook,
-chapter 5).
+The recording rules calculate the fraction of failed requests or delivery attempts over several windows. The alerting rules compare these fractions with the error budget. See the [SRE Workbook](https://sre.google/workbook/alerting-on-slos/).
 
 The budget is `1 - SLO`. The burn rate is the observed error ratio divided by
 the budget. A burn rate of 1 spends a monthly budget in exactly 30 days; 14.4
@@ -393,11 +386,7 @@ The ratios are computed by the recording rules
 `nxs_anomaly:delivery_errors:ratio_rate*`, which double as ready dashboard
 panels.
 
-What these rules do **not** catch: with no traffic the ratio is `0/0 = NaN`,
-every comparison against NaN is false, and a quiet instance stays quiet instead
-of alerting about a division by zero. The flip side is that ingest stopping
-altogether is invisible to a burn rate; `WorkerCycleStuck` and
-`DatabaseUnavailable` cover that.
+With no observed requests or delivery attempts, the error ratio is undefined. Check target discovery, worker cycles and database connectivity separately. A synthetic webhook can test whether the ingest endpoint accepts requests.
 
 `DeliverySuccessRatioLow` is kept deliberately: it catches a dip below 99% over
 a 30-minute window, so it fires earlier than the slow tier but without reference
@@ -431,9 +420,9 @@ The main panels:
 | Delivery latency p95 by channel | `histogram_quantile(0.95, sum by(channel,le)(rate(nxs_anomaly_notification_delivery_duration_seconds_bucket[5m])))` |
 | Dead-letters/s by channel | `sum by(channel)(rate(nxs_anomaly_dead_letter_events_total[5m]))` |
 | Short-circuited deliveries/s | `sum by(channel)(rate(nxs_anomaly_delivery_short_circuited_total[5m]))` |
+| Ingest latency p95 | `histogram_quantile(0.95, rate(nxs_anomaly_ingest_duration_seconds_bucket[5m]))` |
 
 There is no universal alert rule for retention: a zero `increase` can mean
 either that the sweep has stopped or that there are no rows past the cutoff.
 Read it against the horizons you chose and the size of the tables; readiness
 warns separately when no policy has been chosen.
-| Ingest latency p95 | `histogram_quantile(0.95, rate(nxs_anomaly_ingest_duration_seconds_bucket[5m]))` |

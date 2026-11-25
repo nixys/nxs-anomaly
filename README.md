@@ -1,6 +1,7 @@
 # nxs-anomaly
 
 [![GitHub release](https://img.shields.io/github/v/release/nixys/nxs-anomaly)](https://github.com/nixys/nxs-anomaly/releases)
+[![Documentation](https://img.shields.io/badge/docs-latest-blue)](https://nxs-anomaly.io/en/ce/)
 [![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/nxs-anomaly)](https://artifacthub.io/packages/helm/nxs-anomaly/nxs-anomaly)
 [![Terraform Registry](https://img.shields.io/badge/Terraform-Registry-7B42BC?logo=terraform&logoColor=white)](https://registry.terraform.io/providers/nixys/nxs-anomaly/latest)
 [![CI](https://github.com/nixys/nxs-anomaly/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nixys/nxs-anomaly/actions/workflows/ci.yml)
@@ -85,17 +86,22 @@ guides below for a real deployment.
 
 | Deployment | Instructions and ready-to-use files |
 |---|---|
-| Bare metal / VM without containers | [On-premise installation](docs/community/en/INSTALLATION.md#on-premise-bare-metal-or-virtual-machine): build, systemd units, nginx and env presets |
+| Bare metal / VM without containers | [On-premise installation](docs/community/en/DEPLOY.md#on-premise-bare-metal-or-virtual-machine): build, systemd units, nginx and env presets |
 | Docker Compose | [Compose installation](docs/community/en/INSTALLATION.md#docker-compose): ports, health checks, transport configuration and persistent data |
 | Kubernetes | [Kubernetes installation](docs/community/en/INSTALLATION.md#kubernetes): Helm, Secrets and explicit StorageClass |
 | Configuration files | [Preset catalogue](deploy/quickstart/README.md) |
 
 ## Documentation
 
+Documentation website: [English](https://nxs-anomaly.io/en/ce/) · [Русский](https://nxs-anomaly.io/ru/ce/).
+The complete CE manuals are also available in this repository in both languages.
+
 | I want to… | Read |
 |---|---|
 | Install and send an alert | [Setup](https://github.com/nixys/nxs-anomaly/blob/main/docs/community/en/SETUP.md) |
 | Configure channels, schedules and routing | [Configuration](https://github.com/nixys/nxs-anomaly/blob/main/docs/community/en/CONFIGURATION.md) |
+| Connect an alert source, delivery channel or external system | [Integration catalogue](docs/community/en/INTEGRATIONS.md) |
+| Route OpenCVE notifications to Telegram | [OpenCVE guide](docs/community/en/OPENCVE.md) |
 | Understand grouping and escalation | [Alert processing](https://github.com/nixys/nxs-anomaly/blob/main/docs/community/en/ALERT_PROCESSING.md) |
 | Automate through the API | [API reference](https://github.com/nixys/nxs-anomaly/blob/main/docs/community/en/API.md) · [OpenAPI](https://github.com/nixys/nxs-anomaly/blob/main/docs/openapi.json) |
 | Deploy on Kubernetes | [Helm chart](https://github.com/nixys/nxs-anomaly/blob/main/deploy/helm/nxs-anomaly/README.md) |
@@ -136,7 +142,7 @@ For support and feedback please contact me:
 
 For more information about the product and Enterprise edition:
 
-- Website: [nixys.ru](https://dev-new.nixys.ru/tools/nxs-anomaly/)
+- Website: [nxs-anomaly.io](https://nxs-anomaly.io/)
 
 For news and discussions subscribe the channels:
 

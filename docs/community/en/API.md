@@ -4,7 +4,7 @@ nxs-anomaly exposes two HTTP surfaces:
 
 1. **Alert ingest** — `/integrations/v1/*`, `/v2/alert/pool` (authenticated by the
    integration key in the URL)
-2. **The management API** — `/api/v1/*` (authenticated by an API key) — **the native
+2. **The management API** — `/api/v1/*` (user session or scoped API key) — **the native
    contract**
 
 Plus the operational endpoints: `/live`, `/health`, `/ready`, `/metrics`.
@@ -240,6 +240,8 @@ When degraded: `status: "degraded"` and `db_ok: false` alongside `db_error`.
 | POST | `/integrations/v1/elasticsearch/{key}` | Kibana Rules, Elasticsearch Watcher |
 | POST | `/v2/alert/pool` | The legacy NXS pool (authenticated by the `X-Auth-Key` header) |
 
+The generic webhook accepts an optional `nxs_event_id` string of up to 256 bytes. Reuse it when retrying the same event. For the same integration, an ID whose alert is still stored returns `202` with `{"result":"duplicate"}` without processing the event again. Send distinct IDs for distinct events, even when they share a grouping key.
+
 `{key}` is the integration's routing key. HMAC verification through
 `X-Hub-Signature-256` or `X-Anomaly-Signature` is optional and applies to
 `/integrations/v1/webhook/{key}` when the integration has a `webhook_secret`: the
@@ -308,7 +310,7 @@ one carrying the header `X-Nxs-Anomaly-Provisioner: <name>`. More in
 | POST | `/api/v1/users/{id}/test-notification` — deliver one test notification through the real provider and return the verdict (`{status, provider_status, provider_code?, response?, error?, configured}`); the body is `{channel?}`, defaulting to the first step of the user's `default` policy, otherwise `log`. Admin only. |
 | POST | `/api/v1/users/migrate-notification-policies` — build a `default` policy from the legacy `notification_targets` for every user that lacks one (idempotent). Admin only. |
 
-**Personal notification policies (BETA-031).** A user may have
+**Personal notification policies.** A user may have
 `notification_policies: { default?: Step[], important?: Step[] }`, where each
 `Step` is `{ channel: telegram|email|webhook|call|log, target?: string,
 wait_minutes: int }`. When a policy is set, paging walks the sequence — notify a
@@ -658,3 +660,49 @@ authentication required, `403` a write under read-only access, `404` not found,
 
 Every response carries an `X-Request-ID` header (passed in or generated) for
 correlation with the structured logs.
+## Paginated references and overview
+
+List responses use `{items, total, limit, offset}`. Defaults are `limit=100`
+and `offset=0`; limits are clamped to 1–1000. Empty pages return `items: []`.
+Counts of large collections may be estimates (`total_estimated: true`) or lower
+bounds (`total_lower_bound: true`); do not treat them as an exact last page.
+For a complete traversal, continue until a page contains fewer than `limit` items.
+
+Use `ids=id1,id2` to fetch a named set under the same role and team restrictions.
+With this parameter the limit is capped at 500; split larger sets into batches.
+An explicitly supplied list containing only commas and spaces returns no rows.
+
+`q` is a case-insensitive literal substring search on these collections:
+
+| Endpoint | Fields |
+|---|---|
+| `/api/v1/users` | `name`, `username`, `email` |
+| `/api/v1/teams`, `/api/v1/schedules`, `/api/v1/escalation-chains` | `name` |
+| `/api/v1/integrations`, `/api/v1/maintenance-windows` | `name` |
+
+Whitespace is trimmed. An empty query does not filter; queries longer than 256
+bytes and search on unsupported collections return 400. `%` and `_` are literal
+characters, not wildcard operators. Search combines with `ids`, pagination and
+ordinary scope restrictions.
+
+```bash
+curl "$API/api/v1/users?limit=50&offset=0&q=alice" -H "X-API-Key: $API_KEY"
+curl "$API/api/v1/escalation-chains?limit=1&has_steps=true" -H "X-API-Key: $API_KEY"
+```
+
+`has_steps=true|false` is available only on escalation chains; any other value or
+collection returns 400. It checks whether the chain has a non-empty steps array;
+it does not guarantee successful delivery through that chain.
+
+### Home overview
+
+`GET /api/v1/overview` returns `open`, `acknowledged`, `failed`, `retrying` and
+`integrations` as paginated sections, plus `on_call`. The first four correspond
+to open/acknowledged groups and failed/retry-scheduled notifications. Limits are
+10/1/1/1/8 respectively. Role and team scoping applies to every section.
+
+A failed section fails the response, so partial data is not presented as fresh.
+This is one HTTP response, not a transactionally consistent database snapshot.
+The web overview polls it every 15 seconds; after refresh failure it keeps the
+last successful data and displays a retry action. The OpenAPI `Overview` schema
+is the field-level contract.
