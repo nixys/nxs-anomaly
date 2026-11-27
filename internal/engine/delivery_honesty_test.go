@@ -242,6 +242,12 @@ func TestApplyOutcomeStates(t *testing.T) {
 		t.Errorf("failure status = %q, want retry_scheduled", failedNtf.Status())
 	}
 
+	uncertain := model.WrapNotification(notificationFor("call", "+123", nil))
+	e.applyOutcome(uncertain, failed(amiUnconfirmed, "confirmation lost", 0, ""), ts)
+	if uncertain.Status() != model.NotificationFailed || uncertain.Raw()["next_retry_at"] != nil || uncertain.Raw()["provider_status"] != amiUnconfirmed {
+		t.Fatalf("ambiguous call should dead-letter without retry: %#v", uncertain.Raw())
+	}
+
 	okNtf := model.WrapNotification(notificationFor("webhook", "https://x", nil))
 	e.applyOutcome(okNtf, delivered("http_post", 200, "ok"), ts)
 	if okNtf.Status() != model.NotificationDelivered {

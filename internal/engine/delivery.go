@@ -382,6 +382,10 @@ func (e *Engine) applyOutcome(n model.Notification, res deliveryOutcome, ts stri
 			"notification_id", n.ID(), "channel", n.Channel(),
 			"reason", res.ProviderStatus, "detail", res.Err)
 	default:
+		if res.ProviderStatus == amiUnconfirmed {
+			n.FailWithoutRetry(ts, res.ProviderStatus, res.Err)
+			return
+		}
 		n.ScheduleRetryOrFailAfter(ts, res.Err, e.deliveryCfg.MaxRetries, e.deliveryCfg.RetryDelays, res.RetryAfter)
 	}
 }

@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 
 	"github.com/nixys/nxs-anomaly/internal/authz"
@@ -60,6 +62,7 @@ func (e *Engine) CreateDirectPageGroup(ctx context.Context, payload map[string]a
 // have superseded, and acting on it loses that ingest's updates. The group is
 // resolved under the lock, from the state the mutator loaded.
 type preparedAlert struct {
+	alertID          string
 	payload          map[string]any
 	route            map[string]any
 	labels           map[string]string
@@ -189,6 +192,24 @@ func (e *Engine) ingestAlert(ctx context.Context, integrationKey string, payload
 	if integration == nil {
 		return nil, errNotFound("integration key not found")
 	}
+	var alertID string
+	if eventID, ok := payload["nxs_event_id"]; ok {
+		key, ok := eventID.(string)
+		if !ok || strings.TrimSpace(key) == "" || len(key) > 256 {
+			return nil, errValidation("nxs_event_id must be a non-empty string of at most 256 bytes")
+		}
+		digest := sha256.Sum256([]byte(utils.StrVal(integration, "id") + "\x00" + key))
+		alertID = "alr_" + hex.EncodeToString(digest[:])
+		// Check before running the pipeline so a rule change cannot turn a
+		// retry of an accepted event into a pipeline drop.
+		existing, err := e.store.GetItem(ctx, "alerts", alertID)
+		if err != nil {
+			return nil, err
+		}
+		if existing != nil {
+			return map[string]any{"result": "duplicate"}, nil
+		}
+	}
 	prep, err := e.prepareAlert(ctx, integration, payload)
 	if err != nil {
 		return nil, err
@@ -200,6 +221,7 @@ func (e *Engine) ingestAlert(ctx context.Context, integrationKey string, payload
 		// of looking like an alert that vanished.
 		return map[string]any{"alert": nil, "group": nil, "result": "dropped_by_pipeline"}, nil
 	}
+	prep.alertID = alertID
 	results, err := e.ingestPrepared(ctx, integration, []*preparedAlert{prep})
 	if err != nil {
 		return nil, err
@@ -293,6 +315,12 @@ func (e *Engine) ingestPrepared(ctx context.Context, integration map[string]any,
 			"status":         "open",
 		}},
 	}
+	for _, p := range preps {
+		if p.alertID != "" {
+			// Only single-alert generic webhooks support nxs_event_id.
+			loads = append(loads, store.LoadSpec{Collection: "alerts", Filters: map[string]any{"id": p.alertID}})
+		}
+	}
 	saveCols := []string{
 		"alerts", "alert_groups", "notifications", "chatops_messages", "notification_batches",
 		"notification_policy_runs",
@@ -316,6 +344,11 @@ func (e *Engine) ingestPrepared(ctx context.Context, integration map[string]any,
 
 			results := make([]map[string]any, 0, len(preps))
 			for _, p := range preps {
+				// Recheck under the integration lock to cover concurrent retries.
+				if _, exists := state.Alerts[p.alertID]; exists {
+					results = append(results, map[string]any{"result": "duplicate"})
+					continue
+				}
 				results = append(results, e.ingestOneLocked(state, integration, p, ts, maintenance, addOutbox))
 			}
 			return results, nil
@@ -359,8 +392,12 @@ func (e *Engine) ingestPrepared(ctx context.Context, integration map[string]any,
 // ingestOneLocked applies one prepared alert to the locked state and returns
 // the per-alert ingest result. Must run inside the ingest advisory lock.
 func (e *Engine) ingestOneLocked(state *store.State, integration map[string]any, p *preparedAlert, ts string, maintenance map[string]any, addOutbox func(alert map[string]any, g model.AlertGroup, hasGroup bool)) map[string]any {
+	alertID := p.alertID
+	if alertID == "" {
+		alertID = utils.MakeID("alr")
+	}
 	alert := map[string]any{
-		"id":             utils.MakeID("alr"),
+		"id":             alertID,
 		"integration_id": utils.StrVal(integration, "id"),
 		"route_id":       utils.StrVal(p.route, "id"),
 		"status":         p.status,

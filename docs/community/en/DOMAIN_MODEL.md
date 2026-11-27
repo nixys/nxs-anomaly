@@ -1,8 +1,6 @@
-# The domain model
+# Core concepts
 
-This document describes the main entities of `nxs-anomaly`, how they relate and
-how they live. It reflects the current Go runtime: the domain logic lives in
-`internal/engine`, storage in PostgreSQL through `internal/store`.
+Four objects connect a monitoring event to a responder. An integration accepts the event, a route selects an escalation chain, a schedule identifies the person on call, and a chain step notifies that person. The reference below explains their relationships and the records you can use to reconstruct an incident. [Walk through an example](FIRST_STEPS.md).
 
 ## Overview
 
@@ -48,7 +46,7 @@ indexes and hot-path queries.
 | `notifications` | `nxs_anomaly_notifications` | Delivery tasks and their state |
 | `notification_batches` | `nxs_anomaly_notification_batches` | Deferred batches of notifications |
 | `notification_delivery_attempts` | `nxs_anomaly_notification_delivery_attempts` | The audit of delivery attempts |
-| `notification_policy_runs` | `nxs_anomaly_notification_policy_runs` | Active runs of personal notification policies (BETA-031); ephemeral, `done` ones are pruned |
+| `notification_policy_runs` | `nxs_anomaly_notification_policy_runs` | Active runs of personal notification policies; ephemeral, `done` ones are pruned |
 
 The typed columns are listed in `store.TypedColumns`. When adding a field that
 needs a fast lookup or an index, the migration, `TypedColumns` and `typedValues`
@@ -311,7 +309,7 @@ The key fields:
 When the batch settings are above zero, notifications first land in
 `notification_batches` and are flushed later by the worker cycle.
 
-### Personal notification policies (BETA-031)
+### Personal notification policies
 
 A user may have a `notification_policies` field with the keys `default` and/or
 `important`; each is an ordered list of steps `{channel, target?, wait_minutes}`

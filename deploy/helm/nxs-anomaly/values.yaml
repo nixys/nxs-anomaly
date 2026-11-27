@@ -380,6 +380,12 @@ postgresql:
   resources:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {cpu: 1, memory: 1Gi}
+  # Server settings, passed as `postgres -c name=value`. The image's own default
+  # shared_buffers is 128MB whatever the memory limit; about a quarter of the
+  # limit is the usual starting point, so change both together. A change here
+  # restarts the database pod.
+  parameters:
+    shared_buffers: 256MB
 
 externalPostgres:
   # Provide either a full dsn, or host/port/username/password/database/sslmode.
@@ -497,7 +503,7 @@ prometheusRule:
 # helm test hook (curl the API /health).
 tests:
   enabled: true
-  image: curlimages/curl:8.10.1
+  image: curlimages/curl:8.23.0
   # Post-install acceptance: a second `helm test` pod that drives a real alert
   # through a temporary canary integration — ingest → delivery attempt →
   # acknowledge → resolve → audit — and then deletes everything it created.
@@ -515,3 +521,20 @@ tests:
     # Budget for each of the two waits (the alert group, then the delivery
     # attempt). The second one is bounded below by worker.pollIntervalSeconds.
     timeoutSeconds: 120
+
+# Optional outbound voice gateway. See GUIDE_ASTERISK for the Secret and routing.
+asterisk:
+  enabled: false
+  image: andrius/asterisk:22.11.0_debian-trixie@sha256:d4aa1629e92b24e42c3b4555db8e3b2b54eca29e2c9ce7a56653d4257381e3c4
+  existingSecret: "" # ami-password and sip-password
+  trunkHost: ""
+  trunkPort: 5060
+  username: ""
+  callerID: ""
+  register: true
+  externalAddress: "" # Optional IPv4 address for port-preserving NAT
+  localNet: "" # Local CIDR when using externalAddress
+  providerCIDRs: [] # SIP and media peers, required with networkPolicy.enabled
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {memory: 256Mi}

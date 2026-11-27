@@ -1,3 +1,5 @@
+import { useReferences, referenceIds } from '../api/hooks';
+import { ReferenceSelect } from '../components/ReferenceSelect';
 import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
@@ -21,7 +23,6 @@ import {
 } from '@mantine/core';
 import { IconDeviceFloppy, IconInfoCircle, IconPlus } from '@tabler/icons-react';
 import {
-  useAllOf,
   useChatopsChannels,
   useChatopsMessages,
   useCreateChatopsChannel,
@@ -531,8 +532,8 @@ function ChatopsTab() {
   const { t } = useI18n();
   const channels = useChatopsChannels();
   const messages = useChatopsMessages();
-  const teams = useAllOf('teams');
-  const users = useAllOf('users');
+  const teams = useReferences('teams', referenceIds(channels.data, ['team_id']));
+  const users = useReferences('users', referenceIds(channels.data, ['user_id']));
   const update = useUpdateChatopsChannel();
   const remove = useDeleteChatopsChannel();
   const [creating, setCreating] = useState(false);
@@ -710,8 +711,8 @@ function ChatopsTab() {
 function ChannelModal({ opened, onClose }: { opened: boolean; onClose: () => void }) {
   const { t } = useI18n();
   const create = useCreateChatopsChannel();
-  const teams = useAllOf('teams');
-  const users = useAllOf('users');
+
+
   const [name, setName] = useState('');
   const [platform, setPlatform] = useState('telegram');
   const [teamId, setTeamId] = useState<string | null>(null);
@@ -733,21 +734,21 @@ function ChannelModal({ opened, onClose }: { opened: boolean; onClose: () => voi
           onChange={(value) => setPlatform(value ?? 'telegram')}
           allowDeselect={false}
         />
-        <Select
+        <ReferenceSelect
           label={t('common.team')}
           placeholder={t('common.none')}
           clearable
           searchable
-          data={(teams.data ?? []).map((team) => ({ value: team.id, label: team.name }))}
+          resource="teams"
           value={teamId}
           onChange={setTeamId}
         />
-        <Select
+        <ReferenceSelect
           label={t('common.user')}
           placeholder={t('common.none')}
           clearable
           searchable
-          data={(users.data ?? []).map((user) => ({ value: user.id, label: user.name }))}
+          resource="users"
           value={userId}
           onChange={setUserId}
         />

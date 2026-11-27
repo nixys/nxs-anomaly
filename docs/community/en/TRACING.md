@@ -26,10 +26,13 @@ run a collector in order to run nxs-anomaly.
 | Variable | |
 |---|---|
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | base URL of an OTLP/HTTP collector, e.g. `http://otel-collector:4318`; the SDK appends `/v1/traces` |
-| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | the same, for traces only; takes precedence |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Full traces URL, for example `http://otel-collector:4318/v1/traces`. Takes precedence over the base URL. |
 | `OTEL_SERVICE_NAME` | the `service.name` value; defaults to `nxs-anomaly` |
 | `OTEL_TRACES_SAMPLER_ARG` | sampling ratio `0..1`; empty means sample everything |
 | `OTEL_EXPORTER_OTLP_HEADERS` | headers for the collector (a token, say) — the SDK's standard variable |
+| `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT` | Maximum string attribute length in characters. Example value: `256`. Defaults to unlimited. |
+
+Set either endpoint variable using the examples above and restart the service. Check `tracing_enabled` for the effective sampler. To check the length limit in a test deployment, send a span with a longer string attribute and inspect the attribute on the span received by the collector.
 
 In the Helm chart:
 

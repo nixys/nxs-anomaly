@@ -15,6 +15,10 @@ import type { PluralForms } from './types';
  */
 export const en = {
   // ── Vocabulary shared across pages ─────────────────────────────────────────
+  'overview.stale': 'The last successful snapshot is shown. Data may be out of date.',
+  'overview.unavailable': 'Overview is unavailable. Try again when the server is reachable.',
+  'overview.retry': 'Retry',
+  'reference.refine': 'Showing the first 50 matches. Type more to narrow the search.',
   'common.save': 'Save',
   'common.cancel': 'Cancel',
   'common.delete': 'Delete',

@@ -63,7 +63,7 @@ function buildUrl(path: string, query?: Query): string {
 async function request<T>(
   method: string,
   path: string,
-  options: { query?: Query; body?: unknown } = {},
+  options: { query?: Query; body?: unknown; signal?: AbortSignal } = {},
 ): Promise<T> {
   const headers: Record<string, string> = {};
   const key = getApiKey();
@@ -77,6 +77,7 @@ async function request<T>(
     // be sent. 'same-origin' is the fetch default, stated explicitly because
     // the whole session mechanism depends on it.
     credentials: 'same-origin',
+    signal: options.signal,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   });
 
@@ -110,7 +111,7 @@ async function request<T>(
 }
 
 export const api = {
-  get: <T>(path: string, query?: Query) => request<T>('GET', path, { query }),
+  get: <T>(path: string, query?: Query, signal?: AbortSignal) => request<T>('GET', path, { query, signal }),
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, { body }),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, { body }),
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, { body }),

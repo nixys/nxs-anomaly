@@ -44,3 +44,13 @@ cosign.pub
 
 # Generated Community quickstart credentials and runtime files
 /.local/
+
+# Documentation website output
+/website/node_modules/
+/website/.generated/
+/website/.vitepress/cache/
+/website/.vitepress/dist/
+/website/public/_assets/
+/website/public/favicon.png
+
+/website/dist/

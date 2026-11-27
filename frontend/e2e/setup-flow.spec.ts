@@ -43,9 +43,8 @@ test('an operator can set up team, user, chain and integration entirely through 
   await page.getByRole('button', { name: 'Add integration', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await field(dialog, 'Name').fill(integrationName);
-  // Mantine's Select associates its label with both the input and the options
-  // listbox, so target the input (first match) then pick the option.
-  await dialog.getByLabel('Default escalation chain').first().click();
+  // Search the remote reference list before selecting the newly created chain.
+  await dialog.getByRole('combobox', { name: 'Default escalation chain' }).fill(chainName);
   await page.getByRole('option', { name: chainName }).click();
   await submitModal(page);
   await expect(page.getByRole('main').getByText(integrationName, { exact: true })).toBeVisible();

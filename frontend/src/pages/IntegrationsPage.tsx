@@ -1,3 +1,4 @@
+import { ReferenceSelect } from '../components/ReferenceSelect';
 import { useState } from 'react';
 import {
   ActionIcon,
@@ -16,10 +17,10 @@ import {
 } from '@mantine/core';
 import { IconCheck, IconCopy, IconPlus, IconSettings } from '@tabler/icons-react';
 import { Link } from 'react-router';
-import { useAllOf, useCreate, useDelete, useFullList } from '../api/hooks';
+import { useCreate, useDelete } from '../api/hooks';
 import { INTEGRATION_TYPES, type Integration } from '../api/types';
 import { ConfirmDeleteButton, PageHeader, ProvisionedBadge, QueryState } from '../components/common';
-import { ListPager, ListSearch, usePagedList } from '../components/PagedList';
+import { ListPager, ListSearch, useReferencePage } from '../components/PagedList';
 import { RoleNotice, useCan } from '../auth/permissions';
 import { useI18n } from '../i18n/I18nProvider';
 import { EMPTY_VALUE } from '../i18n/format';
@@ -55,8 +56,8 @@ export function CopyField({ value }: { value: string }) {
 export function IntegrationsPage() {
   const { t } = useI18n();
   const canEdit = useCan('edit');
-  const integrations = useFullList('integrations');
-  const rows = usePagedList(integrations.data?.items, ['name']);
+  const integrations = useReferencePage('integrations');
+  const rows = integrations.rows;
   const remove = useDelete('integrations');
   const [creating, setCreating] = useState(false);
 
@@ -161,8 +162,8 @@ export function IntegrationsPage() {
 
 function CreateIntegrationModal({ opened, onClose }: { opened: boolean; onClose: () => void }) {
   const create = useCreate('integrations');
-  const chains = useAllOf('escalation-chains');
-  const teams = useAllOf('teams');
+
+
   const [name, setName] = useState('');
   const [type, setType] = useState<string>('webhook');
   const [groupBy, setGroupBy] = useState('alertname, service');
@@ -216,22 +217,22 @@ function CreateIntegrationModal({ opened, onClose }: { opened: boolean; onClose:
           value={groupBy}
           onChange={(event) => setGroupBy(event.currentTarget.value)}
         />
-        <Select
+        <ReferenceSelect
           label={t('integrations.defaultChain')}
           placeholder={t('common.none')}
           clearable
           searchable
-          data={(chains.data ?? []).map((chain) => ({ value: chain.id, label: chain.name }))}
+          resource="escalation-chains"
           value={chainId}
           onChange={setChainId}
         />
-        <Select
+        <ReferenceSelect
           label={t('integrations.owningTeam')}
           description={t('integrations.owningTeamDescription')}
           placeholder={t('integrations.unassigned')}
           clearable
           searchable
-          data={(teams.data ?? []).map((team) => ({ value: team.id, label: team.name as string }))}
+          resource="teams"
           value={teamId}
           onChange={setTeamId}
         />

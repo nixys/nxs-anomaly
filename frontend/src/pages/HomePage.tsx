@@ -1,4 +1,5 @@
 import {
+  Alert,
   Anchor,
   Badge,
   Button,
@@ -12,7 +13,7 @@ import {
 } from '@mantine/core';
 import { IconArrowRight, IconUserCheck } from '@tabler/icons-react';
 import { Link } from 'react-router';
-import { useAllOf, useList, useOnCall } from '../api/hooks';
+import { useOverview, useReferences, referenceIds } from '../api/hooks';
 import {
   Labels,
   PageHeader,
@@ -27,18 +28,17 @@ import { EMPTY_VALUE } from '../i18n/format';
 
 export function HomePage() {
   const { t } = useI18n();
-  const open = useList('alert-groups', { status: 'open', limit: 10 }, { refetchInterval: 15_000 });
-  const acknowledged = useList('alert-groups', { status: 'acknowledged', limit: 1 });
-  const failed = useList('notifications', { status: 'failed', limit: 1 });
-  const retrying = useList('notifications', { status: 'retry_scheduled', limit: 1 });
-  const integrations = useAllOf('integrations');
-  // Who is actually on call now, resolved through Schedule v2 (rotation /
-  // overrides / restriction window) — not the manual on_duty flag, which can say
-  // "on duty" while the schedule has handed off to someone else.
-  const onCall = useOnCall({ refetchInterval: 30_000 });
+  const overview = useOverview();
+  const open = { ...overview, data: overview.data?.open };
+  const acknowledged = { ...overview, data: overview.data?.acknowledged };
+  const failed = { ...overview, data: overview.data?.failed };
+  const retrying = { ...overview, data: overview.data?.retrying };
+  const integrations = { ...overview, data: overview.data?.integrations.items };
+  const onCall = { ...overview, data: overview.data?.on_call };
+  const groupIntegrations = useReferences('integrations', referenceIds(open.data, ['integration_id']));
 
   const onCallEntries = onCall.data?.items ?? [];
-  const integrationName = new Map((integrations.data ?? []).map((i) => [i.id, i.name]));
+  const integrationName = new Map([...(integrations.data ?? []), ...(groupIntegrations.data ?? [])].map((i) => [i.id, i.name]));
 
   return (
     <>
@@ -57,6 +57,10 @@ export function HomePage() {
         }
       />
 
+      {overview.isError && <Alert color="red" mb="md" title={t('common.loadFailed')}>
+        {overview.data ? t('overview.stale') : t('overview.unavailable')}
+        <Button variant="subtle" size="xs" ml="sm" loading={overview.isFetching} onClick={() => void overview.refetch()}>{t('overview.retry')}</Button>
+      </Alert>}
       <SimpleGrid cols={{ base: 2, sm: 4 }} mb="lg">
         <StatTile
           label={t('home.openTile')}
@@ -88,7 +92,7 @@ export function HomePage() {
       </SimpleGrid>
 
       <SimpleGrid cols={{ base: 1, lg: 3 }} spacing="lg">
-        <Paper withBorder p="lg" style={{ gridColumn: 'span 2' }}>
+        <Paper withBorder p="lg" className="nxs-overview-incidents">
           <Group justify="space-between" mb="md">
             <Title order={5}>{t('home.openGroups')}</Title>
             <Anchor component={Link} to="/alert-groups" size="sm">
@@ -96,7 +100,7 @@ export function HomePage() {
             </Anchor>
           </Group>
           <QueryState
-            query={open}
+            query={{ ...open, isError: open.isError && !open.data }}
             isEmpty={(data) => data.items.length === 0}
             emptyLabel={t('home.nothingFiring')}
           >
@@ -162,7 +166,7 @@ export function HomePage() {
               <Text size="sm" c="dimmed">
                 {t('common.resolving')}
               </Text>
-            ) : onCall.isError ? (
+            ) : onCall.isError && !onCall.data ? (
               <Text size="sm" c="red">
                 {t('schedule.onCallUnavailable')}
               </Text>
@@ -197,7 +201,7 @@ export function HomePage() {
                 {t('common.manage')}
               </Anchor>
             </Group>
-            {(integrations.data ?? []).length === 0 ? (
+            {integrations.isPending ? <Text size="sm" c="dimmed">{t('common.loading')}</Text> : integrations.isError && !integrations.data ? <Text size="sm" c="red">{t('common.loadFailed')}</Text> : (integrations.data ?? []).length === 0 ? (
               <Text size="sm" c="dimmed">
                 {t('home.noIntegrations')}
               </Text>

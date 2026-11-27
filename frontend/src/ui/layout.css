@@ -1,0 +1,46 @@
+/* Shared surfaces and responsive controls; tables retain their own scrollers. */
+:root[data-mantine-color-scheme='light'] {
+  --nxs-canvas: #f4f6fa;
+  --nxs-surface: #ffffff;
+}
+:root[data-mantine-color-scheme='dark'] {
+  --nxs-canvas: #101419;
+  --nxs-surface: #191e25;
+}
+.mantine-AppShell-main { background: var(--nxs-canvas); min-width: 0; }
+.mantine-AppShell-header,
+.mantine-AppShell-navbar { background: var(--nxs-surface); }
+.mantine-Paper-root { background-color: var(--nxs-surface); }
+.mantine-NavLink-root { min-height: 40px; margin-block: 2px; }
+.mantine-NavLink-root[data-active] { box-shadow: inset 3px 0 var(--mantine-primary-color-filled); }
+.nxs-page-header { row-gap: 16px; }
+.nxs-page-header h2 { letter-spacing: -0.025em; overflow-wrap: anywhere; }
+.nxs-page-actions { flex-shrink: 0; max-width: 100%; }
+.nxs-brand-name { white-space: nowrap; letter-spacing: -0.025em; }
+@media (max-width: 47.99em) {
+  .nxs-page-header h2 { font-size: 24px; }
+  .nxs-page-actions { width: 100%; }
+  .nxs-page-actions > * { max-width: 100%; }
+  .mantine-AppShell-header .mantine-ActionIcon-root { --ai-size: 40px; }
+  .mantine-NavLink-root { min-height: 44px; }
+}
+@media (max-width: 23em) {
+  .nxs-brand-name { font-size: 13px; }
+}
+@media (pointer: coarse) {
+  .mantine-Button-root { min-height: 44px; }
+  .mantine-ActionIcon-root { min-width: 40px; min-height: 40px; }
+}
+
+.nxs-overview-incidents { min-width: 0; }
+@media (min-width: 75em) {
+  .nxs-overview-incidents { grid-column: span 2; }
+}
+
+.nxs-setup-step { flex-wrap: nowrap; }
+.nxs-setup-step-copy { flex: 1; min-width: 0; }
+.nxs-setup-step-copy > div:last-child { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 47.99em) {
+  .nxs-setup-step { flex-direction: column; }
+  .nxs-setup-step-copy { width: 100%; }
+}

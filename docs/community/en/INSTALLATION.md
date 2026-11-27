@@ -1,20 +1,10 @@
-# Installation
+# Quick start
 
-Choose **one** method. Docker Compose is the shortest path: it starts PostgreSQL,
-the API, worker and web interface together.
+Start Community with Helm in Kubernetes or Docker Compose on a Linux/amd64 host. Both examples start PostgreSQL, the API, worker and web interface.
 
-| Method | Prerequisites |
-|---|---|
-| Docker Compose | Docker Engine, Compose 2.20+, Linux/amd64 |
-| Kubernetes | Configured kubectl context, Helm 3.8+, a StorageClass |
-| Bare metal / VM | Linux with systemd, running PostgreSQL 17, nginx, Go matching `go.mod`, Node.js 22.12+, npm |
+## Prepare a release
 
-All methods use Bash, Git and OpenSSL.
-
-## Prepare configuration
-
-For a **new installation**, choose a published tag from
-[Releases](https://github.com/nixys/nxs-anomaly/releases) and run:
+With Bash, Git and OpenSSL installed, choose a tag from [Releases](https://github.com/nixys/nxs-anomaly/releases) and substitute it below. Run these commands once for either method.
 
 ```bash
 RELEASE_TAG='REPLACE_WITH_RELEASE_TAG'
@@ -23,29 +13,11 @@ cd nxs-anomaly
 bash deploy/quickstart/prepare.sh "$RELEASE_TAG"
 ```
 
-The script generates passwords and ready-to-use files in `.local/`.
-Keep this directory: rerunning preparation does not rotate an existing database
-password. If you already prepared this checkout, skip this step.
-If you plan to use Telegram or email, fill in `.local/delivery.env` before startup.
-
-## Docker Compose
-
-From the checkout root, run:
-
-```bash
-docker compose --project-name nxs-anomaly \
-  --env-file .local/credentials.env --env-file .local/compose.env \
-  -f .local/compose.yaml up -d --wait --wait-timeout 180
-```
-
-Open [http://localhost:3100](http://localhost:3100). Sign in as `admin` with the
-password from `.local/credentials.env`. If a port is occupied, change it in
-`.local/compose.env` and use that port in the URL.
+Keep the generated `.local/` directory for subsequent starts. Choose one method below.
 
 ## Kubernetes
 
-Use a new namespace and release named `nxs-anomaly`. Set `STORAGE_CLASS` to a class
-available in your cluster (`kubectl get storageclass` lists them), then run:
+Use Helm 3.8+ and kubectl configured for the target cluster. Run `kubectl get storageclass` and replace the storage class placeholder with an available class. Use a fresh namespace for this example.
 
 ```bash
 STORAGE_CLASS='REPLACE_WITH_STORAGE_CLASS'
@@ -66,65 +38,26 @@ helm install nxs-anomaly oci://ghcr.io/nixys/nxs-anomaly \
 kubectl -n nxs-anomaly port-forward service/nxs-anomaly-frontend 3100:8080
 ```
 
-Keep port-forward running. Open [http://localhost:3100](http://localhost:3100)
-and sign in as `admin` with the password from `.local/credentials.env`.
+Keep port forwarding running while using the UI.
 
-## On-premise (bare-metal or virtual machine)
+## Docker Compose
 
-For installation without containers, run the following from the public Community
-checkout root. PostgreSQL must already be running and accept password-authenticated
-connections on `127.0.0.1:5432`; the commands create a new database and service account.
+With Docker Engine and Compose 2.20+ installed, run from the checkout root.
 
 ```bash
-go build -mod=vendor -trimpath \
-  -ldflags="-s -w -X github.com/nixys/nxs-anomaly/internal/server.Version=v$(cat VERSION)" \
-  -o .local/nxs-anomaly ./cmd/nxs-anomaly
-(cd frontend && npm ci && npm run build)
-
-sudo useradd --system --create-home --home-dir /var/lib/nxs-anomaly \
-  --shell /usr/sbin/nologin nxs-anomaly
-sudo install -m 0755 .local/nxs-anomaly /usr/local/bin/nxs-anomaly
-sudo install -d -m 0755 /var/www/nxs-anomaly
-sudo cp -a frontend/dist/. /var/www/nxs-anomaly/
-sudo chmod -R a+rX /var/www/nxs-anomaly
-
-. .local/credentials.env
-
-sudo -u postgres psql -v ON_ERROR_STOP=1 -v db_password="$POSTGRES_PASSWORD" <<'SQL'
-CREATE ROLE nxs_anomaly WITH LOGIN PASSWORD :'db_password';
-CREATE DATABASE nxs_anomaly OWNER nxs_anomaly;
-SQL
-
-sudo install -d -m 0700 /etc/nxs-anomaly
-sudo install -m 0600 .local/credentials.env .local/delivery.env \
-  .local/on-premise.env /etc/nxs-anomaly/
-
-sudo install -m 0644 deploy/quickstart/nxs-anomaly-*.service /etc/systemd/system/
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now nxs-anomaly-api nxs-anomaly-worker
-
-sudo install -m 0644 deploy/quickstart/nginx.conf /etc/nginx/conf.d/nxs-anomaly.conf
-sudo nginx -t
-sudo systemctl enable --now nginx
-sudo systemctl reload nginx
+docker compose --project-name nxs-anomaly \
+  --env-file .local/credentials.env --env-file .local/compose.env \
+  -f .local/compose.yaml up -d --wait --wait-timeout 180
 ```
 
-Open [http://localhost:3100](http://localhost:3100) and sign in as `admin` with
-the password from `.local/credentials.env`.
+## Verify the installation
 
-For a remote VM or Docker host, open a tunnel **on your workstation**:
+In another terminal, check API and database readiness.
 
 ```bash
-ssh -L 3100:127.0.0.1:3100 user@your-server
+curl --fail-with-body http://localhost:3100/health
 ```
 
-## Next steps
+Expect HTTP 200 and `"db_ok": true`. Open [the web interface](http://localhost:3100) and sign in as `admin` with `NXS_ANOMALY_BOOTSTRAP_ADMIN_PASSWORD` from `.local/credentials.env`. Send a [test alert](GUIDE_WEBHOOK.md) to check routing and delivery.
 
-- [Send your first notification](../../../README.md#get-your-first-notification).
-- [Configuration](CONFIGURATION.md) and [troubleshooting](SETUP.md#when-something-does-not-work).
-- [Preset files](../../../deploy/quickstart/README.md) and [Helm reference](../../../deploy/helm/nxs-anomaly/README.md).
-
-These instructions use local HTTP for evaluation. Before exposing the service,
-configure [HTTPS and access controls](SECURITY_PROFILE.md) and
-[backups](BACKUP_RESTORE.md).
+[Bare metal or VM](DEPLOY.md#on-premise-bare-metal-or-virtual-machine) · [Production security](SECURITY_PROFILE.md).

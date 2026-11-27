@@ -64,7 +64,7 @@ docker run --rm --network nxs-e2e -v "$PWD:/src:ro" \
   -v /tmp/nxs-anomaly-e2e:/usr/local/bin/nxs-anomaly-e2e:ro -e CI=true \
   -e NXS_ANOMALY_TEST_DATABASE_URL="postgres://nxs_anomaly:nxs_anomaly@nxs-e2e-pg:5432/nxs_anomaly_e2e?sslmode=disable" \
   -e NXS_ANOMALY_E2E_BINARY=/usr/local/bin/nxs-anomaly-e2e \
-  mcr.microsoft.com/playwright:v1.61.1-jammy bash -c '
+  mcr.microsoft.com/playwright:v1.65.1-noble bash -c '
     mkdir -p /tmp/app && tar -C /src --exclude=./frontend/node_modules --exclude=./.git -cf - . | tar -C /tmp/app -xf -
     cd /tmp/app/frontend && npm ci && npx playwright test'
 ```

@@ -1,0 +1,64 @@
+suite: bundled Asterisk
+set:
+  existingSecret.enabled: true
+  existingSecret.name: app-secret
+  asterisk.existingSecret: pbx-credentials
+  asterisk.username: oncall
+  asterisk.callerID: "+15550001"
+  asterisk.trunkHost: sip.example.org
+tests:
+  - it: omits the PBX by default
+    templates: [templates/asterisk.yaml, templates/asterisk-config.yaml]
+    asserts:
+      - hasDocuments: {count: 0}
+
+  - it: renders API and worker when upgrading from values predating the PBX
+    templates: [templates/api.yaml, templates/worker.yaml]
+    set: {asterisk: null}
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: wires the AMI Secret and trunk into both senders
+    templates: [templates/api.yaml, templates/worker.yaml]
+    set: {asterisk.enabled: true}
+    documentSelector: {path: kind, value: Deployment, matchMany: true}
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: NXS_ANOMALY_ASTERISK_SECRET, valueFrom: {secretKeyRef: {name: pbx-credentials, key: ami-password}}}
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: NXS_ANOMALY_ASTERISK_CHANNEL, value: "PJSIP/{phone}@trunk"}
+
+  - it: exposes only AMI on the internal service
+    templates: [templates/asterisk.yaml]
+    set: {asterisk.enabled: true}
+    documentSelector: {path: kind, value: Service}
+    asserts:
+      - equal: {path: spec.ports, value: [{name: ami, port: 5038, targetPort: ami}]}
+      - notExists: {path: spec.externalIPs}
+
+  - it: requires provider networks under default deny
+    templates: [templates/asterisk.yaml]
+    set: {asterisk.enabled: true, networkPolicy.enabled: true}
+    asserts:
+      - failedTemplate: {errorMessage: "asterisk.providerCIDRs is required with networkPolicy.enabled"}
+
+  - it: opens media only to configured peers
+    templates: [templates/asterisk.yaml]
+    set:
+      asterisk.enabled: true
+      networkPolicy.enabled: true
+      asterisk.providerCIDRs: ["192.0.2.0/24"]
+    documentSelector: {path: kind, value: NetworkPolicy}
+    asserts:
+      - equal: {path: 'spec.ingress[1].from[0].ipBlock.cidr', value: "192.0.2.0/24"}
+      - equal: {path: 'spec.ingress[1].ports[1].endPort', value: 10019}
+
+  - it: renders the announcement and authenticated registration
+    templates: [templates/asterisk-config.yaml]
+    set: {asterisk.enabled: true}
+    asserts:
+      - matchRegex: {path: 'data["pjsip.conf"]', pattern: 'client_uri=sip:oncall@sip.example.org:5060'}
+      - matchRegex: {path: 'data["extensions.conf"]', pattern: 'Playback\(/etc/asterisk/alert\)'}
+      - isNotEmpty: {path: 'binaryData["alert.wav"]'}

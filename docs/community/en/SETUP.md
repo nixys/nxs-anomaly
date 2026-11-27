@@ -7,7 +7,7 @@ For prepared env files, systemd, Compose and Kubernetes, start with
 ## Requirements
 
 - Docker, or a reachable PostgreSQL 14+
-- Go 1.27 and Node.js 22.12+ — only to build from source
+- Go 1.27 and Node.js 24.15+ (LTS) — only to build from source
 
 ## Docker Compose
 
@@ -100,7 +100,7 @@ work](#seeing-it-work)) adds demo users, a schedule and an integration to look
 at; it is a way to see the shape of the product, not a step the first run
 needs.
 
-The frontend is a separate build (Node.js 22.12+):
+The frontend is a separate build (Node.js 24.15+ (LTS)):
 
 ```bash
 cd frontend

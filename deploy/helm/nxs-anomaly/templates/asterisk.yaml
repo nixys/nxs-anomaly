@@ -1,0 +1,93 @@
+{{- if (.Values.asterisk | default dict).enabled }}
+{{- $labels := dict "ctx" . "component" "asterisk" }}
+{{- $name := include "nxs-anomaly.componentName" $labels }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels: {{- include "nxs-anomaly.componentLabels" $labels | nindent 4 }}
+spec:
+  selector: {{- include "nxs-anomaly.componentSelectorLabels" $labels | nindent 4 }}
+  ports:
+    - {name: ami, port: 5038, targetPort: ami}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels: {{- include "nxs-anomaly.componentLabels" $labels | nindent 4 }}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {{- include "nxs-anomaly.componentSelectorLabels" $labels | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "nxs-anomaly.componentSelectorLabels" $labels | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/asterisk-config.yaml") . | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      {{- include "nxs-anomaly.imagePullSecrets" . | nindent 6 }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: asterisk
+          image: {{ .Values.asterisk.image | quote }}
+          command: [/bin/sh, /etc/asterisk/start.sh]
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          resources: {{- toYaml .Values.asterisk.resources | nindent 12 }}
+          env:
+            - name: AMI_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.asterisk.existingSecret | quote }}, key: ami-password}
+            - name: SIP_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.asterisk.existingSecret | quote }}, key: sip-password}
+          ports:
+            - {name: ami, containerPort: 5038}
+          readinessProbe:
+            tcpSocket: {port: ami}
+          volumeMounts:
+            - {name: config, mountPath: /etc/asterisk, readOnly: true}
+            - {name: run, mountPath: /run/asterisk}
+      volumes:
+        - name: config
+          configMap: {name: {{ $name }}}
+        - name: run
+          emptyDir: {medium: Memory}
+{{- if .Values.networkPolicy.enabled }}
+{{- if not .Values.asterisk.providerCIDRs }}
+{{- fail "asterisk.providerCIDRs is required with networkPolicy.enabled" }}
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}
+spec:
+  podSelector:
+    matchLabels: {{- include "nxs-anomaly.componentSelectorLabels" $labels | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {{- include "nxs-anomaly.selectorLabels" . | nindent 14 }}
+            matchExpressions:
+              - {key: app.kubernetes.io/component, operator: In, values: [api, worker]}
+      ports: [{protocol: TCP, port: 5038}]
+    - from:
+        {{- range .Values.asterisk.providerCIDRs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+      ports:
+        - {protocol: UDP, port: 5060}
+        - {protocol: UDP, port: 10000, endPort: 10019}
+  egress:
+    - to:
+        {{- range .Values.asterisk.providerCIDRs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+      # Remote RTP ports are negotiated by SDP.
+      ports: [{protocol: UDP}]
+{{- end }}
+{{- end }}

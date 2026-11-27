@@ -30,6 +30,13 @@ sed -i \
 	-e "s/^appVersion:.*/appVersion: \"v$version\"/" \
 	"$chart"
 
+# The private documentation chart follows the same release as the application.
+site_chart=deploy/helm/nxs-anomaly-site/Chart.yaml
+if [ -f "$site_chart" ]; then
+ sed -i -e "s/^version:.*/version: $version/" \
+  -e "s/^appVersion:.*/appVersion: \"v$version\"/" "$site_chart"
+fi
+
 # Only info.version, which lives in the first lines of the document; the string
 # "version" also occurs inside schema descriptions further down.
 sed -i "1,20s/\(\"version\"[[:space:]]*:[[:space:]]*\)\"[0-9][^\"]*\"/\1\"$version\"/" docs/openapi.json

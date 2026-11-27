@@ -142,7 +142,7 @@ describe('ScheduleDetailPage', () => {
     // "Alice" also appears in the participant picker, so anchor on the
     // on-call badge and the handoff line instead of the bare name.
     expect(await screen.findByText('via rotation')).toBeInTheDocument();
-    expect(screen.getAllByText('Alice').length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Alice')).length).toBeGreaterThan(0);
     // Both names also appear in the participant and override pickers, so the
     // assertion is that the handoff line names Bob, not that Bob is unique.
     const next = screen.getByText('Next').closest('div') as HTMLElement;

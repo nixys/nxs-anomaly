@@ -1,3 +1,5 @@
+import { useReferences, referenceIds } from '../api/hooks';
+import { ReferenceMultiSelect, ReferenceSelect } from '../components/ReferenceSelect';
 import { useEffect, useState } from 'react';
 import {
   ActionIcon,
@@ -7,7 +9,6 @@ import {
   Checkbox,
   Group,
   Modal,
-  MultiSelect,
   NumberInput,
   Paper,
   Select,
@@ -27,10 +28,10 @@ import {
   IconTrash,
   IconUserSearch,
 } from '@tabler/icons-react';
-import { useAllOf, useCreate, useDelete, useFullList, useOnCall, useUpdate } from '../api/hooks';
+import { useCreate, useDelete, useOnCall, useUpdate } from '../api/hooks';
 import { STEP_KINDS, type EscalationChain, type EscalationStep, type StepKind } from '../api/types';
 import { ConfirmDeleteButton, PageHeader, ProvisionedBadge, QueryState } from '../components/common';
-import { ListPager, ListSearch, usePagedList } from '../components/PagedList';
+import { ListPager, ListSearch, useReferencePage } from '../components/PagedList';
 import {
   chainPagesNobody,
   stepReachesNobody,
@@ -50,10 +51,10 @@ import type { Messages } from '../i18n/messages';
  * `usr_5d5c8e52efe0` into "Ada Okonkwo" on the one screen where knowing which
  * human is meant is the whole point.
  */
-function useChainNames(): ChainNames {
-  const users = useAllOf('users');
-  const teams = useAllOf('teams');
-  const schedules = useAllOf('schedules');
+function useChainNames(chains: unknown): ChainNames {
+  const users = useReferences('users', referenceIds(chains, ['user_ids']));
+  const teams = useReferences('teams', referenceIds(chains, ['team_ids']));
+  const schedules = useReferences('schedules', referenceIds(chains, ['schedule_ids']));
   const map = (items: Array<{ id: string; name?: string }> | undefined) =>
     new Map((items ?? []).map((item) => [item.id, item.name ?? item.id]));
   const userNames = map(users.data);
@@ -75,9 +76,9 @@ export function EscalationChainsPage() {
   const { t } = useI18n();
   const canEdit = useCan('edit');
   const stepHint = useStepHint();
-  const names = useChainNames();
-  const chains = useFullList('escalation-chains');
-  const rows = usePagedList(chains.data?.items, ['name']);
+  const chains = useReferencePage('escalation-chains');
+  const rows = chains.rows;
+  const names = useChainNames(rows.items);
   const remove = useDelete('escalation-chains');
   const [selected, setSelected] = useState<EscalationChain | null>(null);
   const [creating, setCreating] = useState(false);
@@ -195,10 +196,10 @@ export function EscalationChainsPage() {
 function WhoNowButton({ chain }: { chain: EscalationChain }) {
   const { t } = useI18n();
   const [opened, setOpened] = useState(false);
-  const users = useAllOf('users');
-  const teams = useAllOf('teams');
+  const teams = useReferences('teams', referenceIds(chain, ['team_ids']));
   const onCall = useOnCall();
 
+  const users = useReferences('users', [...referenceIds(chain, ['user_ids']), ...referenceIds(teams.data, ['member_ids']), ...referenceIds(onCall.data, ['user_id'])]);
   const steps = chain.steps ?? [];
   const userName = new Map((users.data ?? []).map((user) => [user.id, user.name]));
   const teamById = new Map((teams.data ?? []).map((team) => [team.id, team]));
@@ -430,13 +431,13 @@ function StepFields({
   step: EscalationStep;
   onChange: (changes: Partial<EscalationStep>) => void;
 }) {
-  const users = useAllOf('users');
-  const teams = useAllOf('teams');
-  const schedules = useAllOf('schedules');
+
+
+
   const { t } = useI18n();
 
-  const userOptions = (users.data ?? []).map((user) => ({ value: user.id, label: user.name }));
-  const teamOptions = (teams.data ?? []).map((team) => ({ value: team.id, label: team.name }));
+
+
 
   switch (step.kind) {
     case 'WAIT':
@@ -452,10 +453,10 @@ function StepFields({
 
     case 'NOTIFY_USER':
       return (
-        <MultiSelect
+        <ReferenceMultiSelect
           label={t('common.users')}
           searchable
-          data={userOptions}
+          resource="users"
           value={step.user_ids ?? []}
           onChange={(value) => onChange({ user_ids: value })}
         />
@@ -464,10 +465,10 @@ function StepFields({
     case 'NOTIFY_SCHEDULE':
       return (
         <Stack gap="xs">
-          <Select
+          <ReferenceSelect
             label={t('chains.schedule')}
             searchable
-            data={(schedules.data ?? []).map((s) => ({ value: s.id, label: s.name }))}
+            resource="schedules"
             value={step.schedule_id ?? null}
             onChange={(value) => onChange({ schedule_id: value ?? '' })}
           />
@@ -483,10 +484,10 @@ function StepFields({
 
     case 'NOTIFY_TEAM':
       return (
-        <Select
+        <ReferenceSelect
           label={t('common.team')}
           searchable
-          data={teamOptions}
+          resource="teams"
           value={step.team_id ?? null}
           onChange={(value) => onChange({ team_id: value })}
         />
@@ -495,12 +496,12 @@ function StepFields({
     case 'NOTIFY_DUTY_USERS':
       return (
         <Group align="flex-end">
-          <Select
+          <ReferenceSelect
             label={t('common.team')}
             placeholder={t('chains.anyTeam')}
             clearable
             searchable
-            data={teamOptions}
+            resource="teams"
             value={step.team_id ?? null}
             onChange={(value) => onChange({ team_id: value })}
             w={260}
@@ -515,12 +516,12 @@ function StepFields({
 
     case 'NOTIFY_EMERGENCY':
       return (
-        <Select
+        <ReferenceSelect
           label={t('chains.emergencyUser')}
           placeholder={t('chains.useIntegrationPolicy')}
           clearable
           searchable
-          data={userOptions}
+          resource="users"
           value={step.user_id ?? null}
           onChange={(value) => onChange({ user_id: value })}
           w={280}

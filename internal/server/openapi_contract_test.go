@@ -167,6 +167,16 @@ func readCode(t *testing.T, file string) string {
 	return code.String()
 }
 
+// The public edition omits documentation for unavailable entrypoints. The
+// runtime stubs still explain edition availability, but do not form a public API.
+func excludedEditionDocumentation(path string) bool {
+	if Edition != "community" {
+		return false
+	}
+	return path == "/api/v1/reports" || path == "/api/v1/reports/" ||
+		strings.HasPrefix(path, "/api/v1/auth/oidc/")
+}
+
 // TestOpenAPICoversEveryRouteLiteral is the code → spec direction: every /api/v1
 // route literal in the router source must be covered by a documented path, so a
 // newly added route cannot ship without a spec entry.
@@ -183,6 +193,9 @@ func TestOpenAPICoversEveryRouteLiteral(t *testing.T) {
 		code := prefixCheck.ReplaceAllString(readCode(t, file), "")
 		for _, m := range lit.FindAllStringSubmatch(code, -1) {
 			literal := m[1]
+			if excludedEditionDocumentation(literal) {
+				continue
+			}
 			trimmed := strings.TrimRight(literal, "/")
 			if trimmed == "/api/v1" || trimmed == "/api/v1/auth" || trimmed == "/api/v1/auth/oidc" {
 				continue // bare grouping prefixes, not routes themselves
@@ -235,6 +248,9 @@ func TestAuthzScopesCoverDocumentedPaths(t *testing.T) {
 	lit := regexp.MustCompile(`"(/api/v1/[a-zA-Z0-9/_-]*)"`)
 	for _, m := range lit.FindAllStringSubmatch(readCode(t, "auth.go"), -1) {
 		prefix := m[1]
+		if excludedEditionDocumentation(prefix) {
+			continue
+		}
 		covered := false
 		for path := range doc.Paths {
 			if strings.HasPrefix(path, prefix) {

@@ -82,7 +82,7 @@ It checks that every migration has a row in `docs/community/en/MIGRATIONS.md`, t
 metric named in the docs is registered in a `metrics.go`, that every table it names is
 created by a migration, and that relative links resolve.
 
-Frontend (Node.js 22.12+, from `frontend/`):
+Frontend (Node.js 24.15+ (LTS), from `frontend/`):
 
 ```sh
 npm ci
@@ -94,7 +94,7 @@ npm run build
 Vulnerability gates, if you touch dependencies:
 
 ```sh
-GOVULNCHECK=$(go env GOPATH)/bin/govulncheck scripts/vuln-gate.sh   # go install golang.org/x/vuln/cmd/govulncheck@v1.8.0 first
+GOVULNCHECK=$(go env GOPATH)/bin/govulncheck scripts/vuln-gate.sh   # go install golang.org/x/vuln/cmd/govulncheck@v1.10.0 first
 cd frontend && node scripts/audit-gate.mjs --level=high --omit-dev
 ```
 

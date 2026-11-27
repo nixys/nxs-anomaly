@@ -1,3 +1,4 @@
+import { ReferenceSelect } from '../components/ReferenceSelect';
 import { useMemo } from 'react';
 import {
   Anchor,
@@ -11,7 +12,7 @@ import {
   Title,
 } from '@mantine/core';
 import { Link } from 'react-router';
-import { useAllOf, useHistory, useInsightsSummary } from '../api/hooks';
+import { useHistory, useInsightsSummary } from '../api/hooks';
 import {
   AbsoluteTime,
   PageHeader,
@@ -59,7 +60,7 @@ export function InsightsPage() {
     [hours],
   );
 
-  const integrations = useAllOf('integrations');
+
 
   // One request for the whole screen. It used to be twelve — one COUNT per tile
   // and per distribution row — none of which could say whether the numbers are
@@ -106,13 +107,13 @@ export function InsightsPage() {
 
       <Paper withBorder p="md" mb="lg">
         <Group gap="sm" align="flex-end">
-          <Select
+          <ReferenceSelect
             label={t('common.integration')}
             description={t('insights.scopeDescription')}
             placeholder={t('insights.allIntegrations')}
             clearable
             searchable
-            data={(integrations.data ?? []).map((item) => ({ value: item.id, label: item.name }))}
+            resource="integrations"
             value={integration}
             onChange={(value) => patch({ integration: value })}
             w={260}

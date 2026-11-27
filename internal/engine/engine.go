@@ -373,6 +373,21 @@ func (e *Engine) ListCollectionPage(ctx context.Context, collection string, para
 			filters[k] = v
 		}
 	}
+	if q := strings.TrimSpace(utils.StrVal(params, "q")); q != "" {
+		if len(store.ReferenceSearchFields(collection)) == 0 {
+			return nil, errValidation("search is not supported for this collection")
+		}
+		if len(q) > 256 {
+			return nil, errValidation("search must be at most 256 bytes")
+		}
+		filters["q"] = q
+	}
+	if raw := utils.StrVal(params, "has_steps"); raw != "" {
+		if collection != "escalation_chains" || (raw != "true" && raw != "false") {
+			return nil, errValidation("has_steps must be true or false on escalation chains")
+		}
+		filters["has_steps"] = raw == "true"
+	}
 	// `ids` fetches a named set in one request. Without it a page that shows
 	// something about each of fifty rows — the incident a delivery was about,
 	// say — either asks fifty times or shows the id it already had, and showing

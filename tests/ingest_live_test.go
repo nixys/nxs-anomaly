@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/nixys/nxs-anomaly/internal/authz"
@@ -320,5 +321,73 @@ func TestParallelIngestKeepsTheGroupAggregateConsistent(t *testing.T) {
 	}
 	if len(alerts) != expected {
 		t.Errorf("%d alert rows stored, want %d", len(alerts), expected)
+	}
+}
+
+func TestWebhookEventReplayAfterGroupCloses(t *testing.T) {
+	ctx := t.Context()
+	hs, eng, st := liveIngestServer(t, ctx)
+	var delivered atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		delivered.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(target.Close)
+	key := liveIntegration(t, eng, "webhook-event-replay", []any{
+		map[string]any{"kind": "TRIGGER_WEBHOOK", "webhook_url": target.URL},
+		map[string]any{"kind": "RESOLVE"},
+	})
+	post := func() (string, error) {
+		body := bytes.NewBufferString(`{"title":"event replay","nxs_event_id":"opencve:stable-event"}`)
+		resp, err := hs.Client().Post(hs.URL+"/integrations/v1/webhook/"+key, "application/json", body)
+		if err != nil {
+			return "", err
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusAccepted {
+			return "", fmt.Errorf("status = %d", resp.StatusCode)
+		}
+		var result struct{ Result string }
+		err = json.NewDecoder(resp.Body).Decode(&result)
+		return result.Result, err
+	}
+
+	var wg sync.WaitGroup
+	initial := make(chan string, 2)
+	for range 2 {
+		wg.Go(func() {
+			got, err := post()
+			if err != nil {
+				t.Errorf("post event: %v", err)
+			}
+			initial <- got
+		})
+	}
+	wg.Wait()
+	first, second := <-initial, <-initial
+	if first == "duplicate" {
+		first, second = second, first
+	}
+	if first != "ingested" || second != "duplicate" {
+		t.Fatalf("parallel results = %q, %q", first, second)
+	}
+	groups, err := st.ListCollection(ctx, "alert_groups")
+	if err != nil || len(groups) != 1 || utils.StrVal(groups[0], "status") != model.StatusResolved {
+		t.Fatalf("expected one resolved group, got %v (err: %v)", groups, err)
+	}
+	if got, err := post(); err != nil || got != "duplicate" {
+		t.Fatalf("replay after resolution = %q (err: %v)", got, err)
+	}
+	alerts, err := st.ListCollection(ctx, "alerts")
+	if err != nil || len(alerts) != 1 {
+		t.Fatalf("expected one alert, got %d (err: %v)", len(alerts), err)
+	}
+	for range 3 {
+		if _, err := eng.RunWorkerCycle(ctx); err != nil {
+			t.Fatalf("worker cycle: %v", err)
+		}
+	}
+	if got := delivered.Load(); got != 1 {
+		t.Fatalf("expected one notification delivery, got %d", got)
 	}
 }

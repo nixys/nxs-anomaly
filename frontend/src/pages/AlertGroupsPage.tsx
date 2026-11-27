@@ -1,3 +1,5 @@
+import { useReferences, referenceIds } from '../api/hooks';
+import { ReferenceSelect } from '../components/ReferenceSelect';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActionIcon,
@@ -30,7 +32,6 @@ import {
 } from '@tabler/icons-react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import {
-  useAllOf,
   useBulkGroupAction,
   useGroupAction,
   useList,
@@ -192,7 +193,6 @@ export function AlertGroupsPage() {
   const reduceMotion = useReducedMotion();
   const rowRefs = useRef<Array<HTMLTableRowElement | null>>([]);
 
-  const integrations = useAllOf('integrations');
   const groups = useList(
     'alert-groups',
     {
@@ -209,6 +209,8 @@ export function AlertGroupsPage() {
     // open should not be six pollers.
     { refetchInterval: live ? visibleInterval : false },
   );
+
+  const integrations = useReferences('integrations', referenceIds(groups.data, ['integration_id']));
 
   const groupAction = useGroupAction();
   const silence = useSilenceGroup();
@@ -340,12 +342,12 @@ export function AlertGroupsPage() {
             onChange={(value) => patchParams({ severity: value, view: null })}
             w={160}
           />
-          <Select
+          <ReferenceSelect
             label={t('common.integration')}
             placeholder={t('common.any')}
             clearable
             searchable
-            data={(integrations.data ?? []).map((i) => ({ value: i.id, label: i.name }))}
+            resource="integrations"
             value={integrationId}
             onChange={(value) => patchParams({ integration: value, view: null })}
             w={220}

@@ -295,7 +295,7 @@ export function Shell() {
         breakpoint: 'sm',
         collapsed: { mobile: !opened },
       }}
-      padding="lg"
+      padding={{ base: 'sm', sm: 'lg', xl: 'xl' }}
       transitionDuration={reduceMotion ? 0 : NAV_MOTION.width}
       transitionTimingFunction={NAV_MOTION.curve}
       styles={{
@@ -310,14 +310,14 @@ export function Shell() {
       }}
     >
       <AppShell.Header>
-        <Group h="100%" px="md" justify="space-between" wrap="nowrap">
-          <Group gap="sm" wrap="nowrap">
+        <Group h="100%" px={{ base: 'xs', sm: 'md' }} gap="xs" justify="space-between" wrap="nowrap">
+          <Group gap={8} wrap="nowrap">
             <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" aria-label={t('shell.navAria')} />
             <Logo />
-            <Text fw={600}>nxs-anomaly</Text>
+            <Text fw={700} className="nxs-brand-name">nxs-anomaly</Text>
           </Group>
-          <Group gap="xs" wrap="nowrap">
-            <HealthIndicator />
+          <Group gap={4} wrap="nowrap">
+            <Box visibleFrom="sm"><HealthIndicator /></Box>
             {identity && (
               // Who you are acting as is a safety property, not decoration:
               // roles change what the same button does, and an API key session
@@ -360,6 +360,7 @@ export function Shell() {
       </AppShell.Header>
 
       <AppShell.Navbar p="xs" style={{ display: 'flex', flexDirection: 'column' }}>
+        <Box hiddenFrom="sm" px="sm" py="xs"><HealthIndicator /></Box>
         <ScrollArea style={{ flex: 1 }} type={rail ? 'never' : 'auto'}>
           {SECTIONS.map((section) => {
             const items = visibleNav.filter((item) => item.section === section);
@@ -435,6 +436,7 @@ export function Shell() {
           openDelay={220}
         >
           <UnstyledButton
+            visibleFrom="sm"
             onClick={() => setRailed((value) => !value)}
             aria-label={rail ? t('shell.navExpand') : t('shell.navCollapse')}
             aria-expanded={!rail}

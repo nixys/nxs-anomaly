@@ -65,6 +65,8 @@ type ToastKey = Extract<keyof Messages, `toast.${string}`>;
 export type ListParams = {
   limit?: number;
   offset?: number;
+  q?: string;
+  has_steps?: boolean;
   status?: string;
   severity?: string;
   integration_id?: string;
@@ -95,7 +97,7 @@ const LIST_PATHS = {
 
 export type ListResource = keyof typeof LIST_PATHS;
 
-type ResourceType = {
+export type ResourceType = {
   users: User;
   teams: Team;
   schedules: Schedule;
@@ -115,7 +117,7 @@ export function useList<R extends ListResource>(
 ) {
   return useQuery<Page<ResourceType[R]>>({
     queryKey: [resource, params],
-    queryFn: () => api.get<Page<ResourceType[R]>>(LIST_PATHS[resource], params),
+    queryFn: ({ signal }) => api.get<Page<ResourceType[R]>>(LIST_PATHS[resource], params, signal),
     ...options,
   });
 }
@@ -123,7 +125,7 @@ export function useList<R extends ListResource>(
 export function useItem<R extends ListResource>(resource: R, id: string | undefined) {
   return useQuery<ResourceType[R]>({
     queryKey: [resource, 'item', id],
-    queryFn: () => api.get<ResourceType[R]>(`${LIST_PATHS[resource]}/${id}`),
+    queryFn: ({ signal }) => api.get<ResourceType[R]>(`${LIST_PATHS[resource]}/${id}`, undefined, signal),
     enabled: Boolean(id),
   });
 }
@@ -139,15 +141,16 @@ const MAX_PAGE = 1000;
  * with 553 users and 765 integrations, the users and integrations just created
  * were missing from their own pages, with no sign that anything was left out.
  */
-async function fetchAll<R extends ListResource>(resource: R): Promise<ResourceType[R][]> {
+async function fetchAll<R extends ListResource>(resource: R, signal: AbortSignal): Promise<ResourceType[R][]> {
   const items: ResourceType[R][] = [];
   for (;;) {
-    const page = await api.get<Page<ResourceType[R]>>(LIST_PATHS[resource], { limit: MAX_PAGE, offset: items.length });
+    signal.throwIfAborted();
+    const page = await api.get<Page<ResourceType[R]>>(LIST_PATHS[resource], { limit: MAX_PAGE, offset: items.length }, signal);
     const got = page.items ?? [];
     items.push(...got);
     // Past 10 000 rows the API estimates the total (and may only give a lower
     // bound), so only an exact total may end the loop early.
-    if (got.length < MAX_PAGE || (!page.total_estimated && items.length >= (page.total ?? 0))) return items;
+    if (got.length < MAX_PAGE || (!page.total_estimated && page.total != null && items.length >= page.total)) return items;
   }
 }
 
@@ -156,7 +159,7 @@ async function fetchAll<R extends ListResource>(resource: R): Promise<ResourceTy
 export function useAllOf<R extends ListResource>(resource: R) {
   return useQuery<ResourceType[R][]>({
     queryKey: [resource, 'all'],
-    queryFn: () => fetchAll(resource),
+    queryFn: ({ signal }) => fetchAll(resource, signal),
     staleTime: 30_000,
   });
 }
@@ -164,12 +167,12 @@ export function useAllOf<R extends ListResource>(resource: R) {
 /** A whole collection in the shape of one page, for the pages that list one
  *  (users, integrations, chains, teams, schedules, maintenance windows). */
 export function useFullList<R extends ListResource>(resource: R) {
-  return useQuery<Page<ResourceType[R]>>({
-    queryKey: [resource, 'full'],
-    queryFn: async () => {
-      const items = await fetchAll(resource);
-      return { items, total: items.length, limit: items.length, offset: 0 };
-    },
+  return useQuery({
+    // Share the same underlying array with selects; only this observer wraps it.
+    queryKey: [resource, 'all'],
+    queryFn: ({ signal }) => fetchAll(resource, signal),
+    staleTime: 30_000,
+    select: (items): Page<ResourceType[R]> => ({ items, total: items.length, limit: items.length, offset: 0 }),
   });
 }
 
@@ -190,6 +193,7 @@ function useResourceMutation<TVars, TResult>(
     mutationFn: fn,
     onSuccess: () => {
       for (const key of invalidate) client.invalidateQueries({ queryKey: [key] });
+      void client.invalidateQueries({ queryKey: ['overview'] });
       notifications.show({ color: 'teal', title: t('toast.done'), message: t(successKey) });
     },
     onError: (error) => notifyError(error),
@@ -244,7 +248,7 @@ export function useToggleDuty() {
 export function useScheduleOnCall(scheduleId: string | undefined, at?: string) {
   return useQuery<OnCallResponse>({
     queryKey: ['schedules', 'on-call', scheduleId, at],
-    queryFn: () => api.get<OnCallResponse>(`/api/v1/schedules/${scheduleId}/on-call`, { at }),
+    queryFn: ({ signal }) => api.get<OnCallResponse>(`/api/v1/schedules/${scheduleId}/on-call`, { at }, signal),
     enabled: Boolean(scheduleId),
   });
 }
@@ -252,7 +256,7 @@ export function useScheduleOnCall(scheduleId: string | undefined, at?: string) {
 export function useSchedulePreview(scheduleId: string | undefined, from?: string, to?: string) {
   return useQuery<SchedulePreview>({
     queryKey: ['schedules', 'preview', scheduleId, from, to],
-    queryFn: () => api.get<SchedulePreview>(`/api/v1/schedules/${scheduleId}/preview`, { from, to }),
+    queryFn: ({ signal }) => api.get<SchedulePreview>(`/api/v1/schedules/${scheduleId}/preview`, { from, to }, signal),
     enabled: Boolean(scheduleId),
   });
 }
@@ -261,7 +265,7 @@ export function useSchedulePreview(scheduleId: string | undefined, from?: string
 export function useScheduleCoverage() {
   return useQuery<ScheduleCoverageReport>({
     queryKey: ['schedules', 'coverage'],
-    queryFn: () => api.get<ScheduleCoverageReport>('/api/v1/schedules/coverage'),
+    queryFn: ({ signal }) => api.get<ScheduleCoverageReport>('/api/v1/schedules/coverage', undefined, signal),
     staleTime: 30_000,
   });
 }
@@ -355,7 +359,7 @@ export function useBulkGroupAction() {
 export function useGroupTimeline(groupId: string | undefined) {
   return useQuery<{ id: string; timeline: AlertGroup['logs'] }>({
     queryKey: ['alert-groups', 'timeline', groupId],
-    queryFn: () => api.get(`/api/v1/alert-groups/${groupId}/timeline`),
+    queryFn: ({ signal }) => api.get(`/api/v1/alert-groups/${groupId}/timeline`, undefined, signal),
     enabled: Boolean(groupId),
   });
 }
@@ -365,7 +369,7 @@ export function useGroupTimeline(groupId: string | undefined) {
 export function useDeliveryAttempts(notificationId: string | undefined) {
   return useQuery<Page<DeliveryAttempt>>({
     queryKey: ['delivery-attempts', notificationId],
-    queryFn: () => api.get('/api/v1/delivery-attempts', { notification_id: notificationId }),
+    queryFn: ({ signal }) => api.get('/api/v1/delivery-attempts', { notification_id: notificationId }, signal),
     enabled: Boolean(notificationId),
   });
 }
@@ -413,14 +417,14 @@ export interface InsightsSummary {
 export function useInsightsSummary(params: { from?: string; to?: string; integration_id?: string }) {
   return useQuery<InsightsSummary>({
     queryKey: ['insights-summary', params],
-    queryFn: () => api.get('/api/v1/insights/summary', params),
+    queryFn: ({ signal }) => api.get('/api/v1/insights/summary', params, signal),
   });
 }
 
 export function useHistory(params: HistoryParams) {
   return useQuery<HistoryResponse>({
     queryKey: ['history', params],
-    queryFn: () => api.get<HistoryResponse>('/api/v1/history', params),
+    queryFn: ({ signal }) => api.get<HistoryResponse>('/api/v1/history', params, signal),
   });
 }
 
@@ -428,7 +432,7 @@ export function useHistory(params: HistoryParams) {
 export function useOnCall(options?: { refetchInterval?: number }) {
   return useQuery<CurrentOnCall>({
     queryKey: ['on-call'],
-    queryFn: () => api.get<CurrentOnCall>('/api/v1/on-call'),
+    queryFn: ({ signal }) => api.get<CurrentOnCall>('/api/v1/on-call', undefined, signal),
     refetchInterval: options?.refetchInterval,
   });
 }
@@ -438,14 +442,14 @@ export function useOnCall(options?: { refetchInterval?: number }) {
 export function useChatopsChannels() {
   return useQuery<Page<ChatopsChannel>>({
     queryKey: ['chatops-channels'],
-    queryFn: () => api.get('/api/v1/chatops/channels', { limit: 1000 }),
+    queryFn: ({ signal }) => api.get('/api/v1/chatops/channels', { limit: 1000 }, signal),
   });
 }
 
 export function useChatopsMessages() {
   return useQuery<Page<ChatopsMessage>>({
     queryKey: ['chatops-messages'],
-    queryFn: () => api.get('/api/v1/chatops/messages', { limit: 200 }),
+    queryFn: ({ signal }) => api.get('/api/v1/chatops/messages', { limit: 200 }, signal),
   });
 }
 
@@ -478,7 +482,7 @@ export function useDeleteChatopsChannel() {
 export function useHealth() {
   return useQuery<Health>({
     queryKey: ['health'],
-    queryFn: () => api.get<Health>('/health'),
+    queryFn: ({ signal }) => api.get<Health>('/health', undefined, signal),
     refetchInterval: 15_000,
     retry: false,
   });
@@ -494,7 +498,7 @@ export function useHealth() {
 export function useReadiness() {
   return useQuery<Readiness>({
     queryKey: ['readiness'],
-    queryFn: () => api.get<Readiness>('/api/v1/readiness'),
+    queryFn: ({ signal }) => api.get<Readiness>('/api/v1/readiness', undefined, signal),
     refetchInterval: 30_000,
   });
 }
@@ -508,7 +512,7 @@ export function useReadiness() {
 export function useCapabilities() {
   return useQuery<Capabilities>({
     queryKey: ['capabilities'],
-    queryFn: () => api.get<Capabilities>('/api/v1/capabilities'),
+    queryFn: ({ signal }) => api.get<Capabilities>('/api/v1/capabilities', undefined, signal),
     staleTime: 5 * 60_000,
   });
 }
@@ -527,4 +531,42 @@ export function useRunEscalations() {
     ['alert-groups', 'notifications'],
     'toast.escalationTriggered',
   );
+}
+
+/** Resolve only referenced IDs, in bounded batches; never fall back to all rows. */
+export function useReferences<R extends ListResource>(resource: R, ids: string[]) {
+  const wanted = [...new Set(ids.filter(Boolean))].sort();
+  return useQuery({
+    queryKey: [resource, 'references', wanted],
+    enabled: wanted.length > 0,
+    staleTime: 30_000,
+    queryFn: async ({ signal }) => {
+      const items: ResourceType[R][] = [];
+      for (let offset = 0; offset < wanted.length; offset += 500) {
+        signal.throwIfAborted();
+        const page = await api.get<Page<ResourceType[R]>>(LIST_PATHS[resource], { ids: wanted.slice(offset, offset + 500).join(','), limit: 500 }, signal);
+        items.push(...page.items);
+      }
+      return items;
+    },
+  });
+}
+
+/** IDs embedded in the currently rendered records (shifts, chain steps, etc.). */
+export function referenceIds(value: unknown, fields: string[]): string[] {
+  if (Array.isArray(value)) return value.flatMap(item => referenceIds(item, fields));
+  if (!value || typeof value !== 'object') return [];
+  return Object.entries(value).flatMap(([key, item]) => fields.includes(key)
+    ? (Array.isArray(item) ? item : [item]).filter((id): id is string => typeof id === 'string' && !!id)
+    : referenceIds(item, fields));
+}
+
+
+export type Overview = import('./schema').components['schemas']['Overview'];
+export function useOverview() {
+  return useQuery({
+    queryKey: ['overview'],
+    queryFn: ({ signal }) => api.get<Overview>('/api/v1/overview', undefined, signal),
+    refetchInterval: 15_000,
+  });
 }
