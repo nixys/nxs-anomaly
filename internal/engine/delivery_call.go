@@ -1,9 +1,10 @@
 package engine
 
 import (
+	"bufio"
 	"fmt"
-	"io"
 	"net"
+	"regexp"
 	"strings"
 	"time"
 
@@ -28,7 +29,7 @@ func sendAsteriskCall(phone, message string, instances []asteriskInstance) (stat
 	var lastErr string
 	for _, inst := range instances {
 		s, e, r := sendAsteriskCallToInstance(inst, phone, message)
-		if s == "delivered" {
+		if s == "delivered" || s == amiUnconfirmed {
 			return s, e, r
 		}
 		lastErr = e
@@ -46,16 +47,28 @@ type asteriskInstance struct {
 	dial func(network, addr string) (net.Conn, error)
 }
 
+const amiUnconfirmed = "asterisk_originate_unconfirmed"
+
+var trunkNumber = regexp.MustCompile(`^\+?[0-9]+$`)
+
 func sendAsteriskCallToInstance(inst asteriskInstance, phone, message string) (status, errMsg, providerResp string) {
 	if inst.host == "" || inst.username == "" || inst.secret == "" ||
 		inst.channel == "" || inst.context == "" || inst.exten == "" || phone == "" {
 		return "failed", fmt.Sprintf("Asterisk AMI settings incomplete for %s", inst.host), ""
 	}
-	ch := inst.channel
-	if !strings.HasSuffix(ch, "/") {
-		ch += "/"
+	if strings.ContainsAny(phone, "\r\n") {
+		return "failed", "Invalid phone number", ""
 	}
-	ch += phone
+	var ch string
+	if strings.Contains(inst.channel, "{phone}") {
+		if !trunkNumber.MatchString(phone) {
+			return "failed", "Trunk numbers must contain digits with an optional leading +", ""
+		}
+		ch = strings.ReplaceAll(inst.channel, "{phone}", phone)
+	} else {
+		ch = strings.TrimSuffix(inst.channel, "/") + "/" + phone
+	}
+	message = strings.NewReplacer("\r", " ", "\n", " ").Replace(message)
 
 	dial := inst.dial
 	if dial == nil {
@@ -71,11 +84,13 @@ func sendAsteriskCallToInstance(inst asteriskInstance, phone, message string) (s
 
 	cmd := strings.Join([]string{
 		"Action: Login",
+		"ActionID: nxs-login",
 		"Username: " + inst.username,
 		"Secret: " + inst.secret,
 		"Events: off",
 		"",
 		"Action: Originate",
+		"ActionID: nxs-originate",
 		"Channel: " + ch,
 		"Context: " + inst.context,
 		"Exten: " + inst.exten,
@@ -90,14 +105,41 @@ func sendAsteriskCallToInstance(inst asteriskInstance, phone, message string) (s
 
 	// Set a deadline so we never block past the AMI exchange window.
 	conn.SetDeadline(time.Now().Add(10 * time.Second)) //nolint:errcheck
-	if _, err := conn.Write([]byte(cmd + "\r\n")); err != nil {
+	if n, err := conn.Write([]byte(cmd + "\r\n")); err != nil {
+		// A complete Originate can already be queued even if Logoff failed to write.
+		if n >= strings.LastIndex(cmd, "Action: Logoff") {
+			return amiUnconfirmed, "Asterisk Originate confirmation lost: " + err.Error(), ""
+		}
 		return "failed", err.Error(), ""
 	}
-	// ReadAll reads until Asterisk closes the connection after Logoff.
-	respBytes, _ := io.ReadAll(conn)
-	resp := string(respBytes)
-	if strings.Contains(resp, "Response: Error") {
-		return "failed", resp, ""
+	// Each attempt owns its connection. Only a complete response to our
+	// Originate confirms queueing. Login success and Logoff do not.
+	scanner := bufio.NewScanner(conn)
+	var actionID, response, detail string
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			if response == "Error" && (actionID == "nxs-login" || actionID == "nxs-originate") {
+				return "failed", "Asterisk AMI: " + detail, ""
+			}
+			if actionID == "nxs-originate" && response == "Success" {
+				return "delivered", "", "asterisk_ami_originate"
+			}
+			actionID, response, detail = "", "", ""
+			continue
+		}
+		key, value, _ := strings.Cut(line, ": ")
+		switch key {
+		case "ActionID":
+			actionID = value
+		case "Response":
+			response = value
+		case "Message":
+			detail = value
+		}
 	}
-	return "delivered", "", "asterisk_ami_originate"
+	if err := scanner.Err(); err != nil {
+		return amiUnconfirmed, "Asterisk Originate confirmation lost: " + err.Error(), ""
+	}
+	return amiUnconfirmed, "Asterisk AMI closed before confirming Originate", ""
 }

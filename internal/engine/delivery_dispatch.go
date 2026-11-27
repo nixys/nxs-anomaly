@@ -130,6 +130,9 @@ func (e *Engine) deliverNotificationViaAdapter(ctx context.Context, ntf map[stri
 		if status == "delivered" {
 			return delivered(strDefault(providerResp, "asterisk"), 0, providerResp)
 		}
+		if status == amiUnconfirmed {
+			return failed(amiUnconfirmed, errMsg, 0, providerResp)
+		}
 		if len(e.deliveryCfg.AsteriskInstances) == 0 {
 			return skipped(skipNotConfigured, "no Asterisk instance is configured")
 		}

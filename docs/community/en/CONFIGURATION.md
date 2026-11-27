@@ -350,7 +350,12 @@ default route an alert that matched nothing would be left without a chain, and t
 defaults make the choice non-deterministic. A request with any other count is
 refused.
 
-Routes are checked in order, so it makes sense to keep the default one last.
+The service checks regular routes from top to bottom and selects the first
+match. Put narrow rules above broad ones. For example, place
+`service=postgres, severity=critical` for the database on-call responder
+above `service=postgres` for the rest of the team's alerts. The default route
+applies after all regular rules have been checked, regardless of its position.
+Keep it last to make the configuration easy to read.
 
 ### Checking routing without sending an alert
 
@@ -361,8 +366,12 @@ api -X POST "$API/api/v1/routes/debug/<key>" -d '{
 }'
 ```
 
-The response shows the route chosen, the chain, and exactly who the first step
-would notify — creating nothing along the way.
+Check `route.escalation_chain_id`, `dedupe_key` and
+`notification_preview`. For a rule with several conditions, try an exact
+match, a partial match and an alert that should take the default route.
+`dropped_by_pipeline` means the pipeline would discard the alert after route
+selection. Previewing leaves alert state untouched and makes no provider call.
+For CVE notifications, follow the [OpenCVE adapter guide](OPENCVE.md).
 
 ### Heartbeat: noticing a source that has gone quiet
 
@@ -605,9 +614,8 @@ api -X POST "$API/api/v1/chatops/channels" -d '{
 Only `platform` and `name` are required. The rest decides what the channel can
 actually do:
 
-- `webhook_url` — outbound messages. **Without it the channel exists only inside
-  the service**: nothing can be sent to it, and notifications for it get the status
-  `skipped` rather than "delivered".
+- `webhook_url` is the delivery address for Slack and Mattermost. Telegram
+  sends outgoing messages through the Bot API using the bot token.
 - `headers` — extra request headers for every post to `webhook_url`, for a
   gateway that authenticates callers with `Authorization` or `X-API-Key`
   (`{"Authorization": "env:NXS_ANOMALY_GATEWAY_AUTH"}`). The rules are those of
@@ -719,7 +727,7 @@ personal notifications this step is skipped: everything already works after step
 
 ```bash
 api -X POST "$API/api/v1/chatops/channels" -d '{
-  "name": "On call — platform",
+  "name": "-100500",
   "platform": "telegram",
   "team_id": "team_...",
   "external_id": "-100500",
@@ -728,7 +736,10 @@ api -X POST "$API/api/v1/chatops/channels" -d '{
 }'
 ```
 
-`external_id` is the chat id from step 3. For individual people in a shared chat to
+In this version, outgoing Telegram ChatOps passes `name` to the Bot API
+as `chat_id`. Set `name` to the actual chat ID for notification delivery.
+Inbound commands are matched by `external_id`. Use the same chat ID from
+step 3 in both fields. For individual people in a shared chat to
 be identified by name in the audit trail and in `ack`/`resolve` commands, their
 users must also have a `telegram_id` set (step 1 at the start of this section) —
 otherwise the command runs as the shared service principal `chatops:telegram` with
@@ -834,7 +845,9 @@ and common mistakes — is in its own document, [PROXY.md](PROXY.md).
 
 ## 10. Verification
 
-Three levels, from the cheap to the real.
+### Readiness and route preview
+
+Check service readiness first, then confirm the chain with sample labels.
 
 **Installation readiness** — ten checks: the database, the worker, integrations,
 routing, channel and duty-user availability, schedule coverage, the team boundary,
@@ -848,7 +861,11 @@ A check that **could not run counts as a blocker, not as a pass**.
 
 **Routing** — `POST /api/v1/routes/debug/<key>`, above.
 
-**A real alert** — the only way to be sure of delivery:
+### Test alert and delivery attempt
+
+Send an alert to a test integration with a test recipient. This example uses
+an integration without a `webhook_secret`. For signed integrations, include
+the [HMAC headers](API.md).
 
 ```bash
 curl -X POST "$API/integrations/v1/webhook/<key>" \
@@ -863,12 +880,31 @@ the provider answered:
 ```bash
 api "$API/api/v1/alert-groups"
 api "$API/api/v1/alert-groups/{id}/timeline"
-api "$API/api/v1/delivery-attempts?alert_group_id={id}"
+api "$API/api/v1/delivery-attempts?notification_id={notification_id}"
 ```
 
 The first notification does not go out instantly: delivery is deliberately outside
 the ingest transaction, so a delay of up to one worker cycle (`--poll-interval`,
 5 seconds by default) is normal rather than a fault.
+
+### Read the result
+
+| Observation | Next step |
+|---|---|
+| The webhook returns `202` and `result: ingested` | Open the alert group and check its chain and timeline. |
+| The webhook returns `dropped_by_pipeline` | Inspect the `drop` rules in the route preview. |
+| The group exists and has no delivery attempts yet | Check whether the chain reached a notification step, whom it selected, and whether the worker is running. |
+| An attempt shows `failed` or `skipped` | Read `provider_status` and `error`, then check the channel settings. |
+| An attempt shows `delivered` | Verify the destination and find the test message in the recipient's channel. |
+
+Find the notification ID in `notifications[].id` on the matching group entry from `GET /api/v1/history`. Use it in the attempts request above. A failed attempt may still be retried. Check the notification's own status:
+
+- `delivery_scheduled` — check the worker. An open circuit breaker for the channel and target defers the call. Check `nxs_anomaly_delivery_short_circuited_total`.
+- `retry_scheduled` — check `next_retry_at` and wait for the next attempt.
+- `failed` on the notification means delivery has ended. After fixing the transport, send a fresh test alert. If the original incident remains open, contact the responder and confirm receipt.
+- `skipped` — read `provider_status` and check transport availability and channel policy.
+
+Route preview calculates recipients for `NOTIFY_USER`, `NOTIFY_TEAM`, `NOTIFY_SCHEDULE` and `NOTIFY_EMERGENCY` at request time. The on-call responder can change before a step following `WAIT` actually runs.
 
 ## Common mistakes
 

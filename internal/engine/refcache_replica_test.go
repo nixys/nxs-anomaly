@@ -207,3 +207,56 @@ func TestAReferenceThatIsReallyGoneIsReloadedOncePerTTL(t *testing.T) {
 		t.Errorf("users were listed %d times for 5 alerts, want 2 (the load and one reload for the missing id)", got)
 	}
 }
+
+// A verified load answers only for the ids it was made for. On the 1.10.3 CE
+// stand a replica that had just re-read users for one missing id treated every
+// other missing id as gone until the entry expired, so a person created on the
+// other replica in those seconds was skipped as "no longer exists" — on the
+// paging path as well as in the coverage report.
+func TestAVerifiedLoadDoesNotHideAUserCreatedAfterIt(t *testing.T) {
+	ctx := context.Background()
+	shared := storetest.New()
+	writer, reader := New(shared), New(shared)
+	if err := shared.UpsertItem(ctx, "escalation_chains", map[string]any{"id": "c_ghost", "name": "ghost",
+		"steps": []any{map[string]any{"kind": StepNotifyUser, "user_ids": []any{"usr_gone"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	ghost, err := writer.CreateIntegration(ctx, map[string]any{"name": "ghost", "default_chain_id": "c_ghost"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	warm(t, reader)
+	// The reader re-reads users for usr_gone: a verified load without it.
+	if _, err := reader.IngestAlert(ctx, ghost["key"].(string), map[string]any{"title": "t", "dedupe_key": "g"}); err != nil {
+		t.Fatal(err)
+	}
+
+	user, err := writer.CreateUser(ctx, map[string]any{"name": "new", "username": "new", "on_duty": true,
+		"notification_targets": []any{map[string]any{"type": "log", "target": "new"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain, err := writer.CreateEscalationChain(ctx, map[string]any{"name": "new",
+		"steps": []any{map[string]any{"kind": StepNotifyUser, "user_ids": []any{user["id"]}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	integ, err := writer.CreateIntegration(ctx, map[string]any{"name": "new", "default_chain_id": chain["id"]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := reader.IngestAlert(ctx, integ["key"].(string), map[string]any{"title": "disk full", "dedupe_key": "n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gid := groupIDOf(res)
+	types := groupLogTypes(t, reader, gid)
+	for _, got := range types {
+		if got == "notify_skipped_unknown_users" || got == "missing_chain" {
+			t.Fatalf("the verified load for usr_gone hid the new user: timeline %v", types)
+		}
+	}
+	if notificationsFor(t, reader, gid) == 0 {
+		t.Fatalf("nobody was paged; timeline %v", types)
+	}
+}

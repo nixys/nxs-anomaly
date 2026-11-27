@@ -85,6 +85,15 @@ spec_version="$(read_file "$spec" | sed -n '1,20p' | sed -n 's/.*"version"[[:spa
 [ "$spec_version" = "$version" ] ||
 	fail "$spec info.version is '$spec_version', expected '$version'"
 
+# The website chart is private and is absent in the Community export.
+site_chart=deploy/helm/nxs-anomaly-site/Chart.yaml
+if [ -f "$site_chart" ]; then
+ site_version="$(read_file "$site_chart" | sed -n 's/^version:[[:space:]]*//p' | tr -d '\r\"')"
+ site_app_version="$(read_file "$site_chart" | sed -n 's/^appVersion:[[:space:]]*//p' | tr -d '\r\"')"
+ [ "$site_version" = "$version" ] || fail "$site_chart version is '$site_version', expected '$version'"
+ [ "$site_app_version" = "v$version" ] || fail "$site_chart appVersion is '$site_app_version', expected 'v$version'"
+fi
+
 # The chart README documents install/verify commands. Every version literal in it
 # must be the current one — a stale one hands operators a pull that 404s.
 readme=deploy/helm/nxs-anomaly/README.md

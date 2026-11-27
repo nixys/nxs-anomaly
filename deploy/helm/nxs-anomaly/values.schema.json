@@ -68,6 +68,59 @@
     "securityContext": {
       "type": "object"
     },
+    "asterisk": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "existingSecret": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        },
+        "trunkHost": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9.-]*$"
+        },
+        "username": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.+-]*$"
+        },
+        "callerID": {
+          "type": "string",
+          "pattern": "^[+]?[0-9]*$"
+        },
+        "externalAddress": {
+          "type": "string",
+          "pattern": "^[0-9.]*$"
+        },
+        "localNet": {
+          "type": "string",
+          "pattern": "^([0-9.]+/[0-9]+)?$"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "register": {
+          "type": "boolean"
+        },
+        "trunkPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "providerCIDRs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9.]+/[0-9]+$"
+          }
+        },
+        "resources": {
+          "type": "object"
+        }
+      }
+    },
     "api": {
       "$ref": "#/$defs/backendComponent"
     },
@@ -268,7 +321,27 @@
       }
     },
     "postgresql": {
-      "$ref": "#/$defs/bundledDatabase"
+      "allOf": [
+        {
+          "$ref": "#/$defs/bundledDatabase"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "parameters": {
+              "type": "object",
+              "description": "Server settings passed as `postgres -c name=value`, e.g. shared_buffers. Values are strings.",
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean"
+                ]
+              }
+            }
+          }
+        }
+      ]
     },
     "externalPostgres": {
       "type": "object",

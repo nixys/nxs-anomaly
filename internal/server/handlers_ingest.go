@@ -63,7 +63,9 @@ func (srv *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		writeIngestError(w, err, "webhook", key)
 		return
 	}
-	srv.metrics.incAlerts(1)
+	if result["result"] != "duplicate" {
+		srv.metrics.incAlerts(1)
+	}
 	writeJSON(w, http.StatusAccepted, result)
 }
 

@@ -129,6 +129,6 @@ describe('IntegrationsPage', () => {
 
     await user.click(screen.getByRole('button', { name: /Add integration/i }));
 
-    expect(await screen.findByRole('textbox', { name: /Name/i })).toBeInTheDocument();
+    expect(await screen.findByRole('textbox', { name: /^Name/ })).toBeInTheDocument();
   });
 });

@@ -98,6 +98,8 @@ A version is the file name without its `.sql` extension:
 | `0034_list_default_order_idx` | Indexes in the exact default order of the alert, alert group and notification listings (time column `DESC NULLS LAST`, then `id DESC`). Without them every page sorted the whole table. |
 | `0035_alerts_firing_idx` | A partial index on firing alerts in the listing's order. The alert list filtered to firing counts and pages from it instead of reading the table. |
 | `0036_alert_groups_insights_idx` | A covering index on alert groups' `created_at` with status and severity included. The insights tiles and trend are answered from it instead of reading the table twice. |
+| `0037_drop_alert_groups_status_json_idx` | Drops the unused expression index on `data->>'status'` of alert groups (`CONCURRENTLY`, no transaction). An index on an expression over `data` kept every group update from being a HOT update. |
+| `0038_drop_alert_groups_next_run_json_idx` | Drops the unused expression index on `data->>'next_run_at'` of alert groups (`CONCURRENTLY`, no transaction); the typed due index answers that lookup. |
 
 ## The connection to the store code
 
@@ -121,7 +123,7 @@ projection of the hot-path fields.
 1. Create the next file in order:
 
 ```text
-internal/store/migrations/0030_short_description.sql
+internal/store/migrations/0039_short_description.sql
 ```
 
 2. Make the operations idempotent where you can:

@@ -53,10 +53,11 @@ spec:
             - secretRef:
                 name: {{ include "nxs-anomaly.secretName" . }}
           {{- $caEnv := include "nxs-anomaly.customCAEnv" . | trim }}
-          {{- if or $caEnv .Values.api.extraEnv }}
+          {{- if or $caEnv .Values.api.extraEnv (.Values.asterisk | default dict).enabled }}
           # customCA first, extraEnv after: a duplicate name resolves to the last
           # entry, so an explicit SSL_CERT_DIR in extraEnv still wins.
           env:
+            {{- include "nxs-anomaly.asteriskEnv" . | nindent 12 }}
             {{- with $caEnv }}{{ . | nindent 12 }}{{ end }}
             {{- with .Values.api.extraEnv }}{{ toYaml . | nindent 12 }}{{ end }}
           {{- end }}

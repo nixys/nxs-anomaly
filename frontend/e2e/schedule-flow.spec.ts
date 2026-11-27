@@ -61,9 +61,9 @@ test('an operator can build a rotation, add an override and see coverage in the 
 });
 
 // datetimeLocal returns a value for an <input type="datetime-local">, `days` from
-// now, truncated to the minute.
+// now in the schedule's UTC timezone, truncated to the minute.
 function datetimeLocal(days: number): string {
   const d = new Date(Date.now() + days * 86_400_000);
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
 }

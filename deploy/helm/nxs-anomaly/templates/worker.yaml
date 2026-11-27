@@ -45,6 +45,7 @@ spec:
             - name: telemetry
               containerPort: {{ .Values.worker.telemetryPort }}
           env:
+            {{- include "nxs-anomaly.asteriskEnv" . | nindent 12 }}
             - name: NXS_ANOMALY_WORKER_ADDR
               value: {{ printf ":%v" .Values.worker.telemetryPort | quote }}
             {{- /* customCA before extraEnv: the last duplicate wins, see api.yaml. */}}

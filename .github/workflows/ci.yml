@@ -29,14 +29,14 @@ permissions:
 
 env:
   GO_VERSION: '1.27.4'
-  NODE_VERSION: '22.12'
+  NODE_VERSION: '24'
 
 jobs:
   go:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.1.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: false # dependencies are vendored; the module cache restores nothing
@@ -50,8 +50,8 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.1.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: false # dependencies are vendored; the module cache restores nothing
@@ -70,17 +70,17 @@ jobs:
   govulncheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.1.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: false
       - name: Install govulncheck
         # Pinned, not @latest: golang.org/x/vuln raises its own go.mod floor
         # with upstream's toolchain, so @latest breaks the moment this job's Go
-        # version (env.GO_VERSION) lags behind — it did once, when v1.8.0
+        # version (env.GO_VERSION) lags behind — it did once, when an update
         # required go >= 1.26 on a 1.25 job. Bump it together with GO_VERSION.
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.10.0
       - name: Vulnerability gate
         run: GOVULNCHECK="$(go env GOPATH)/bin/govulncheck" bash scripts/vuln-gate.sh
 
@@ -103,8 +103,8 @@ jobs:
     env:
       NXS_ANOMALY_TEST_DATABASE_URL: postgres://nxs_anomaly:nxs_anomaly@localhost:5432/nxs_anomaly?sslmode=disable
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.1.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: false
@@ -117,7 +117,7 @@ jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: Documentation checks
         run: bash scripts/check-docs.sh
 
@@ -127,8 +127,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -143,12 +143,12 @@ jobs:
     env:
       CHART: deploy/helm/nxs-anomaly
     steps:
-      - uses: actions/checkout@v7
-      - uses: azure/setup-helm@v5
+      - uses: actions/checkout@v7.0.1
+      - uses: azure/setup-helm@v5.1.0
         with:
-          version: v3.21.0
+          version: v3.22.1
       - name: Install helm-unittest
-        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version 1.0.3
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version 1.2.1
       - name: Lint and render
         run: |
           set -eu
@@ -160,3 +160,12 @@ jobs:
             --set serviceMonitor.enabled=true --set prometheusRule.enabled=true >/dev/null
       - name: Unit tests
         run: helm unittest -f 'tests/unit/*_test.yaml' "$CHART"
+      - name: Upgrade the published chart and verify voice delivery under NetworkPolicy
+        env:
+          RELEASE_ACCEPTANCE: "1"
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y python3-yaml jq
+          curl -fsSL --retry 3 https://kind.sigs.k8s.io/dl/v0.31.0/kind-linux-amd64 -o "$RUNNER_TEMP/kind"
+          chmod +x "$RUNNER_TEMP/kind"
+          PATH="$RUNNER_TEMP:/usr/bin:$PATH" bash deploy/helm/nxs-anomaly/tests/e2e/kind-networkpolicy.sh

@@ -32,7 +32,6 @@ import {
 import {
   useCreate,
   useDelete,
-  useFullList,
   useToggleDuty,
   useUpdateUser,
 } from '../api/hooks';
@@ -55,7 +54,7 @@ import {
   type User,
 } from '../api/types';
 import { ConfirmDeleteButton, PageHeader, ProvisionedBadge, QueryState, RowActions} from '../components/common';
-import { ListPager, ListSearch, usePagedList } from '../components/PagedList';
+import { ListPager, ListSearch, useReferencePage } from '../components/PagedList';
 import {
   EMPTY_STEP,
   cleanPolicies,
@@ -72,8 +71,8 @@ export function UsersPage() {
   const priorityLabel = usePriorityLabel();
   const roleLabel = useRoleLabel();
   const channelLabel = useChannelLabel();
-  const users = useFullList('users');
-  const rows = usePagedList(users.data?.items, ['name', 'username', 'email']);
+  const users = useReferencePage('users');
+  const rows = users.rows;
   const remove = useDelete('users');
   const toggleDuty = useToggleDuty();
   const [editing, setEditing] = useState<User | null>(null);

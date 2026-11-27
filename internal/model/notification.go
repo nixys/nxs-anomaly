@@ -361,6 +361,12 @@ func (n Notification) ScheduleRetryOrFailAfter(ts, errMsg string, maxRetries int
 	n.d.Extra["next_retry_at"] = utils.ToISO(t.Add(wait))
 }
 
+// FailWithoutRetry preserves the provider reason on a terminal attempt.
+func (n Notification) FailWithoutRetry(ts, providerStatus, detail string) {
+	n.ScheduleRetryOrFail(ts, detail, 1, nil)
+	n.d.Extra["provider_status"] = providerStatus
+}
+
 // FailRetryContext marks a retry permanently failed because the delivery
 // context (alert group / user payload) could not be reconstructed.
 func (n Notification) FailRetryContext() {

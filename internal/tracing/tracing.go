@@ -17,6 +17,7 @@ package tracing
 import (
 	"context"
 	"log/slog"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -102,17 +103,18 @@ func Init(ctx context.Context, version string) (shutdown func(context.Context) e
 
 	res := serviceResource(version)
 
+	traceSampler := sampler()
 	provider := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exporter),
 		sdktrace.WithResource(res),
-		sdktrace.WithSampler(sampler()),
+		sdktrace.WithSampler(traceSampler),
 	)
 	otel.SetTracerProvider(provider)
 
 	slog.Info("tracing_enabled",
 		"endpoint", ep,
 		"service_name", serviceName(),
-		"sampler", os.Getenv("OTEL_TRACES_SAMPLER"))
+		"sampler", traceSampler.Description())
 
 	return provider.Shutdown, nil
 }
@@ -138,7 +140,7 @@ func sampler() sdktrace.Sampler {
 		return sdktrace.ParentBased(sdktrace.AlwaysSample())
 	}
 	ratio, err := strconv.ParseFloat(arg, 64)
-	if err != nil || ratio < 0 || ratio > 1 {
+	if err != nil || math.IsNaN(ratio) || ratio < 0 || ratio > 1 {
 		slog.Warn("tracing_bad_sampler_arg",
 			"value", arg,
 			"effect", "sampling every trace")

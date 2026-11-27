@@ -1,0 +1,102 @@
+{{- if (.Values.asterisk | default dict).enabled }}
+{{- $a := .Values.asterisk }}
+{{- $host := required "asterisk.trunkHost is required" $a.trunkHost }}
+{{- $user := required "asterisk.username is required" $a.username }}
+{{- if ne (empty $a.externalAddress) (empty $a.localNet) }}
+{{- fail "set both asterisk.externalAddress and asterisk.localNet for NAT" }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nxs-anomaly.componentName" (dict "ctx" . "component" "asterisk") }}
+  labels: {{- include "nxs-anomaly.labels" . | nindent 4 }}
+binaryData:
+  # Flite 2.2, kal voice, mono PCM at 8 kHz.
+  alert.wav: {{ .Files.Get "files/asterisk/alert.wav" | b64enc }}
+data:
+  asterisk.conf: |
+    [directories]
+    astetcdir => /etc/asterisk
+    astrundir => /run/asterisk
+    astdbdir => /run/asterisk
+    astlogdir => /run/asterisk
+    astspooldir => /run/asterisk
+    [options]
+    live_dangerously = no
+  modules.conf: |
+    [modules]
+    autoload=yes
+  logger.conf: |
+    [logfiles]
+    console => warning,error,notice
+  manager.conf: |
+    [general]
+    enabled = yes
+    bindaddr = 0.0.0.0
+    port = 5038
+    [oncall]
+    read = none
+    write = originate
+    #include /run/asterisk/ami-secret.conf
+  extensions.conf: |
+    [oncall]
+    exten => s,1,Answer()
+     same => n,Playback(/etc/asterisk/alert)
+     same => n,Hangup()
+  rtp.conf: |
+    [general]
+    rtpstart=10000
+    rtpend=10019
+  pjsip.conf: |
+    [transport]
+    type=transport
+    protocol=udp
+    bind=0.0.0.0:5060
+    {{- if $a.externalAddress }}
+    local_net={{ $a.localNet }}
+    external_media_address={{ $a.externalAddress }}
+    external_signaling_address={{ $a.externalAddress }}
+    {{- end }}
+
+    [auth]
+    type=auth
+    auth_type=userpass
+    username={{ $user }}
+    #include /run/asterisk/sip-secret.conf
+
+    [trunk]
+    type=aor
+    contact=sip:{{ $host }}:{{ $a.trunkPort }}
+
+    [trunk]
+    type=endpoint
+    transport=transport
+    outbound_auth=auth
+    aors=trunk
+    disallow=all
+    allow=ulaw,alaw
+    direct_media=no
+    from_user={{ $a.callerID }}
+    {{- if $a.register }}
+
+    [registration]
+    type=registration
+    transport=transport
+    outbound_auth=auth
+    server_uri=sip:{{ $host }}:{{ $a.trunkPort }}
+    client_uri=sip:{{ $user }}@{{ $host }}:{{ $a.trunkPort }}
+    {{- end }}
+  start.sh: |
+    set -eu
+    umask 077
+    # Write the two Asterisk include files on tmpfs. Reject config syntax.
+    for password in "$AMI_PASSWORD" "$SIP_PASSWORD"; do
+      case "$password" in
+        ''|*[!a-zA-Z0-9_./=@%:+-]*) echo "Unsupported character in Asterisk password" >&2; exit 1 ;;
+      esac
+    done
+    printf 'secret=%s\n' "$AMI_PASSWORD" > /run/asterisk/ami-secret.conf
+    printf 'password=%s\n' "$SIP_PASSWORD" > /run/asterisk/sip-secret.conf
+    unset AMI_PASSWORD SIP_PASSWORD password
+    exec /usr/sbin/asterisk -f -C /etc/asterisk/asterisk.conf
+{{- end }}

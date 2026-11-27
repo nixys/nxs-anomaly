@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -434,24 +435,30 @@ func (e *Engine) advanceEscalationShard(ctx context.Context, now time.Time, ts s
 // a batch is one short statement, and the budget keeps a large backlog from
 // holding the archival stage — what is left goes on the next pass, a minute
 // later.
-const (
-	alertRepairBatch  = 2000
-	alertRepairBudget = 5 * time.Second
-)
+const alertRepairBatch = 2000
+
+var alertRepairBudget = 5 * time.Second // a var so tests can shorten it
 
 // repairResolvedGroupAlerts finishes the alert status writes that
 // syncAlertStatusForGroups could not: that write runs after the group's
 // transition commits, once, and a timeout under load left every alert of a
 // bulk-resolved group reading "firing" for good (1.10.2 audit, 26 000 alerts in
-// 400 groups). Failures are logged and retried on the next pass.
-func (e *Engine) repairResolvedGroupAlerts(ctx context.Context) {
-	ctx, cancel := context.WithTimeout(ctx, alertRepairBudget)
+// 400 groups). Failures are logged and retried on the next pass. A pass that
+// runs out of its budget is not a failure: it stops where it is and the next
+// pass goes on (on the 1.10.3 stand the first pass repaired 14 000 alerts and
+// was reported as "alert_status_repair_failed").
+func (e *Engine) repairResolvedGroupAlerts(parent context.Context) {
+	ctx, cancel := context.WithTimeout(parent, alertRepairBudget)
 	defer cancel()
 	total := 0
 	for {
 		n, err := e.store.RepairResolvedGroupAlerts(ctx, alertRepairBatch)
 		total += n
 		if err != nil {
+			if parent.Err() == nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				slog.Info("alert_status_repaired", "alerts", total, "budget_exhausted", true)
+				return
+			}
 			slog.Warn("alert_status_repair_failed", "repaired", total, "err", err)
 			return
 		}

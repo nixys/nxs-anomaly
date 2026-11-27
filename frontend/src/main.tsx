@@ -10,13 +10,16 @@ import '@mantine/notifications/styles.css';
 // Product motion: the two keyframes used by the lists, and the reduced-motion
 // switch that turns all of it off. Loaded after Mantine so it can override.
 import './ui/motion.css';
+import './ui/layout.css';
 import { App } from './App';
 import { AuthProvider } from './auth/AuthProvider';
 import { I18nProvider } from './i18n/I18nProvider';
 
 const theme = createTheme({
   primaryColor: 'blue',
-  defaultRadius: 'sm',
+  defaultRadius: 'md',
+  fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  headings: { fontWeight: '650' },
   fontFamilyMonospace:
     'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
 });

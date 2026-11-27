@@ -370,3 +370,25 @@ imagePullSecrets:
 {{- toYaml . | nindent 0 }}
 {{- end }}
 {{- end -}}
+
+{{- define "nxs-anomaly.asteriskEnv" -}}
+{{- if (.Values.asterisk | default dict).enabled -}}
+- name: NXS_ANOMALY_ASTERISK_HOST
+  value: {{ include "nxs-anomaly.componentName" (dict "ctx" . "component" "asterisk") }}
+- name: NXS_ANOMALY_ASTERISK_USERNAME
+  value: oncall
+- name: NXS_ANOMALY_ASTERISK_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ required "asterisk.existingSecret is required" .Values.asterisk.existingSecret | quote }}
+      key: ami-password
+- name: NXS_ANOMALY_ASTERISK_CHANNEL
+  value: "PJSIP/{phone}@trunk"
+- name: NXS_ANOMALY_ASTERISK_CONTEXT
+  value: oncall
+- name: NXS_ANOMALY_ASTERISK_EXTEN
+  value: s
+- name: NXS_ANOMALY_ASTERISK_CALLER_ID
+  value: {{ required "asterisk.callerID is required" .Values.asterisk.callerID | quote }}
+{{- end -}}
+{{- end -}}

@@ -138,6 +138,26 @@ func deepCopyValue(v any) any {
 
 func match(row, filters map[string]any) bool {
 	for k, want := range filters {
+		if k == "has_steps" {
+			steps, _ := row["steps"].([]any)
+			if (len(steps) > 0) != want {
+				return false
+			}
+			continue
+		}
+		if k == "q" {
+			needle := strings.ToLower(fmt.Sprint(want))
+			found := false
+			for _, field := range []string{"name", "username", "email"} {
+				if value, ok := row[field].(string); ok && strings.Contains(strings.ToLower(value), needle) {
+					found = true
+				}
+			}
+			if !found {
+				return false
+			}
+			continue
+		}
 		got := row[k]
 		// Mirrors buildWhere: a severity filter names a level, so it matches
 		// every spelling of that level. A double that matched only the exact

@@ -67,7 +67,7 @@ context.
 
 ## Frontend
 
-Node.js 22.12+ is required:
+Node.js 24.15+ (LTS) is required:
 
 ```bash
 cd frontend

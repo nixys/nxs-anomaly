@@ -1,3 +1,4 @@
+import { ReferenceSelect } from '../components/ReferenceSelect';
 import { useEffect, useState } from 'react';
 import {
   ActionIcon,
@@ -20,7 +21,7 @@ import {
 } from '@mantine/core';
 import { IconArrowLeft, IconDeviceFloppy, IconPlus, IconRefresh, IconTrash } from '@tabler/icons-react';
 import { Link, useParams } from 'react-router';
-import { useAllOf, useDebugRoute, useItem, useRotateKey, useUpdate } from '../api/hooks';
+import { useDebugRoute, useItem, useRotateKey, useUpdate } from '../api/hooks';
 import {
   NOTIFICATION_TARGET_TYPES,
   type Integration,
@@ -236,7 +237,7 @@ const EMPTY_ROUTE: RouteDraft = {
 
 function RoutesTab({ integration }: { integration: Integration }) {
   const update = useUpdate('integrations');
-  const chains = useAllOf('escalation-chains');
+
   const [routes, setRoutes] = useState<RouteDraft[]>(integration.routes ?? []);
   const { t } = useI18n();
   const canEdit = useCan('edit');
@@ -302,12 +303,12 @@ function RoutesTab({ integration }: { integration: Integration }) {
                 allowDeselect={false}
                 w={140}
               />
-              <Select
+              <ReferenceSelect
                 label={t('integration.chain')}
                 placeholder={t('common.none')}
                 clearable
                 searchable
-                data={(chains.data ?? []).map((chain) => ({ value: chain.id, label: chain.name }))}
+                resource="escalation-chains"
                 value={route.escalation_chain_id}
                 onChange={(value) => patch(index, { escalation_chain_id: value })}
                 w={240}
@@ -413,7 +414,7 @@ function LabelsEditor({
 
 function PolicyTab({ integration }: { integration: Integration }) {
   const update = useUpdate('integrations');
-  const users = useAllOf('users');
+
   const [policy, setPolicy] = useState<NotificationPolicy>(
     integration.notification_policy ?? {
       channels: [],
@@ -433,7 +434,7 @@ function PolicyTab({ integration }: { integration: Integration }) {
     if (integration.notification_policy) setPolicy(integration.notification_policy);
   }, [integration]);
 
-  const userOptions = (users.data ?? []).map((user) => ({ value: user.id, label: user.name }));
+
 
   return (
     <Paper withBorder p="lg">
@@ -463,21 +464,21 @@ function PolicyTab({ integration }: { integration: Integration }) {
               setPolicy({ ...policy, batch_deadline_seconds: Number(value) || 0 })
             }
           />
-          <Select
+          <ReferenceSelect
             label={t('integration.emergencyUser')}
             placeholder={t('common.none')}
             clearable
             searchable
-            data={userOptions}
+            resource="users"
             value={policy.emergency_user_id}
             onChange={(value) => setPolicy({ ...policy, emergency_user_id: value })}
           />
-          <Select
+          <ReferenceSelect
             label={t('integration.epicUser')}
             placeholder={t('common.none')}
             clearable
             searchable
-            data={userOptions}
+            resource="users"
             value={policy.epic_user_id}
             onChange={(value) => setPolicy({ ...policy, epic_user_id: value })}
           />

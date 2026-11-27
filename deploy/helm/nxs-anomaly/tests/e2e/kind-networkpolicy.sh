@@ -106,6 +106,19 @@ networking:
 EOF
 
 log "Installing Calico"
+if [[ ${RELEASE_ACCEPTANCE:-0} == 1 ]]; then
+  # The host daemon has registry access; a freshly created kind node may not.
+  manifest=$(mktemp)
+  if [[ $CALICO_MANIFEST == https://* ]]; then
+    curl -fsSL --retry 3 "$CALICO_MANIFEST" -o "$manifest"
+  else
+    cp "$CALICO_MANIFEST" "$manifest"
+  fi
+  mapfile -t images < <(awk '$1 == "image:" {print $2}' "$manifest" | sort -u)
+  for image in "${images[@]}"; do docker pull "$image"; done
+  kind load docker-image "${images[@]}" --name "$CLUSTER"
+  CALICO_MANIFEST=$manifest
+fi
 kubectl apply -f "${CALICO_MANIFEST}"
 kubectl -n kube-system rollout status deployment/calico-kube-controllers --timeout=180s
 kubectl -n kube-system rollout status daemonset/calico-node --timeout=180s
@@ -118,12 +131,12 @@ log "Loading images into kind"
 # continued command.
 ANALYTICS_IMAGES=""
 # shellcheck disable=SC2086  # deliberate word splitting: the list may be empty
-for img in postgres:17-alpine curlimages/curl:8.10.1 ${ANALYTICS_IMAGES}; do
+for img in postgres:17-alpine curlimages/curl:8.23.0 ${ANALYTICS_IMAGES}; do
   docker pull "${img}" >/dev/null 2>&1 || true
 done
 # shellcheck disable=SC2086
 kind load docker-image nxs-anomaly:e2e nxs-anomaly-frontend:e2e postgres:17-alpine \
-  curlimages/curl:8.10.1 ${ANALYTICS_IMAGES} \
+  curlimages/curl:8.23.0 ${ANALYTICS_IMAGES} \
   --name "${CLUSTER}"
 
 log "Creating monitoring/attacker namespaces and probe pods"
@@ -142,13 +155,17 @@ for ns in monitoring attacker; do
 done
 # kubernetes.io/metadata.name is auto-populated by the API server since 1.21,
 # which is exactly what values-production.yaml's example extraIngress matches.
-kubectl run prom-probe -n monitoring --image=curlimages/curl:8.10.1 --restart=Never --command -- sleep infinity
-kubectl run attacker-probe -n attacker --image=curlimages/curl:8.10.1 --restart=Never --command -- sleep infinity
+kubectl run prom-probe -n monitoring --image=curlimages/curl:8.23.0 --restart=Never --command -- sleep infinity
+kubectl run attacker-probe -n attacker --image=curlimages/curl:8.23.0 --restart=Never --command -- sleep infinity
 kubectl -n monitoring wait --for=condition=Ready pod/prom-probe --timeout=60s
 kubectl -n attacker wait --for=condition=Ready pod/attacker-probe --timeout=60s
 
 log "helm install (networkPolicy.enabled, extraIngress scoped to the monitoring namespace)"
 kubectl create namespace "${NS}" >/dev/null 2>&1 || true
+if [[ ${RELEASE_ACCEPTANCE:-0} == 1 ]]; then
+  bash "${CHART_DIR}/tests/e2e/release-upgrade.sh" "$CHART_DIR" "$CLUSTER" "$NS"
+  exit 0
+fi
 ANALYTICS_SET=""
 # 20m, not the 10m this used to wait: on a busy shared runner the kind node runs
 # out of memory, the control plane restarts, and helm spends minutes on

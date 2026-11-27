@@ -140,6 +140,7 @@ helm show values oci://ghcr.io/nixys/nxs-anomaly --version "$CHART_VERSION" > ch
 | `postgresql.enabled` | `false` | Deploy a single-node PostgreSQL StatefulSet |
 | `postgresql.auth.password` | `change-me` | Replace before enabling bundled PostgreSQL |
 | `postgresql.persistence.enabled`, `.size` | `true`, `5Gi` | Bundled database storage |
+| `postgresql.parameters` | `{shared_buffers: 256MB}` | Server settings passed as `-c name=value`; scale `shared_buffers` (about a quarter of the memory limit) with `postgresql.resources` |
 | `externalPostgres.sslmode` | `require` | TLS mode when the chart assembles a DSN |
 | `config.NXS_ANOMALY_PROFILE` | `""` | Set to `production` for the security profile |
 | `config.NXS_ANOMALY_SESSION_COOKIE_SECURE` | `"true"` | Require HTTPS for session cookies |

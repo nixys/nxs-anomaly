@@ -272,7 +272,7 @@ The provider's answer lands in the delivery attempts, together with the status
 code and an excerpt of the body:
 
 ```bash
-curl "$API/api/v1/delivery-attempts?alert_group_id={id}"
+curl -fsS -H "X-API-Key: $API_KEY" "$API/api/v1/delivery-attempts?notification_id={notification_id}"
 ```
 
 **4. Locally, with no proxy server.** A SOCKS5 proxy is one command away through
