@@ -8,6 +8,14 @@
 
 ![nxs-anomaly](assets/horizontal.png)
 
+<p align="center">
+  <a href="https://nxs-anomaly.ru/en/ce/INSTALLATION">Quickstart</a> ·
+  <a href="https://nxs-anomaly.ru/">Docs</a> ·
+  <a href="https://nixys.ru/tools/nxs-anomaly/">Site</a> ·
+  <a href="https://nxs-anomaly.ru/en/ce/INTEGRATIONS">Integrations</a> ·
+  <a href="https://t.me/nxs_anomaly_chat">Chat</a>
+</p>
+
 **Self-hosted on-call schedules, alert routing and escalation for your existing monitoring.**
 
 Receive alerts from Prometheus Alertmanager, Grafana or JSON webhooks, notify the
